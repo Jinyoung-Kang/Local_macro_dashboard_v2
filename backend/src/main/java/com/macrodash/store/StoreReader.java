@@ -79,7 +79,7 @@ public class StoreReader {
 
         boolean stale = stored.isEmpty()
                 || !stored.get().isFresh(maxAgeSeconds)
-                || supersededByRefresh(stored.get());
+                || supersededByRefresh(stored.get(), maxAgeSeconds);
 
         if (mode == AppProperties.ReadMode.AUTO && !stale) {
             return stored;
@@ -150,11 +150,16 @@ public class StoreReader {
      * <p>store_only 모드에서는 이 검사를 하지 않습니다. 외부를 부르지 않는다는
      * 약속이 우선이기 때문입니다(그 모드에서 새로고침은 저장본 재조회입니다).
      */
-    private boolean supersededByRefresh(Snapshot snapshot) {
+    private boolean supersededByRefresh(Snapshot snapshot, long maxAgeSeconds) {
         Instant requestedAt = repository.refreshRequestedAt("global");
         if (requestedAt == null || snapshot.collectedAt() == null) {
             return false;
         }
-        return snapshot.collectedAt().isBefore(requestedAt);
+        if (!snapshot.collectedAt().isBefore(requestedAt)) {
+            return false;
+        }
+        // 방금 받은 것을 새로고침 버튼 때문에 또 받지는 않습니다.
+        // (Datasets.minRefetchSeconds 주석에 이유를 적어 두었습니다.)
+        return snapshot.ageSeconds() >= Datasets.minRefetchSeconds(maxAgeSeconds);
     }
 }

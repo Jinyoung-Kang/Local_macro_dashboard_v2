@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query
 
-from . import catalog, indicators, settings, store, tasks
+from . import catalog, indicators, logredact, settings, store, tasks
 from .services import (
     kis as kis_service,
     krx as krx_service,
@@ -45,6 +45,11 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
+
+# basicConfig 직후에 답니다. 이 뒤로 찍히는 모든 로그에서 API 키 같은
+# 비밀값이 가려집니다 (서드파티 라이브러리가 찍는 것까지 포함).
+logredact.install()
+
 logger = logging.getLogger("collector")
 
 KST = ZoneInfo("Asia/Seoul")

@@ -19,6 +19,18 @@ from ..http import brief_error, get_fred_session
 
 logger = logging.getLogger(__name__)
 
+# FRED 응답 대기 한도(초).
+#
+# 10년치 일별 관측치는 응답이 제법 큽니다. 15초로는 자주 모자라서 urllib3가
+# 재시도로 넘어갔고, 그때마다 같은 요청이 다시 나갔습니다. 실제 로그:
+#
+#   WARNING urllib3: Retrying (...) ReadTimeoutError(host='api.stlouisfed.org'
+#   ... read timeout=15) : /fred/series/observations?series_id=WALCL...
+#
+# 재시도는 느린 서버를 더 밀어붙일 뿐입니다. 한 번에 넉넉히 기다리는 쪽이
+# 전체 수집 시간도 짧습니다(fred_series가 24~38초까지 늘어났습니다).
+FRED_TIMEOUT = 30
+
 
 def collect_series(series_id: str, period_years: int = 10) -> list[dict]:
     """
@@ -76,7 +88,7 @@ def _from_api(series_id: str, start_date: str) -> tuple[list[dict], str | None]:
         "observation_start": start_date,
     }
     try:
-        res = get_fred_session().get(url, params=params, timeout=15)
+        res = get_fred_session().get(url, params=params, timeout=FRED_TIMEOUT)
     except Exception as exc:  # noqa: BLE001
         logger.warning("FRED API 실패 (%s): %s", series_id, exc)
         return [], f"API {brief_error(exc)}"
@@ -109,7 +121,7 @@ def _from_csv(series_id: str) -> tuple[list[dict], str | None]:
     """
     try:
         res = get_fred_session().get(
-            settings.FRED_CSV_BASE, params={"id": series_id}, timeout=20
+            settings.FRED_CSV_BASE, params={"id": series_id}, timeout=FRED_TIMEOUT
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("FRED CSV 다운로드 실패 (%s): %s", series_id, exc)

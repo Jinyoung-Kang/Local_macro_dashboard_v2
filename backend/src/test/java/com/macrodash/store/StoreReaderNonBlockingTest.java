@@ -140,4 +140,73 @@ class StoreReaderNonBlockingTest {
 
         assertThat(collector.waits).isEmpty();
     }
+
+    // =========================================================================
+    // 수동 새로고침이 분기 공시까지 다시 받던 문제
+    // =========================================================================
+    // 실제 로그: 5분 사이에 SEC 전수 수집이 세 번 돌았습니다.
+    //   07:20:33 sec_13f 51.80s   ← 스케줄(weekly)
+    //   07:21:34 POST /refresh → 07:22:01 sec_13f 31.77s
+    //   07:24:33 POST /refresh → 07:24:44 sec_13f 32.05s
+    // SEC는 호출 한도를 명시하고 초과하면 차단합니다.
+
+    private StoreRepository repositoryWithRefresh(Snapshot snapshot, Instant refreshedAt) {
+        StoreRepository repository = mock(StoreRepository.class);
+        when(repository.readSnapshot(anyString())).thenReturn(Optional.of(snapshot));
+        when(repository.refreshRequestedAt(anyString())).thenReturn(refreshedAt);
+        return repository;
+    }
+
+    @Test
+    @DisplayName("새로고침을 눌러도 방금 받은 분기 공시는 다시 받지 않는다")
+    void manualRefreshDoesNotRefetchFreshSlowData() {
+        // 3분 전에 받은 13F. 그 뒤에 새로고침을 눌렀습니다.
+        Snapshot justCollected = new Snapshot("sec.13f.x.q8", null, "json", "ok", null,
+                Instant.now().minus(Duration.ofMinutes(3)));
+        StoreRepository repository = repositoryWithRefresh(justCollected, Instant.now());
+
+        RecordingCollector collector = new RecordingCollector();
+        reader(repository, collector).read("sec.13f.x.q8", Datasets.MAX_AGE_SLOW, "sec_13f");
+
+        assertThat(collector.waits)
+                .as("3분 전 받은 분기 공시를 다시 받을 이유가 없습니다")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("충분히 오래된 분기 공시는 새로고침으로 다시 받는다")
+    void manualRefreshStillRefetchesOldSlowData() {
+        Snapshot old = new Snapshot("sec.13f.x.q8", null, "json", "ok", null,
+                Instant.now().minus(Duration.ofHours(7)));
+        StoreRepository repository = repositoryWithRefresh(old, Instant.now());
+
+        RecordingCollector collector = new RecordingCollector();
+        reader(repository, collector).read("sec.13f.x.q8", Datasets.MAX_AGE_SLOW, "sec_13f");
+
+        assertThat(collector.waits).containsExactly(false);
+    }
+
+    @Test
+    @DisplayName("시세성 데이터는 새로고침 의도를 그대로 존중한다")
+    void manualRefreshRefetchesRealtimeData() {
+        // 새로고침을 누르는 이유는 대개 이쪽입니다. 2분 전 값이라도 다시 받습니다.
+        Snapshot recent = new Snapshot("macro.collected", null, "json", "ok", null,
+                Instant.now().minus(Duration.ofMinutes(2)));
+        StoreRepository repository = repositoryWithRefresh(recent, Instant.now());
+
+        RecordingCollector collector = new RecordingCollector();
+        reader(repository, collector).read("macro.collected", Datasets.MAX_AGE_REALTIME,
+                "macro_collected");
+
+        assertThat(collector.waits).containsExactly(false);
+    }
+
+    @Test
+    @DisplayName("데이터셋 종류별 최소 재수집 간격")
+    void minRefetchIntervalsByClass() {
+        assertThat(Datasets.minRefetchSeconds(Datasets.MAX_AGE_REALTIME)).isEqualTo(60);
+        assertThat(Datasets.minRefetchSeconds(Datasets.MAX_AGE_DAILY)).isEqualTo(30 * 60);
+        assertThat(Datasets.minRefetchSeconds(Datasets.MAX_AGE_SLOW)).isEqualTo(6 * 60 * 60);
+    }
+
 }

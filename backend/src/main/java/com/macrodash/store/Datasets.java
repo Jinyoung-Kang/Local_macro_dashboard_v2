@@ -71,4 +71,34 @@ public final class Datasets {
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */
     public static final long MAX_AGE_SLOW = 24 * 60 * 60L;
+
+    /**
+     * 수동 새로고침이라도 이 간격 안에는 다시 받지 않습니다.
+     *
+     * <p><b>왜 필요한가</b> — 수동 새로고침은 "이 시각 이전 저장본은 낡은
+     * 것으로 본다"는 기준을 세웁니다. 그런데 그 기준이 데이터셋 종류를
+     * 가리지 않아서, 버튼 한 번에 <b>분기마다 바뀌는 13F까지</b> 다시
+     * 받았습니다. 실제 로그에서 5분 사이에 SEC 전수 수집이 세 번 돌았습니다.
+     *
+     * <pre>
+     * 07:20:33 sec_13f 51.80s   ← 스케줄(weekly)
+     * 07:21:34 POST /refresh → 07:22:01 sec_13f 31.77s
+     * 07:24:33 POST /refresh → 07:24:44 sec_13f 32.05s
+     * </pre>
+     *
+     * SEC는 호출 한도를 명시하고 초과하면 차단합니다. 3분 전에 받은
+     * 분기 공시를 다시 받을 이유는 없습니다 — 새로 나온 것이 없습니다.
+     *
+     * <p>빠르게 바뀌는 데이터는 거의 제한하지 않습니다(1분). 새로고침을
+     * 누르는 이유가 대개 그쪽이기 때문입니다.
+     */
+    public static long minRefetchSeconds(long maxAgeSeconds) {
+        if (maxAgeSeconds <= MAX_AGE_REALTIME) {
+            return 60L;                 // 시세성: 1분
+        }
+        if (maxAgeSeconds <= MAX_AGE_DAILY) {
+            return 30 * 60L;            // 일별 확정치: 30분
+        }
+        return 6 * 60 * 60L;            // 분기 공시 등: 6시간
+    }
 }
