@@ -135,4 +135,54 @@ class AiServiceContentTypeTest {
         assertThat(result.get().get("status")).isEqualTo(false);
         assertThat(String.valueOf(result.get().get("error"))).contains("API Key 누락");
     }
+
+    // =========================================================================
+    // 오류 문구는 "다음에 뭘 하면 되는지"까지 말해야 합니다.
+    // =========================================================================
+    // 화면에 이렇게만 떴습니다.
+    //   생성 실패: I/O error on POST request for "...": Read timed out
+    // 읽는 사람이 할 수 있는 일이 없습니다.
+
+    @Test
+    @DisplayName("타임아웃이면 대기 시간과 대안을 알려준다")
+    void timeoutMessageIsActionable() {
+        String message = new AiService()
+                .describe(new RuntimeException("I/O error on POST request: Read timed out"));
+
+        assertThat(message).contains("240초");
+        assertThat(message).contains("자동 탐색");
+        assertThat(message).contains("AI_TIMEOUT_SECONDS");
+        assertThat(message).doesNotContain("Read timed out");
+    }
+
+    @Test
+    @DisplayName("401·404·429는 원인별로 다르게 말한다")
+    void httpErrorsAreExplained() {
+        AiService service = new AiService();
+
+        assertThat(service.describe(new RuntimeException("401 Unauthorized")))
+                .contains("API 키");
+        assertThat(service.describe(new RuntimeException("404 Not Found: no such model")))
+                .contains("모델");
+        assertThat(service.describe(new RuntimeException("429 Too Many Requests")))
+                .contains("한도");
+    }
+
+    @Test
+    @DisplayName("모르는 오류는 그대로 보여준다 — 설명을 지어내지 않는다")
+    void unknownErrorIsPassedThrough() {
+        String raw = "connection reset by peer";
+        assertThat(new AiService().describe(new RuntimeException(raw))).isEqualTo(raw);
+    }
+
+    @Test
+    @DisplayName("대기 한도는 설정으로 바꿀 수 있고 최소값이 있다")
+    void timeoutIsConfigurableWithFloor() {
+        assertThat(new AiService(600).describe(new RuntimeException("Read timed out")))
+                .contains("600초");
+        // 1초 같은 값을 넣어 모든 호출을 실패시키는 일은 막습니다.
+        assertThat(new AiService(1).describe(new RuntimeException("Read timed out")))
+                .contains("30초");
+    }
+
 }

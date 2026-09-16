@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -107,11 +108,34 @@ public class AiService {
     @Value("${dashboard.ai.cloudflare-api-token:}")
     private String cloudflareToken;
 
+    /**
+     * 응답 대기 한도(초).
+     *
+     * <p>추론형 모델(gpt-oss, DeepSeek-R1 등)은 생성 전에 긴 추론 단계를 거쳐
+     * 몇 분이 걸릴 수 있습니다. 실제로 150초에서 이렇게 끊겼습니다.
+     * <pre>AI 호출 실패 (NVIDIA — OpenAI GPT-OSS 20B): Read timed out</pre>
+     */
+    private final int timeoutSeconds;
+
+    /** 테스트용 기본값. Spring은 아래 @Autowired 생성자를 씁니다. */
     public AiService() {
+        this(240);
+    }
+
+    // ⚠️ 생성자가 둘이고 아무것도 표시하지 않으면 Spring은 무인자 생성자를 골라
+    //    설정값을 조용히 무시합니다. 어느 쪽을 쓸지 명시해야 합니다.
+    @Autowired
+    public AiService(@Value("${dashboard.ai.timeout-seconds:240}") int timeoutSeconds) {
+        this.timeoutSeconds = Math.max(30, timeoutSeconds);
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
-        factory.setReadTimeout(Duration.ofSeconds(150));
+        factory.setReadTimeout(Duration.ofSeconds(this.timeoutSeconds));
         this.http = RestClient.builder().requestFactory(factory).build();
+    }
+
+    /** 실제로 적용된 대기 한도(초). 설정이 먹었는지 확인하는 용도. */
+    public int timeoutSeconds() {
+        return timeoutSeconds;
     }
 
     /** 화면이 선택지를 그릴 때 쓰는 목록 + 키 보유 여부. */
@@ -240,7 +264,7 @@ public class AiService {
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - started;
             log.warn("AI 호출 실패 ({}): {}", label, e.getMessage());
-            return failure(label, e.getMessage(), elapsed);
+            return failure(label, describe(e), elapsed);
         }
     }
 
@@ -315,6 +339,33 @@ public class AiService {
         return text.length() > 300 ? text.substring(0, 300) + "…" : text;
     }
 
+    /**
+     * 예외를 "다음에 뭘 하면 되는지"가 보이는 문장으로 바꿉니다.
+     *
+     * <p>"Read timed out"만 보여 주면 사용자가 할 수 있는 일이 없습니다.
+     */
+    String describe(Exception e) {
+        String raw = String.valueOf(e.getMessage());
+        String lowered = raw.toLowerCase();
+
+        if (lowered.contains("timed out") || lowered.contains("timeout")) {
+            return ("%d초 안에 응답하지 않았습니다. 추론형 모델은 오래 걸릴 수 있습니다 — "
+                    + "'⚡ 자동 탐색'을 고르면 응답이 빠른 엔진으로 넘어가고, "
+                    + "더 기다리려면 .env에 AI_TIMEOUT_SECONDS를 늘리세요.")
+                    .formatted(timeoutSeconds);
+        }
+        if (raw.contains("401") || lowered.contains("unauthorized")) {
+            return "인증이 거절됐습니다(401). .env의 API 키를 확인하세요 — " + raw;
+        }
+        if (raw.contains("404")) {
+            return "모델을 찾지 못했습니다(404). 제공자가 모델 이름을 바꿨을 수 있습니다 — " + raw;
+        }
+        if (raw.contains("429")) {
+            return "호출 한도에 걸렸습니다(429). 잠시 후 다시 시도하거나 다른 엔진을 고르세요.";
+        }
+        return raw;
+    }
+
     private String extractOpenAiText(JsonNode response) {
         if (response == null) {
             return null;
@@ -367,7 +418,7 @@ public class AiService {
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - started;
             log.warn("Cloudflare AI 호출 실패: {}", e.getMessage());
-            return failure(label, e.getMessage(), elapsed);
+            return failure(label, describe(e), elapsed);
         }
     }
 

@@ -66,6 +66,8 @@ dashboard:
     cerebras-api-key: ${CEREBRAS_API_KEY:}
     cloudflare-account-id: ${CLOUDFLARE_ACCOUNT_ID:}
     cloudflare-api-token: ${CLOUDFLARE_API_TOKEN:}
+    # 추론형 모델(gpt-oss, DeepSeek-R1 등)은 응답까지 몇 분이 걸릴 수 있습니다.
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:240}
 
 logging:
   level:

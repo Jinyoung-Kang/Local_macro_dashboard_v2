@@ -65,6 +65,9 @@ services:
       # 외부 API 키 — 없으면 해당 기능만 비활성화됩니다.
       FRED_API_KEY: "${FRED_API_KEY:-}"
       KRX_API_KEY: "${KRX_API_KEY:-}"
+      # pykrx 로그인 조회(선택). 없으면 비로그인으로 동작합니다.
+      KRX_ID: "${KRX_ID:-}"
+      KRX_PW: "${KRX_PW:-}"
       KIS_APP_KEY: "${KIS_APP_KEY:-}"
       KIS_APP_SECRET: "${KIS_APP_SECRET:-}"
       LS_APP_KEY: "${LS_APP_KEY:-}"
@@ -103,6 +106,7 @@ services:
       APP_PASSWORD: "${APP_PASSWORD:-admin1234@}"
       JWT_SECRET: "${JWT_SECRET:-change-me-please-change-me-please-32b}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:3000}"
+      AI_TIMEOUT_SECONDS: "${AI_TIMEOUT_SECONDS:-240}"
       NVIDIA_API_KEY: "${NVIDIA_API_KEY:-}"
       CEREBRAS_API_KEY: "${CEREBRAS_API_KEY:-}"
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"

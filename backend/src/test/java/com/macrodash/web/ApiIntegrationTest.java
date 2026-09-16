@@ -47,7 +47,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "dashboard.password=test-password",
         "dashboard.jwt-secret=integration-test-secret-key-32-bytes!",
         "dashboard.read-mode=store_only",
-        "dashboard.collector-url=http://localhost:1"     // 수집기가 없어도 화면은 떠야 합니다
+        "dashboard.collector-url=http://localhost:1",    // 수집기가 없어도 화면은 떠야 합니다
+        "dashboard.ai.timeout-seconds=333"               // 설정 주입이 실제로 먹는지 확인용
 })
 class ApiIntegrationTest {
 
@@ -56,6 +57,9 @@ class ApiIntegrationTest {
 
     @Autowired
     TestRestTemplate rest;
+
+    @Autowired
+    com.macrodash.service.AiService ai;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -227,6 +231,14 @@ class ApiIntegrationTest {
                     .as("quarters=%d 에서 최소 한 분기는 나와야 합니다", quarters)
                     .isGreaterThanOrEqualTo(1);
         }
+    }
+
+    @Test
+    @DisplayName("AI 대기 한도 설정이 실제로 적용된다")
+    void aiTimeoutPropertyIsInjected() {
+        // 생성자가 둘인데 아무 표시가 없으면 Spring이 무인자 쪽을 골라
+        // AI_TIMEOUT_SECONDS가 조용히 무시됩니다. 실제 빈으로 확인합니다.
+        assertThat(ai.timeoutSeconds()).isEqualTo(333);
     }
 
     private JsonNode authorizedGet(String path) {

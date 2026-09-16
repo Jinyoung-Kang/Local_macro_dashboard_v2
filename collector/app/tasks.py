@@ -20,6 +20,7 @@ app/tasks.py
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -606,8 +607,89 @@ ALL_TASKS: tuple[Task, ...] = (
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}
 
 
+# ==============================================================================
+# 같은 태스크의 동시 실행 합치기 (coalescing)
+# ==============================================================================
+# 화면 한 번 여는 것만으로 같은 태스크가 여러 번 돕니다. 백엔드는 스냅샷을
+# 읽다가 오래됐으면 수집을 요청하는데, 한 화면이 여러 스냅샷을 병렬로 읽으면
+# 그 요청이 각각 나갑니다. 실제 로그에서 확인된 모습입니다.
+#
+#   05:02:02 수집 시작 (cot_history): 1개 작업   ← 같은 초에 4번
+#   05:02:02 수집 시작 (cot_history): 1개 작업
+#   05:02:02 수집 시작 (cot_history): 1개 작업
+#   05:02:02 수집 시작 (cot_history): 1개 작업
+#
+#   05:02:26 ✅ fred_series 80.03s   ← 스케줄러(slow)
+#   05:03:07 ✅ fred_series 36.30s   ← 요청 1
+#   05:03:08 ✅ fred_series 50.43s   ← 요청 2  (셋이 동시에 FRED를 두드림)
+#
+# 외부 API 호출이 그대로 몇 배가 되고(FRED·SEC는 호출 한도가 있습니다),
+# 같은 행을 동시에 쓰게 됩니다.
+#
+# 뒤늦게 온 호출을 **거절하지 않고 기다리게** 합니다. 호출자가 원하는 것은
+# "지금 새로 받아라"가 아니라 "신선한 값을 달라"이기 때문입니다. 이미 도는
+# 수집이 끝나면 그 결과를 함께 씁니다.
+_COALESCE_WAIT_SECONDS = 180.0
+
+_inflight: dict[str, "_InFlight"] = {}
+_inflight_lock = threading.Lock()
+
+
+class _InFlight:
+    """실행 중인 태스크 하나와 그 결과를 기다리는 자리."""
+
+    __slots__ = ("done", "result")
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.result: tuple[bool, str] = (False, "결과 없음")
+
+
 def run_task(task: Task, run_id: int | None = None) -> tuple[bool, str]:
-    """태스크 1건을 실행하고 결과를 DB에 남깁니다."""
+    """
+    태스크 1건을 실행하고 결과를 DB에 남깁니다.
+
+    같은 태스크가 이미 돌고 있으면 새로 시작하지 않고 그 결과를 기다립니다.
+    """
+    with _inflight_lock:
+        entry = _inflight.get(task.name)
+        leader = entry is None
+        if leader:
+            entry = _InFlight()
+            _inflight[task.name] = entry
+
+    if not leader:
+        return _wait_for_inflight(task, entry)
+
+    try:
+        result = _execute_task(task, run_id)
+        entry.result = result
+        return result
+    except BaseException as exc:      # 기다리는 쪽을 영원히 붙잡아 두지 않습니다.
+        entry.result = (False, f"{type(exc).__name__}: {exc}")
+        raise
+    finally:
+        # 먼저 등록을 지워야 다음 호출이 새 수집을 시작할 수 있습니다.
+        with _inflight_lock:
+            _inflight.pop(task.name, None)
+        entry.done.set()
+
+
+def _wait_for_inflight(task: Task, entry: "_InFlight") -> tuple[bool, str]:
+    """이미 도는 같은 태스크가 끝나기를 기다렸다가 그 결과를 씁니다."""
+    logger.info("%s: 이미 실행 중입니다. 새로 시작하지 않고 결과를 기다립니다.", task.name)
+
+    if not entry.done.wait(timeout=_COALESCE_WAIT_SECONDS):
+        return False, (
+            f"이미 실행 중인 수집을 {int(_COALESCE_WAIT_SECONDS)}초 기다렸지만 "
+            "끝나지 않았습니다"
+        )
+
+    ok, detail = entry.result
+    return ok, f"{detail} (동시에 실행 중이던 수집 결과를 함께 사용)"
+
+
+def _execute_task(task: Task, run_id: int | None) -> tuple[bool, str]:
     started_wall = datetime.now(timezone.utc)
     started = time.perf_counter()
 

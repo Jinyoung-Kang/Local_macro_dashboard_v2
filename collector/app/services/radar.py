@@ -22,7 +22,10 @@ app/services/radar.py
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
+import os
 import re
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -54,12 +57,31 @@ PYKRX_INVESTORS = {
 
 INTERVAL_LABELS = {"TODAY": "당일", "DAYS_5": "5거래일", "DAYS_20": "20거래일"}
 
-try:  # pykrx는 선택 의존성입니다 (KRX가 차단하면 어차피 동작하지 않습니다).
-    from pykrx import stock as pykrx_stock
+# pykrx는 선택 의존성입니다 (KRX가 차단하면 어차피 동작하지 않습니다).
+#
+# pykrx 1.2.x는 import 시점에 `print()`로 로그인 상태를 뱉습니다.
+#
+#     KRX 로그인 실패: KRX_ID 또는 KRX_PW 환경 변수가 설정되지 않았습니다.
+#
+# 수집기 로그의 첫 줄이 이것이면 우리 앱이 뭔가 실패한 것처럼 보입니다.
+# 사실은 "선택 기능인 KRX 로그인을 쓰지 않는다"는 뜻일 뿐입니다. 삼켜 버리지
+# 않고 **우리 로거로 옮겨** 뜻이 통하게 적습니다.
+_pykrx_import_output = io.StringIO()
+try:
+    with contextlib.redirect_stdout(_pykrx_import_output):
+        from pykrx import stock as pykrx_stock
     PYKRX_AVAILABLE = True
 except Exception:  # noqa: BLE001
     pykrx_stock = None
     PYKRX_AVAILABLE = False
+
+PYKRX_LOGGED_IN = bool(os.environ.get("KRX_ID") and os.environ.get("KRX_PW"))
+if PYKRX_AVAILABLE and not PYKRX_LOGGED_IN:
+    logger.info(
+        "pykrx를 비로그인으로 씁니다. KRX가 비로그인 조회를 막으면 수급 레이더의 "
+        "pykrx 단계만 건너뜁니다(KIS·Daum·Naver·누적 이력으로 대체). "
+        "KRX 홈페이지 계정이 있으면 .env에 KRX_ID·KRX_PW를 넣어 쓸 수 있습니다."
+    )
 
 
 # ==============================================================================
@@ -627,6 +649,9 @@ def test_pykrx_connection() -> dict:
             "빈 결과입니다. KRX가 pykrx에 JSON 대신 차단 페이지를 주는 상태일 수 "
             "있습니다. 당일 조회는 KIS/Daum/Naver로 정상 동작하며, 과거 조회는 "
             "누적 이력으로 대체됩니다."
+            + ("" if PYKRX_LOGGED_IN else
+               " KRX 홈페이지 계정이 있으면 .env에 KRX_ID·KRX_PW를 넣어 "
+               "로그인 조회를 시도해 볼 수 있습니다(선택).")
         ),
     }
 

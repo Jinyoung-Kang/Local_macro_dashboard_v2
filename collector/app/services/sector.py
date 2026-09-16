@@ -18,9 +18,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import yfinance as yf
 
+from .. import yfcache
+
 from ..http import brief_error
 
 logger = logging.getLogger(__name__)
+
+# 병렬 수집 전에 캐시 폴더를 만들어 둡니다 (yfcache 참고).
+yfcache.configure()
 
 
 def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:

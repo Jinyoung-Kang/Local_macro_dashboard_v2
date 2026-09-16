@@ -32,10 +32,15 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
+from .. import yfcache
+
 from .. import settings
 from ..http import brief_error, get_session
 
 logger = logging.getLogger(__name__)
+
+# 병렬 수집 전에 캐시 폴더를 만들어 둡니다 (yfcache 참고).
+yfcache.configure()
 
 KST = ZoneInfo("Asia/Seoul")
 
