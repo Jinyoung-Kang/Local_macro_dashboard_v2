@@ -1,0 +1,123 @@
+package com.macrodash.web;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.macrodash.collector.CollectorClient;
+import com.macrodash.service.AiService;
+import com.macrodash.service.SnapshotTextService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * 🤖 AI 종합 리포트 · 🤖 AI 연결 테스트 · 🔌 토스증권 API 테스트.
+ */
+@RestController
+@RequestMapping("/api/ai")
+public class AiController {
+
+    private final AiService ai;
+    private final SnapshotTextService snapshotText;
+    private final CollectorClient collector;
+
+    public AiController(AiService ai, SnapshotTextService snapshotText, CollectorClient collector) {
+        this.ai = ai;
+        this.snapshotText = snapshotText;
+        this.collector = collector;
+    }
+
+    @GetMapping("/engines")
+    public Map<String, Object> engines() {
+        return ai.engines();
+    }
+
+    @GetMapping("/report-types")
+    public Map<String, Object> reportTypes() {
+        return Map.of("types", snapshotText.reportPrompts().keySet());
+    }
+
+    /** 수집 데이터 원본 텍스트 (AI 입력 · 복사용). */
+    @GetMapping("/snapshot-text")
+    public Map<String, Object> snapshotText() {
+        return Map.of("text", snapshotText.fullText());
+    }
+
+    public record ReportRequest(String engineId, String reportType, String extraInstruction) {
+    }
+
+    /**
+     * 수집 데이터 기반 AI 리포트.
+     *
+     * <p>프롬프트에는 대시보드 원본 텍스트가 그대로 들어갑니다. AI가 데이터에
+     * 없는 수치를 지어내지 않도록 "주어진 데이터만 근거로 삼으라"는 지시와
+     * 추정치 경고가 함께 전달됩니다.
+     */
+    @PostMapping("/report")
+    public Map<String, Object> report(@RequestBody ReportRequest request) {
+        Map<String, String> prompts = snapshotText.reportPrompts();
+        String reportType = (request.reportType() == null || !prompts.containsKey(request.reportType()))
+                ? prompts.keySet().iterator().next()
+                : request.reportType();
+
+        String systemPrompt = prompts.get(reportType);
+        String data = snapshotText.fullText();
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("아래는 대시보드가 수집한 최신 원본 데이터입니다.\n\n");
+        prompt.append(data);
+        prompt.append("\n\n요청: ").append(reportType).append("을(를) 작성하십시오.");
+        if (request.extraInstruction() != null && !request.extraInstruction().isBlank()) {
+            prompt.append("\n추가 지시: ").append(request.extraInstruction());
+        }
+
+        Map<String, Object> result = ai.generate(request.engineId(), prompt.toString(), systemPrompt);
+
+        Map<String, Object> out = new LinkedHashMap<>(result);
+        out.put("reportType", reportType);
+        out.put("promptChars", prompt.length());
+        return out;
+    }
+
+    /** AI 연결 테스트 (짧은 프롬프트로 엔진 응답만 확인). */
+    @PostMapping("/test")
+    public Map<String, Object> test(@RequestParam(defaultValue = "auto") String engineId,
+                                    @RequestParam(required = false) String prompt) {
+        String text = (prompt == null || prompt.isBlank())
+                ? "한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요."
+                : prompt;
+        return ai.generate(engineId, text, "간결하게 한국어로 답하십시오.");
+    }
+
+    // ----------------------------------------------------- 🔌 토스 API
+    @GetMapping("/toss/diagnostics")
+    public Map<String, Object> tossDiagnostics() {
+        return unwrap(collector.tossDiagnostics(),
+                "수집기에 연결하지 못했습니다. 토스 진단은 수집기가 수행합니다.");
+    }
+
+    @GetMapping("/toss/exchange-rate")
+    public Map<String, Object> tossExchangeRate(@RequestParam(defaultValue = "USD") String base,
+                                                @RequestParam(defaultValue = "KRW") String quote) {
+        return unwrap(collector.tossExchangeRate(base, quote), "수집기에 연결하지 못했습니다.");
+    }
+
+    @GetMapping("/toss/indices")
+    public Map<String, Object> tossIndices(@RequestParam String symbols) {
+        return unwrap(collector.tossIndices(symbols), "수집기에 연결하지 못했습니다.");
+    }
+
+    private Map<String, Object> unwrap(Optional<JsonNode> payload, String failureMessage) {
+        if (payload.isEmpty()) {
+            return Map.of("ok", false, "message", failureMessage);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        payload.get().fields().forEachRemaining(entry -> out.put(entry.getKey(), entry.getValue()));
+        return out;
+    }
+}

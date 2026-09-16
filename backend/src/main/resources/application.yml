@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: macro-dashboard-backend
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/macrodash}
+    username: ${DATABASE_USER:macro}
+    password: ${DATABASE_PASSWORD:macro}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+  cache:
+    type: ${CACHE_TYPE:redis}
+    redis:
+      # 캐시 TTL은 데이터 성격에 맞춥니다. 장중 시세는 짧게, 일별 확정치는 길게.
+      time-to-live: 60s
+      cache-null-values: false
+
+  jackson:
+    default-property-inclusion: always
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+dashboard:
+  # 화면 접속 비밀번호 (구버전 [auth] password와 같은 역할)
+  password: ${APP_PASSWORD:admin1234@}
+  # 세션 토큰 서명 키 — 운영에서는 반드시 무작위 값으로 바꾸세요
+  jwt-secret: ${JWT_SECRET:change-me-please-change-me-please-32b}
+  session-minutes: ${SESSION_MINUTES:720}
+
+  # auto | store_only | live_only
+  #   auto       저장본이 신선하면 사용, 오래되면 수집기에 수집 요청
+  #   store_only 저장본만 사용 (화면이 절대 외부를 기다리지 않음)
+  #   live_only  항상 수집 요청 (디버깅용)
+  read-mode: ${DASHBOARD_READ_MODE:auto}
+
+  collector-url: ${COLLECTOR_URL:http://localhost:8000}
+  collector-token: ${COLLECTOR_API_TOKEN:}
+  collector-timeout-seconds: ${COLLECTOR_TIMEOUT_SECONDS:90}
+
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
+
+  ai:
+    nvidia-api-key: ${NVIDIA_API_KEY:}
+    cerebras-api-key: ${CEREBRAS_API_KEY:}
+    cloudflare-account-id: ${CLOUDFLARE_ACCOUNT_ID:}
+    cloudflare-api-token: ${CLOUDFLARE_API_TOKEN:}
+
+logging:
+  level:
+    root: INFO
+    com.macrodash: ${LOG_LEVEL:INFO}

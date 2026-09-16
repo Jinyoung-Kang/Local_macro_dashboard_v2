@@ -1,0 +1,395 @@
+"""
+app/services/market.py
+yfinance 기반 시세 수집 (티커 시계열 + 매크로 카드).
+
+[구버전에서 반드시 지켜야 할 규칙 — 그대로 옮겼습니다]
+
+1. ^MOVE는 Yahoo가 제공하지 않습니다. ^TNX 변동성에서 역산한 **대용 추정치**를
+   쓰되, isProxy/sourceLabel을 반드시 달아 화면과 AI가 공식 지표로 오인하지
+   않게 합니다. 실제 MOVE 임계치(80/120/140)를 이 값에 그대로 적용하면
+   잘못된 판단으로 이어집니다.
+
+2. 분봉 피드가 마지막 봉을 반복하면 최근 두 봉의 종가가 같아집니다. 이때
+   "변화 없음(0.00%)"으로 위장하지 않습니다. 일봉에서 직전 거래일 종가를
+   찾아 보완하고, 그래도 없으면 전일 대비를 N/A로 둡니다.
+
+3. 일봉 폴백 데이터의 시:분:초는 신뢰할 수 없으므로 "YYYY-MM-DD 일봉 기준"
+   으로 표시합니다. 거짓 체결 시각을 만들지 않습니다.
+
+4. 엔/원은 Yahoo가 '1엔당 원'을 주므로 화면 표기(100엔당)와 다릅니다.
+   배율은 **원본 현재가**로 한 번만 판정하고 현재가·전일값에 똑같이 적용합니다
+   (스케일 적용 후의 값으로 판정하면 전일값만 100배 틀어집니다).
+"""
+from __future__ import annotations
+
+import logging
+import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+import yfinance as yf
+
+logger = logging.getLogger(__name__)
+
+KST = ZoneInfo("Asia/Seoul")
+
+MOVE_SYMBOLS = {"^MOVE", "MOVE", "MOVE:INDEX"}
+
+_PERIOD_DAYS = {
+    "1d": 1, "5d": 5, "1mo": 31, "3mo": 92, "6mo": 183,
+    "1y": 366, "2y": 731, "5y": 1827,
+}
+
+
+# ==============================================================================
+# 1. 티커 시계열
+# ==============================================================================
+def collect_ticker(symbol: str, period: str = "1mo") -> dict:
+    """
+    티커 1종의 시계열을 수집합니다.
+
+    반환 계약(JSON):
+    {
+      "symbol": "^VIX", "period": "5y",
+      "isIntraday": bool,        # 분봉 수집 성공 여부
+      "isProxy": bool,           # 실제 지표가 아닌 대용 추정치인가
+      "isSynthetic": bool,       # 네트워크까지 실패해 만든 자리표시 값인가
+      "sourceLabel": str | None,
+      "points": [{"date": ISO, "open":..., "high":..., "low":..., "close":..., "volume":...}]
+    }
+    수집 실패 시 points가 빈 리스트입니다.
+    """
+    if not symbol:
+        return _empty(symbol, period)
+
+    if symbol in MOVE_SYMBOLS:
+        return _collect_move_proxy(symbol, period)
+
+    frame, is_intraday = _download(symbol, period)
+    if frame is None or frame.empty:
+        logger.warning("yfinance 수집 실패 (%s)", symbol)
+        return _empty(symbol, period)
+
+    return {
+        "symbol": symbol,
+        "period": period,
+        "isIntraday": is_intraday,
+        "isProxy": False,
+        "isSynthetic": False,
+        "sourceLabel": None,
+        "points": _frame_to_points(frame),
+    }
+
+
+def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool]:
+    """
+    분봉 우선 수집. ^TNX/^TYX 같은 심볼은 분봉이 없어 일봉으로 폴백됩니다.
+    폴백 여부를 호출부가 알아야 하므로 (프레임, 분봉여부)를 함께 돌려줍니다.
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+
+        if period in ("1d", "5d"):
+            for interval in ("1m", "5m"):
+                frame = ticker.history(period=period, interval=interval)
+                if frame is not None and not frame.empty:
+                    return _sanitize(frame), True
+            frame = ticker.history(period=period)
+            return _sanitize(frame), False
+
+        frame = ticker.history(period=period)
+        return _sanitize(frame), False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("yfinance 수집 예외 (%s): %s", symbol, exc)
+        return None, False
+
+
+def _sanitize(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+    if frame is None or frame.empty or "Close" not in frame.columns:
+        return None
+    out = frame.dropna(subset=["Close"])
+    out = out[out["Close"] > 0]
+    return out if not out.empty else None
+
+
+def _collect_move_proxy(symbol: str, period: str) -> dict:
+    """
+    ⚠️ 실제 ICE BofA MOVE 지수가 아닙니다.
+
+    Yahoo는 MOVE를 제공하지 않습니다. 10년물 금리(^TNX)의 변동성에서 역산한
+    대용값이며, 실제 MOVE와 수치가 다릅니다. 실제 값이 필요하면 ICE/Bloomberg
+    유료 피드를 연결하고 이 분기를 교체해야 합니다.
+    """
+    base_period = period if period not in ("1d", "5d") else "1mo"
+    frame, _ = _download("^TNX", base_period)
+
+    if frame is not None and len(frame) >= 2:
+        closes = frame["Close"]
+        rolling_bp_vol = closes.diff().rolling(window=5, min_periods=1).std().fillna(0.05)
+        proxy_close = (88.0 + (rolling_bp_vol * 190.0) + (closes * 2.6)).round(2)
+
+        proxy = frame.copy()
+        proxy["Close"] = proxy_close
+        proxy["Open"] = proxy_close
+        proxy["High"] = (proxy_close * 1.01).round(2)
+        proxy["Low"] = (proxy_close * 0.99).round(2)
+
+        return {
+            "symbol": symbol,
+            "period": period,
+            "isIntraday": False,
+            "isProxy": True,
+            "isSynthetic": False,
+            "sourceLabel": "^TNX 변동성 기반 추정치 (실제 ICE BofA MOVE 아님)",
+            "points": _frame_to_points(proxy),
+        }
+
+    # 네트워크까지 실패한 경우.
+    # 구버전은 여기서 사인파 합성 시계열을 만들어 채웠습니다. 값에 정보가
+    # 전혀 없는데 차트는 그럴듯하게 그려지므로, 이 버전에서는 만들지 않고
+    # 빈 결과를 돌려줍니다. 화면은 "수집 실패"를 그대로 표시합니다.
+    logger.error("MOVE 대용 추정치 계산 실패: ^TNX 수집 불가")
+    return _empty(symbol, period)
+
+
+def _frame_to_points(frame: pd.DataFrame) -> list[dict]:
+    points: list[dict] = []
+    for index, row in frame.iterrows():
+        timestamp = pd.Timestamp(index)
+        points.append({
+            "date": timestamp.isoformat(),
+            "open": _safe_float(row.get("Open")),
+            "high": _safe_float(row.get("High")),
+            "low": _safe_float(row.get("Low")),
+            "close": _safe_float(row.get("Close")),
+            "volume": _safe_float(row.get("Volume")),
+        })
+    return points
+
+
+def _empty(symbol: str, period: str) -> dict:
+    return {
+        "symbol": symbol,
+        "period": period,
+        "isIntraday": False,
+        "isProxy": symbol in MOVE_SYMBOLS,
+        "isSynthetic": False,
+        "sourceLabel": None,
+        "points": [],
+    }
+
+
+def slice_period(payload: dict, period: str) -> dict:
+    """
+    저장된 긴 시계열에서 요청 기간만큼 최근 구간을 잘라 냅니다.
+
+    ^VIX/^MOVE는 화면 여러 곳이 서로 다른 기간으로 요청합니다. 기간마다
+    스냅샷을 만들면 저장본이 난립하므로 가장 긴 기간으로 한 번만 저장하고
+    짧은 요청은 잘라 씁니다(13F에서 q1을 q8에서 유도하는 것과 같은 방식).
+    """
+    days = _PERIOD_DAYS.get(period)
+    points = payload.get("points") or []
+    if not days or not points:
+        return payload
+
+    try:
+        last = pd.Timestamp(points[-1]["date"])
+        cutoff = last - pd.Timedelta(days=days)
+        sliced = [p for p in points if pd.Timestamp(p["date"]) >= cutoff]
+    except Exception:  # noqa: BLE001
+        return payload
+
+    if len(sliced) < 2:
+        return payload
+    return {**payload, "period": period, "points": sliced}
+
+
+# ==============================================================================
+# 2. 매크로 카드
+# ==============================================================================
+def collect_macro_cards(categories: list[dict]) -> dict:
+    """
+    카테고리별 지표 카드를 수집합니다 (5일 분봉 기준).
+
+    반환 계약(JSON):
+    {
+      "categories": [
+        {"id","title","note","items":[{key,name,note,ticker,status,price,delta,pct,
+                                       priceStr,deltaStr,prevStr,lastTs,prevSource?}]}
+      ],
+      "rates": {"us02y": {...}, "us10y": {...}}   # 스프레드 계산용 원시값
+    }
+    status: ok(전일 대비 있음) | single(현재가만) | fail(수집 실패)
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    tickers = [
+        item["ticker"]
+        for category in categories
+        for item in category["items"]
+    ]
+
+    with ThreadPoolExecutor(max_workers=min(12, max(1, len(tickers)))) as pool:
+        frames = dict(zip(
+            tickers,
+            pool.map(lambda symbol: collect_ticker(symbol, "5d"), tickers),
+        ))
+
+    out_categories = []
+    rates: dict[str, dict] = {}
+
+    for category in categories:
+        items = []
+        for spec in category["items"]:
+            card = _build_card(spec, frames.get(spec["ticker"]))
+            items.append(card)
+            if spec["key"] in ("us02y", "us10y"):
+                rates[spec["key"]] = {
+                    "current": card.get("price"),
+                    "previous": card.get("prevValue"),
+                }
+        out_categories.append({
+            "id": category["id"],
+            "title": category["title"],
+            "note": category.get("note"),
+            "items": items,
+        })
+
+    return {"categories": out_categories, "rates": rates}
+
+
+def _build_card(spec: dict, payload: dict | None) -> dict:
+    base = {
+        "key": spec["key"],
+        "name": spec["name"],
+        "note": spec.get("note"),
+        "ticker": spec["ticker"],
+    }
+
+    points = (payload or {}).get("points") or []
+    if not points:
+        return {**base, "status": "fail"}
+
+    is_intraday = bool((payload or {}).get("isIntraday"))
+    raw_current = points[-1]["close"]
+    if raw_current is None:
+        return {**base, "status": "fail"}
+
+    # 엔/원 100엔당 환산. 원본 현재가로 한 번만 판정합니다.
+    scale = 100.0 if (spec["key"] == "jpykrw" and raw_current < 50) else 1.0
+    current = raw_current * scale
+    last_ts = _format_timestamp(points[-1]["date"], is_intraday)
+
+    previous = None
+    prev_source = None
+
+    if len(points) >= 2 and points[-2]["close"] is not None:
+        candidate = points[-2]["close"] * scale
+        if candidate != current:
+            previous = candidate
+
+    if previous is None:
+        # 분봉이 정체됐거나 봉이 하나뿐입니다. 일봉에서 직전 거래일 종가를
+        # 찾습니다. 못 찾으면 "변화 없음(0.00%)"으로 위장하지 않고 N/A입니다.
+        daily_prev = previous_close_from_daily(spec["ticker"], points[-1]["date"])
+        if daily_prev is not None and daily_prev * scale != current:
+            previous = daily_prev * scale
+            prev_source = "일봉 직전 거래일 종가"
+
+    if previous is None:
+        return {
+            **base,
+            "status": "single",
+            "price": current,
+            "priceStr": f"{current:,.2f}",
+            "delta": None,
+            "pct": None,
+            "deltaStr": "N/A",
+            "prevStr": "N/A",
+            "prevValue": None,
+            "lastTs": last_ts,
+        }
+
+    delta = current - previous
+    pct = (delta / previous * 100.0) if previous else 0.0
+
+    card = {
+        **base,
+        "status": "ok",
+        "price": current,
+        "priceStr": f"{current:,.2f}",
+        "delta": delta,
+        "pct": pct,
+        "deltaStr": f"{delta:+,.2f} ({pct:+.2f}%)",
+        "prevStr": f"{previous:,.2f}",
+        "prevValue": previous,
+        "lastTs": last_ts,
+    }
+    if prev_source:
+        card["prevSource"] = prev_source
+    return card
+
+
+def _format_timestamp(iso_text: str, is_intraday: bool) -> str:
+    """
+    분봉이면 KST 체결 시각, 일봉이면 "거래일 + 일봉 기준".
+
+    일봉 폴백 데이터의 시:분:초는 신뢰할 수 없으므로 거짓 시각을 만들지
+    않습니다(구버전에서 고쳤던 문제).
+    """
+    try:
+        stamp = pd.Timestamp(iso_text)
+    except Exception:  # noqa: BLE001
+        return "N/A"
+
+    if is_intraday:
+        if stamp.tzinfo is None:
+            stamp = stamp.tz_localize("UTC")
+        return stamp.tz_convert(KST).strftime("%H:%M:%S KST")
+
+    return f"{stamp.strftime('%Y-%m-%d')} 일봉 기준"
+
+
+def previous_close_from_daily(symbol: str, current_iso: str | None = None) -> float | None:
+    """
+    일봉에서 '현재가가 속한 거래일보다 앞선' 마지막 종가를 반환합니다.
+
+    반환값은 yfinance 원본 스케일입니다. 표시 배율(엔/원 ×100 등)은 호출자가
+    현재가와 동일하게 적용해야 합니다.
+    """
+    payload = collect_ticker(symbol, "1mo")
+    points = payload.get("points") or []
+    closes = [p for p in points if p.get("close")]
+    if not closes:
+        return None
+
+    if current_iso:
+        try:
+            current_day = pd.Timestamp(current_iso).tz_localize(None).normalize()
+            earlier = [
+                p for p in closes
+                if pd.Timestamp(p["date"]).tz_localize(None).normalize() < current_day
+            ]
+            if earlier:
+                return float(earlier[-1]["close"])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("일봉 거래일 비교 실패 (%s): %s", symbol, exc)
+
+    if len(closes) >= 2:
+        return float(closes[-2]["close"])
+    return None
+
+
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(out) else out
+
+
+def now_kst_text() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")

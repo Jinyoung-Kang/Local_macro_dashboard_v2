@@ -1,0 +1,225 @@
+package com.macrodash.store;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * 저장 계층 읽기 (백엔드는 <b>읽기만</b> 합니다).
+ *
+ * <p>쓰기는 수집기(Python)의 몫입니다. 예외는 두 가지뿐입니다.
+ * <ul>
+ *   <li>수동 새로고침 기준 시각({@code refresh_requests}) — 화면 버튼이 누르는 값</li>
+ *   <li>없음 — 그 외 모든 테이블은 수집기만 씁니다</li>
+ * </ul>
+ * 이렇게 나누면 "화면을 열었더니 수집이 시작돼 사용자가 수십 초를 기다리는"
+ * 구버전의 구조적 문제가 되살아나지 않습니다.
+ */
+@Repository
+public class StoreRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(StoreRepository.class);
+
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper;
+
+    public StoreRepository(JdbcTemplate jdbc, ObjectMapper mapper) {
+        this.jdbc = jdbc;
+        this.mapper = mapper;
+    }
+
+    // ------------------------------------------------------------------ 스냅샷
+    public Optional<Snapshot> readSnapshot(String name) {
+        try {
+            return jdbc.query(
+                    "SELECT name, payload, kind, status, error, collected_at "
+                            + "FROM snapshots WHERE name = ?",
+                    snapshotMapper(),
+                    name
+            ).stream().findFirst();
+        } catch (DataAccessException e) {
+            log.warn("스냅샷 읽기 실패 ({}): {}", name, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    public List<Snapshot> readSnapshots(List<String> names) {
+        if (names.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", names.stream().map(n -> "?").toList());
+        return jdbc.query(
+                "SELECT name, payload, kind, status, error, collected_at "
+                        + "FROM snapshots WHERE name IN (" + placeholders + ")",
+                snapshotMapper(),
+                names.toArray()
+        );
+    }
+
+    public List<Map<String, Object>> listSnapshotMeta() {
+        return jdbc.query(
+                "SELECT name, status, error, collected_at FROM snapshots ORDER BY name",
+                (rs, rowNum) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", rs.getString("name"));
+                    row.put("status", rs.getString("status"));
+                    row.put("error", rs.getString("error"));
+                    row.put("collectedAt", toInstant(rs.getTimestamp("collected_at")));
+                    return row;
+                }
+        );
+    }
+
+    private RowMapper<Snapshot> snapshotMapper() {
+        return (ResultSet rs, int rowNum) -> new Snapshot(
+                rs.getString("name"),
+                parseJson(rs.getString("payload")),
+                rs.getString("kind"),
+                rs.getString("status"),
+                rs.getString("error"),
+                toInstant(rs.getTimestamp("collected_at"))
+        );
+    }
+
+    private JsonNode parseJson(String raw) {
+        try {
+            return raw == null ? null : mapper.readTree(raw);
+        } catch (Exception e) {
+            log.warn("스냅샷 JSON 해석 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    // ---------------------------------------------------------------- 시계열
+    public List<TimeseriesPoint> readTimeseries(String dataset, String seriesId, LocalDate from) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT obs_date, value FROM timeseries WHERE dataset = ? AND series_id = ?");
+        List<Object> params = new ArrayList<>(List.of(dataset, seriesId));
+        if (from != null) {
+            sql.append(" AND obs_date >= ?");
+            params.add(java.sql.Date.valueOf(from));
+        }
+        sql.append(" ORDER BY obs_date");
+
+        return jdbc.query(sql.toString(), (rs, rowNum) -> new TimeseriesPoint(
+                rs.getDate("obs_date").toLocalDate(),
+                (Double) rs.getObject("value")
+        ), params.toArray());
+    }
+
+    public long countTimeseries() {
+        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM timeseries", Long.class);
+        return count == null ? 0 : count;
+    }
+
+    // -------------------------------------------------------------- 관측 레코드
+    public List<JsonNode> readObservations(String dataset,
+                                           LocalDate obsDate,
+                                           LocalDate startDate,
+                                           Map<String, String> filters) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT obs_date, payload FROM observations WHERE dataset = ?");
+        List<Object> params = new ArrayList<>(List.of(dataset));
+
+        if (obsDate != null) {
+            sql.append(" AND obs_date = ?");
+            params.add(java.sql.Date.valueOf(obsDate));
+        }
+        if (startDate != null) {
+            sql.append(" AND obs_date >= ?");
+            params.add(java.sql.Date.valueOf(startDate));
+        }
+        if (filters != null && !filters.isEmpty()) {
+            sql.append(" AND payload @> ?::jsonb");
+            params.add(writeJson(filters));
+        }
+        sql.append(" ORDER BY obs_date DESC, entity");
+
+        return jdbc.query(sql.toString(), (rs, rowNum) -> {
+            JsonNode node = parseJson(rs.getString("payload"));
+            if (node != null && node.isObject()) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) node)
+                        .put("obsDate", rs.getDate("obs_date").toLocalDate().toString());
+            }
+            return node;
+        }, params.toArray());
+    }
+
+    public List<String> listObservationDates(String dataset) {
+        return jdbc.query(
+                "SELECT DISTINCT obs_date FROM observations WHERE dataset = ? ORDER BY obs_date DESC",
+                (rs, rowNum) -> rs.getDate("obs_date").toLocalDate().toString(),
+                dataset
+        );
+    }
+
+    public long countObservations() {
+        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM observations", Long.class);
+        return count == null ? 0 : count;
+    }
+
+    // ------------------------------------------------------------- 수집 실행 로그
+    public Optional<Map<String, Object>> readLastRun() {
+        return jdbc.queryForList("SELECT * FROM collector_runs ORDER BY id DESC LIMIT 1")
+                .stream().findFirst();
+    }
+
+    public List<Map<String, Object>> readTaskSummary() {
+        return jdbc.queryForList(
+                "SELECT DISTINCT ON (task) task, speed, status, started_at, duration_ms, detail "
+                        + "FROM collector_task_runs ORDER BY task, id DESC");
+    }
+
+    public List<Map<String, Object>> readTaskHistory(String task, int limit) {
+        if (task == null || task.isBlank()) {
+            return jdbc.queryForList(
+                    "SELECT run_id, task, speed, status, started_at, duration_ms, detail "
+                            + "FROM collector_task_runs ORDER BY id DESC LIMIT ?", limit);
+        }
+        return jdbc.queryForList(
+                "SELECT run_id, task, speed, status, started_at, duration_ms, detail "
+                        + "FROM collector_task_runs WHERE task = ? ORDER BY id DESC LIMIT ?",
+                task, limit);
+    }
+
+    // --------------------------------------------------------- 수동 새로고침 기준
+    public Instant refreshRequestedAt(String scope) {
+        List<Timestamp> rows = jdbc.query(
+                "SELECT requested_at FROM refresh_requests WHERE scope = ?",
+                (rs, rowNum) -> rs.getTimestamp("requested_at"),
+                scope);
+        return rows.isEmpty() ? null : toInstant(rows.get(0));
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalStateException("JSON 직렬화 실패", e);
+        }
+    }
+
+    private static Instant toInstant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    /** 시계열 1점. */
+    public record TimeseriesPoint(LocalDate date, Double value) {
+    }
+}

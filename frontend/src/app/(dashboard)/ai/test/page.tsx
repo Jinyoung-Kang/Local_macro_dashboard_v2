@@ -1,0 +1,145 @@
+"use client";
+
+import { useState } from "react";
+import { Banner, Button, Card, Loading, Select, SourceBadge, Table } from "@/components/ui";
+import { useApi } from "@/hooks/useApi";
+import { apiPost } from "@/lib/api";
+import type { AiEngine, AiResponse } from "@/lib/types";
+
+const SAMPLE_PROMPTS = [
+  "한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요.",
+  "장단기 금리차 역전이 시장에 주는 의미를 3줄로 요약해 주세요.",
+  "미결제약정이 늘면서 가격이 하락하는 국면을 한 문장으로 설명해 주세요.",
+];
+
+/** 🤖 AI API 연결 테스트 — 엔진별 응답과 지연시간을 확인합니다. */
+export default function AiTestPage() {
+  const engines = useApi<{ engines: AiEngine[]; keys: Record<string, boolean>; enabled: boolean }>(
+    "/api/ai/engines",
+  );
+  const [engineId, setEngineId] = useState("auto");
+  const [prompt, setPrompt] = useState(SAMPLE_PROMPTS[0]);
+  const [result, setResult] = useState<AiResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      setResult(
+        await apiPost<AiResponse>(
+          `/api/ai/test?engineId=${engineId}&prompt=${encodeURIComponent(prompt)}`,
+        ),
+      );
+    } catch (error) {
+      setResult({
+        status: false,
+        error: error instanceof Error ? error.message : "호출에 실패했습니다.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="text-xl font-bold text-bright">🤖 AI API 연결 테스트</h1>
+        <p className="mt-1 text-xs text-muted">
+          엔진별 응답·지연시간·자동 번역 동작을 확인합니다.
+        </p>
+      </header>
+
+      {engines.loading && !engines.data && <Loading />}
+
+      {engines.data && (
+        <Card title="등록된 엔진">
+          <Table
+            rows={engines.data.engines}
+            rowKey={(row) => row.id}
+            columns={[
+              { key: "label", header: "엔진", render: (row) => row.label },
+              {
+                key: "model",
+                header: "모델",
+                render: (row) => (row.model ? <SourceBadge>{row.model}</SourceBadge> : "—"),
+              },
+              { key: "description", header: "용도", render: (row) => row.description },
+              {
+                key: "available",
+                header: "키",
+                render: (row) => (
+                  <span className={row.available ? "text-ok" : "text-muted"}>
+                    {row.available ? "설정됨" : "없음"}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      )}
+
+      <Card title="호출 테스트">
+        <div className="flex flex-wrap items-end gap-3">
+          <Select
+            label="엔진"
+            value={engineId}
+            onChange={setEngineId}
+            options={(engines.data?.engines ?? []).map((engine) => ({
+              value: engine.id,
+              label: engine.label,
+            }))}
+          />
+          <Select
+            label="추천 프롬프트"
+            value={prompt}
+            onChange={setPrompt}
+            options={SAMPLE_PROMPTS.map((value) => ({
+              value,
+              label: value.length > 30 ? `${value.slice(0, 30)}…` : value,
+            }))}
+          />
+        </div>
+
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          rows={3}
+          className="mt-3 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-none focus:border-accent"
+        />
+
+        <div className="mt-3">
+          <Button variant="primary" onClick={run} disabled={busy || !engines.data?.enabled}>
+            {busy ? "호출 중…" : "🧪 선택 모델 호출"}
+          </Button>
+        </div>
+      </Card>
+
+      {result && (
+        <Card
+          title="응답"
+          subtitle={
+            result.status
+              ? `${result.provider} · ${result.latencyMs}ms · ${result.pipelineStep}`
+              : result.pipelineStep
+          }
+        >
+          {result.status ? (
+            <article className="whitespace-pre-wrap text-sm leading-relaxed text-body">
+              {result.response}
+            </article>
+          ) : (
+            <Banner tone="danger">{result.error}</Banner>
+          )}
+          {result.failoverPath && (
+            <p className="mt-3 text-[11px] text-muted">
+              폴오버 경로: {result.failoverPath.join(" → ")}
+            </p>
+          )}
+          {result.translationInfo && (
+            <p className="mt-1 text-[11px] text-muted">{result.translationInfo}</p>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}

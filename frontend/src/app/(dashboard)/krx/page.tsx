@@ -1,0 +1,265 @@
+"use client";
+
+import { LineSeries, MultiLineSeries, SignedBars } from "@/components/charts";
+import {
+  Banner,
+  Card,
+  ErrorState,
+  Freshness,
+  Loading,
+  Metric,
+  SourceBadge,
+  Table,
+} from "@/components/ui";
+import { useApi } from "@/hooks/useApi";
+import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned } from "@/lib/format";
+import type { InvestorTrendResponse, KrxFuturesResponse } from "@/lib/types";
+
+/**
+ * 🇰🇷 국내 파생 & 투기세력 (KRX).
+ *
+ * 화면이 지켜야 할 것
+ *  - 등락률을 모르면 국면은 "판정 불가"입니다. 강세로 기울여 표시하지 않습니다.
+ *  - 추정치 모드면 경고를 띄웁니다.
+ *  - Daum 선물 수급은 계약수 기준입니다(금액 기준은 제공되지 않습니다).
+ */
+export default function KrxPage() {
+  const futures = useApi<KrxFuturesResponse>("/api/krx/futures?days=60", 300_000);
+  const trend = useApi<InvestorTrendResponse>("/api/krx/investor-trend", 300_000);
+  const intraday = useApi<{
+    available: boolean;
+    skipped?: boolean;
+    message?: string;
+    dataDate?: string;
+    latestTime?: string;
+    referenceTime?: string;
+    lookbackMinutes?: number;
+    foreignCurrent?: number;
+    foreignChange?: number;
+    institutionCurrent?: number;
+    institutionChange?: number;
+    flowStatus?: string;
+    source?: string;
+  }>("/api/krx/intraday?minutes=30", 60_000);
+
+  if (futures.loading && !futures.data) {
+    return <Loading label="KRX 파생 데이터를 불러오는 중…" />;
+  }
+  if (futures.error) {
+    return <ErrorState message={futures.error} onRetry={futures.reload} />;
+  }
+
+  const data = futures.data;
+  const latest = data?.latest;
+  const rows = data?.rows ?? [];
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-bright">🇰🇷 국내 파생 &amp; 투기세력 (KRX)</h1>
+          <p className="mt-1 text-xs text-muted">
+            KOSPI200 선물 종가·미결제약정·베이시스 · 한국판 COT Index (계약수 기준)
+          </p>
+        </div>
+        <Freshness collectedAt={data?.collectedAtKst} stale={data?.stale} />
+      </header>
+
+      {!data?.available && (
+        <Banner tone="warn">
+          {data?.message ?? "KRX 선물 데이터가 없습니다. 수집기를 실행하세요."}
+        </Banner>
+      )}
+
+      {data?.isEstimated && <Banner tone="danger">⚠️ {data.estimateNotice}</Banner>}
+
+      {latest && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric
+              label="선물 종가"
+              value={formatNumber(latest.futuresClose, 2)}
+              delta={latest.changePct}
+              deltaText={formatPercent(latest.changePct)}
+              caption={
+                <span className="flex flex-col gap-0.5">
+                  <span>{latest.contractName}</span>
+                  <span>기준일 {latest.date ?? EMPTY}</span>
+                </span>
+              }
+            />
+            <Metric
+              label="미결제약정 (OI)"
+              value={formatNumber(latest.openInterest, 0)}
+              delta={latest.oiChange}
+              deltaText={
+                latest.oiChange === null ? EMPTY : `${formatSigned(latest.oiChange, 0)} 계약`
+              }
+              caption={
+                latest.oiChange5dAvg === null
+                  ? undefined
+                  : `5일 평균 증감 ${formatSigned(latest.oiChange5dAvg, 0)}`
+              }
+            />
+            <Metric
+              label="시장 베이시스"
+              value={latest.marketBasis === null ? "데이터 미제공" : formatNumber(latest.marketBasis, 2)}
+              caption={latest.basisState}
+              note={latest.basisNote}
+              tone={latest.marketBasis === null ? "text-muted" : undefined}
+            />
+            <Metric
+              label="4대 국면 판정"
+              value={latest.marketPhase ?? EMPTY}
+              tone={
+                latest.marketPhase?.includes("판정 불가") ? "text-muted" : "text-bright"
+              }
+              caption={
+                latest.marketPhase?.includes("판정 불가")
+                  ? "등락률을 모르면 어느 쪽으로도 기울이지 않습니다."
+                  : "가격 방향 × 미결제약정 증감"
+              }
+            />
+          </div>
+
+          {latest.changePctReported !== null &&
+            latest.changePct !== null &&
+            Math.abs((latest.changePctReported ?? 0) - (latest.changePct ?? 0)) > 0.05 && (
+              <Banner tone="warn">
+                KRX 보고 등락률({formatPercent(latest.changePctReported)})과 종가 기반
+                계산값({formatPercent(latest.changePct)})이 다릅니다. 화면은 종가 계산값을
+                사용합니다 — 데이터 저장소 상태 화면에서 교차 검증을 실행해 보세요.
+              </Banner>
+            )}
+        </>
+      )}
+
+      <Card title="📈 선물 종가 및 미결제약정 추이">
+        <MultiLineSeries
+          data={rows.map((row) => ({
+            date: row.date,
+            종가: row.futuresClose,
+            미결제약정: row.openInterest,
+          }))}
+          series={[
+            { key: "종가", name: "선물 종가", color: "#58A6FF" },
+            { key: "미결제약정", name: "미결제약정(계약)", color: "#D29922" },
+          ]}
+          height={300}
+        />
+      </Card>
+
+      <Card
+        title="📊 한국판 COT OI Index"
+        subtitle="최근 20거래일 미결제약정 범위 내 위치(0~100). 100에 가까울수록 포지션이 역사적 최대 수준입니다."
+      >
+        <LineSeries
+          data={rows.map((row) => ({ date: row.date, value: row.cotOiIndex }))}
+          unit="%"
+          color="#A371F7"
+          height={240}
+        />
+      </Card>
+
+      <Card
+        title="🧭 투자주체별 선물 수급"
+        subtitle={
+          trend.data?.available
+            ? `${trend.data.unit} 기준 · 기준일 ${trend.data.dataDate ?? EMPTY} · ${trend.data.source}`
+            : undefined
+        }
+        actions={trend.data?.measure ? <SourceBadge>{trend.data.measure}</SourceBadge> : undefined}
+      >
+        {trend.loading && !trend.data && <Loading />}
+        {trend.data && !trend.data.available && (
+          <Banner tone="warn">{trend.data.message ?? "투자주체별 수급 데이터가 없습니다."}</Banner>
+        )}
+        {trend.data?.available && (
+          <>
+            <SignedBars
+              data={trend.data.rows.map((row) => ({
+                name: row.investor.split(" ")[0],
+                value: row.net20d,
+              }))}
+              unit="계약"
+              height={300}
+            />
+            <div className="mt-4">
+              <Table
+                rows={trend.data.rows}
+                rowKey={(row) => row.investor}
+                columns={[
+                  { key: "investor", header: "투자 주체", render: (row) => row.investor },
+                  {
+                    key: "today",
+                    header: "당일 순매수",
+                    align: "right",
+                    render: (row) => (
+                      <span className={deltaColor(row.netToday)}>
+                        {formatSigned(row.netToday, 0)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "d5",
+                    header: "5일 누적",
+                    align: "right",
+                    render: (row) => (
+                      <span className={deltaColor(row.net5d)}>{formatSigned(row.net5d, 0)}</span>
+                    ),
+                  },
+                  {
+                    key: "d20",
+                    header: "20일 누적",
+                    align: "right",
+                    render: (row) => (
+                      <span className={deltaColor(row.net20d)}>{formatSigned(row.net20d, 0)}</span>
+                    ),
+                  },
+                  { key: "stance", header: "포지션 성향", render: (row) => row.stance },
+                ]}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card
+        title="⚡ 장중 수급 가속도 (최근 30분)"
+        subtitle="Daum 시간별 선물 수급 기반 비공식 데이터 · 장중에만 값이 있습니다."
+      >
+        {intraday.data?.skipped && (
+          <Banner tone="info">{intraday.data.message}</Banner>
+        )}
+        {intraday.data && !intraday.data.available && !intraday.data.skipped && (
+          <Banner tone="warn">
+            {intraday.data.message ?? "장중 수급 데이터를 받지 못했습니다(장 시간이 아닐 수 있습니다)."}
+          </Banner>
+        )}
+        {intraday.data?.available && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric
+              label="외국인 누적 순매수"
+              value={formatSigned(intraday.data.foreignCurrent ?? null, 0)}
+              delta={intraday.data.foreignChange ?? null}
+              deltaText={`최근 30분 ${formatSigned(intraday.data.foreignChange ?? null, 0)}`}
+            />
+            <Metric
+              label="기관계 누적 순매수"
+              value={formatSigned(intraday.data.institutionCurrent ?? null, 0)}
+              delta={intraday.data.institutionChange ?? null}
+              deltaText={`최근 30분 ${formatSigned(intraday.data.institutionChange ?? null, 0)}`}
+            />
+            <Metric
+              label="수급 방향"
+              value={intraday.data.flowStatus ?? EMPTY}
+              caption={`${intraday.data.referenceTime ?? EMPTY} → ${
+                intraday.data.latestTime ?? EMPTY
+              } (${intraday.data.dataDate ?? EMPTY})`}
+            />
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}

@@ -1,0 +1,468 @@
+package com.macrodash.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.macrodash.analytics.AdvancedIndicators;
+import com.macrodash.analytics.Json;
+import com.macrodash.analytics.SeriesMath;
+import com.macrodash.collector.CollectorClient;
+import com.macrodash.store.Datasets;
+import com.macrodash.store.Snapshot;
+import com.macrodash.store.StoreReader;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * 📊 거시경제 매크로 지표 메뉴.
+ *
+ * <p>담당: 지표 카드, 10Y−2Y / 30Y−2Y 장단기 금리차, 신용·변동성 리스크 지표,
+ * 심화 매크로 지표 5종, 개별 지표 차트.
+ *
+ * <p>계산은 전부 여기서 합니다. 구버전은 화면 코드(views/macro_view.py)가 직접
+ * 계산해서, 같은 수치를 AI 리포트가 다르게 말하는 일이 있었습니다.
+ */
+@Service
+public class MacroService {
+
+    private final StoreReader store;
+    private final CollectorClient collector;
+
+    public MacroService(StoreReader store, CollectorClient collector) {
+        this.store = store;
+        this.collector = collector;
+    }
+
+    /** 매크로 카드 + 스프레드 + 신선도. */
+    public Map<String, Object> overview() {
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.SNAP_MACRO_COLLECTED, Datasets.MAX_AGE_REALTIME, "macro_collected");
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("readMode", store.readMode().name().toLowerCase());
+
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            out.put("available", false);
+            out.put("message", "매크로 데이터 저장본이 없습니다. 수집기를 실행하세요.");
+            out.put("categories", List.of());
+            return out;
+        }
+
+        Snapshot snap = snapshot.get();
+        JsonNode payload = snap.payload();
+
+        out.put("available", true);
+        out.put("collectedAt", snap.collectedAt());
+        out.put("collectedAtKst", snap.collectedAtKst());
+        out.put("ageSeconds", snap.ageSeconds());
+        out.put("stale", !snap.isFresh(Datasets.MAX_AGE_REALTIME));
+        out.put("categories", payload.get("categories"));
+        out.put("rates", payload.get("rates"));
+        out.put("spreads", spreads(payload));
+        return out;
+    }
+
+    /**
+     * 장단기 금리차.
+     *
+     * <p>두 종류를 함께 보여 줍니다.
+     * <ul>
+     *   <li><b>실시간</b> — 카드에 쓰인 TradingView 참고 수익률의 차이</li>
+     *   <li><b>공식 일별</b> — FRED DGS2/DGS10/DGS30 확정치의 차이 (추이 차트용)</li>
+     * </ul>
+     * 어느 한쪽이 없으면 0으로 메우지 않고 null로 둡니다.
+     */
+    private Map<String, Object> spreads(JsonNode payload) {
+        JsonNode rates = Json.child(payload, "rates");
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        Double us02 = rates == null ? null : Json.asDouble(Json.child(rates, "us02y"), "current");
+        Double us10 = rates == null ? null : Json.asDouble(Json.child(rates, "us10y"), "current");
+        Double us02Prev = rates == null ? null : Json.asDouble(Json.child(rates, "us02y"), "previous");
+        Double us10Prev = rates == null ? null : Json.asDouble(Json.child(rates, "us10y"), "previous");
+
+        Map<String, Object> realtime = new LinkedHashMap<>();
+        realtime.put("us02y", us02);
+        realtime.put("us10y", us10);
+        realtime.put("spread", SeriesMath.difference(us10, us02));
+        realtime.put("previousSpread", SeriesMath.difference(us10Prev, us02Prev));
+        realtime.put("delta", SeriesMath.difference(
+                SeriesMath.difference(us10, us02),
+                SeriesMath.difference(us10Prev, us02Prev)));
+        out.put("realtime", realtime);
+
+        out.put("official10y2y", officialSpread("DGS10", "DGS2"));
+        out.put("official30y2y", officialSpread("DGS30", "DGS2"));
+        return out;
+    }
+
+    /** FRED 공식 일별 확정치로 계산한 스프레드 시계열. */
+    public Map<String, Object> officialSpread(String longId, String shortId) {
+        Map<LocalDate, Double> longSeries = seriesMap(longId);
+        Map<LocalDate, Double> shortSeries = seriesMap(shortId);
+
+        List<Map<String, Object>> points = new ArrayList<>();
+        for (Map.Entry<LocalDate, Double> entry : longSeries.entrySet()) {
+            Double shortValue = shortSeries.get(entry.getKey());
+            if (shortValue == null) {
+                continue;
+            }
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("date", entry.getKey().toString());
+            point.put("value", entry.getValue() - shortValue);
+            points.add(point);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("longId", longId);
+        out.put("shortId", shortId);
+        out.put("points", points);
+        out.put("latest", points.isEmpty() ? null : points.get(points.size() - 1).get("value"));
+        out.put("previous", points.size() < 2
+                ? null : points.get(points.size() - 2).get("value"));
+        return out;
+    }
+
+    private Map<LocalDate, Double> seriesMap(String seriesId) {
+        Map<LocalDate, Double> out = new LinkedHashMap<>();
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            return out;
+        }
+        for (JsonNode point : Json.array(snapshot.get().payload(), "points")) {
+            LocalDate date = Json.parseDate(Json.asText(point, "date"));
+            Double value = Json.asDouble(point, "value");
+            if (date != null && value != null) {
+                out.put(date, value);
+            }
+        }
+        return out;
+    }
+
+    /** FRED 시리즈 원본 (차트용). */
+    public Map<String, Object> fredSeries(String seriesId, Integer years) {
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("seriesId", seriesId);
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            out.put("available", false);
+            out.put("points", List.of());
+            return out;
+        }
+
+        List<JsonNode> points = Json.array(snapshot.get().payload(), "points");
+        if (years != null && years > 0) {
+            LocalDate cutoff = LocalDate.now().minusYears(years);
+            points = points.stream()
+                    .filter(p -> {
+                        LocalDate date = Json.parseDate(Json.asText(p, "date"));
+                        return date != null && !date.isBefore(cutoff);
+                    })
+                    .toList();
+        }
+
+        out.put("available", !points.isEmpty());
+        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        out.put("points", points);
+        return out;
+    }
+
+    /**
+     * 신용 리스크·은행권·변동성 지표.
+     *
+     * <p>⚠️ MOVE는 실제 ICE BofA MOVE가 아니라 ^TNX 변동성 기반 추정치입니다.
+     * isProxy 표시를 그대로 전달해 화면이 경고를 띄웁니다. 실제 MOVE 기준의
+     * 임계치(80/120/140)를 이 값에 그대로 적용하면 안 됩니다.
+     */
+    public Map<String, Object> riskIndicators() {
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        out.put("vix", volatilityEntry("^VIX"));
+        out.put("move", volatilityEntry("^MOVE"));
+        out.put("hyOas", fredEntry("BAMLH0A0HYM2", "하이일드 스프레드 (HY OAS)", "%p"));
+        out.put("cpSpread", cpSpreadEntry());
+        out.put("stlfsi", fredEntry("STLFSI4", "세인트루이스 연준 금융스트레스", "pt"));
+        return out;
+    }
+
+    private Map<String, Object> volatilityEntry(String symbol) {
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.tickerHistory(symbol, Datasets.VOLATILITY_STORE_PERIOD),
+                Datasets.MAX_AGE_DAILY, "volatility_history");
+
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("symbol", symbol);
+
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            entry.put("available", false);
+            return entry;
+        }
+
+        JsonNode payload = snapshot.get().payload();
+        List<Double> closes = Json.pointValues(payload);
+        Double latest = SeriesMath.last(closes);
+        Double previous = SeriesMath.previous(closes);
+
+        entry.put("available", latest != null);
+        entry.put("value", latest);
+        entry.put("previous", previous);
+        entry.put("delta", SeriesMath.difference(latest, previous));
+        entry.put("pct", SeriesMath.percentChange(latest, previous));
+        entry.put("isProxy", Json.asBoolean(payload, "isProxy"));
+        entry.put("sourceLabel", Json.asText(payload, "sourceLabel"));
+        entry.put("collectedAtKst", snapshot.get().collectedAtKst());
+        return entry;
+    }
+
+    private Map<String, Object> fredEntry(String seriesId, String label, String unit) {
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
+
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("seriesId", seriesId);
+        entry.put("label", label);
+        entry.put("unit", unit);
+
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            entry.put("available", false);
+            return entry;
+        }
+
+        JsonNode payload = snapshot.get().payload();
+        List<Double> values = Json.pointValues(payload);
+        List<LocalDate> dates = Json.pointDates(payload);
+        Double latest = SeriesMath.last(values);
+        Double previous = SeriesMath.previous(values);
+
+        entry.put("available", latest != null);
+        entry.put("value", latest);
+        entry.put("previous", previous);
+        entry.put("delta", SeriesMath.difference(latest, previous));
+        entry.put("asOf", dates.isEmpty() ? null : dates.get(dates.size() - 1).toString());
+        entry.put("percentile", SeriesMath.percentile(values));
+        return entry;
+    }
+
+    /**
+     * 3M 금융 CP 스프레드 = CPF3M − 3M 국채.
+     *
+     * <p>3M 국채(DGS3MO)가 없으면 계산하지 않습니다. 한쪽만으로 스프레드를
+     * 흉내 내면 숫자가 그럴듯해 보여도 의미가 없습니다.
+     */
+    private Map<String, Object> cpSpreadEntry() {
+        Map<LocalDate, Double> cp = seriesMap("CPF3M");
+        Map<LocalDate, Double> tb = seriesMap("DGS3MO");
+
+        List<Double> spread = new ArrayList<>();
+        List<LocalDate> dates = new ArrayList<>();
+        for (Map.Entry<LocalDate, Double> entry : cp.entrySet()) {
+            Double bill = tb.get(entry.getKey());
+            if (bill == null) {
+                continue;
+            }
+            dates.add(entry.getKey());
+            spread.add(entry.getValue() - bill);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("seriesId", "CPF3M-DGS3MO");
+        out.put("label", "3M 금융 CP 스프레드");
+        out.put("unit", "%p");
+
+        Double latest = SeriesMath.last(spread);
+        out.put("available", latest != null);
+        out.put("value", latest);
+        out.put("previous", SeriesMath.previous(spread));
+        out.put("delta", SeriesMath.difference(latest, SeriesMath.previous(spread)));
+        out.put("asOf", dates.isEmpty() ? null : dates.get(dates.size() - 1).toString());
+
+        List<Map<String, Object>> points = new ArrayList<>();
+        for (int i = 0; i < dates.size(); i++) {
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("date", dates.get(i).toString());
+            point.put("value", spread.get(i));
+            points.add(point);
+        }
+        out.put("points", points);
+        return out;
+    }
+
+    /** 심화 매크로 지표 5종 (최신값·변화·백분위·해석). */
+    public Map<String, Object> advancedIndicators() {
+        Map<String, Object> latest = new LinkedHashMap<>();
+
+        for (String seriesId : AdvancedIndicators.DISPLAY_ORDER) {
+            AdvancedIndicators.Meta meta = AdvancedIndicators.SERIES.get(seriesId);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", seriesId);
+            entry.put("label", meta.label());
+            entry.put("unit", meta.unit());
+            entry.put("digits", meta.digits());
+            entry.put("group", meta.group());
+            entry.put("why", meta.why());
+            entry.put("source", meta.source());
+
+            Optional<Snapshot> snapshot = store.read(
+                    Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
+
+            if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+                entry.put("available", false);
+                latest.put(seriesId, entry);
+                continue;
+            }
+
+            List<Double> values = Json.pointValues(snapshot.get().payload());
+            List<LocalDate> dates = Json.pointDates(snapshot.get().payload());
+            Double value = SeriesMath.last(values);
+
+            if (value == null) {
+                entry.put("available", false);
+                latest.put(seriesId, entry);
+                continue;
+            }
+
+            Double previous = SeriesMath.previous(values);
+            entry.put("available", true);
+            entry.put("value", value);
+            entry.put("prev", previous);
+            entry.put("delta", SeriesMath.difference(value, previous));
+            entry.put("asOf", dates.isEmpty() ? null : dates.get(dates.size() - 1).toString());
+            entry.put("percentile", SeriesMath.percentile(values));
+
+            AdvancedIndicators.Interpretation interpretation =
+                    AdvancedIndicators.interpret(seriesId, value);
+            if (interpretation != null) {
+                entry.put("status", interpretation.status());
+                entry.put("color", interpretation.color());
+                entry.put("note", interpretation.note());
+            }
+            latest.put(seriesId, entry);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("order", AdvancedIndicators.DISPLAY_ORDER);
+        out.put("latest", latest);
+        out.put("derived", derived(latest));
+        return out;
+    }
+
+    /**
+     * 개별 지표만으로는 안 보이는 관계.
+     *
+     * <p>명목 10년 ≈ 실질 + 기대인플레. 세 값의 기준 시점이 다르면 오차가
+     * 생기므로 참고용입니다.
+     */
+    private Map<String, Object> derived(Map<String, Object> latest) {
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        Object realEntry = latest.get("DFII10");
+        Object beiEntry = latest.get("T10YIE");
+        if (!(realEntry instanceof Map<?, ?> real) || !(beiEntry instanceof Map<?, ?> bei)) {
+            return out;
+        }
+        Object realValue = real.get("value");
+        Object beiValue = bei.get("value");
+        if (!(realValue instanceof Double r) || !(beiValue instanceof Double b)) {
+            return out;
+        }
+
+        out.put("impliedNominal10y", r + b);
+        out.put("decomposition",
+                "명목 10년 ≈ 실질 %.2f%% + 기대인플레 %.2f%% = %.2f%%".formatted(r, b, r + b));
+        return out;
+    }
+
+    /** 참고 스크래핑 시세 (비공식). */
+    public Map<String, Object> scrapedMarkets() {
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.SNAP_SCRAPER_MARKETS, Datasets.MAX_AGE_REALTIME, "scraper_markets");
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            out.put("available", false);
+            out.put("items", List.of());
+            return out;
+        }
+        out.put("available", true);
+        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        out.put("updatedAt", Json.asText(snapshot.get().payload(), "updatedAt"));
+        out.put("items", snapshot.get().payload().get("items"));
+        return out;
+    }
+
+    /**
+     * 개별 지표 차트.
+     *
+     * <p>변동성 지수는 저장본(5y)을 잘라 쓰고, 그 밖의 티커는 수집기에 직접
+     * 조회를 요청합니다(티커가 많아 전부 저장할 이유가 없습니다).
+     */
+    public Map<String, Object> tickerSeries(String symbol, String period) {
+        boolean storeBacked = symbol.equals("^VIX") || symbol.equals("^MOVE");
+
+        if (storeBacked) {
+            Optional<Snapshot> snapshot = store.read(
+                    Datasets.tickerHistory(symbol, Datasets.VOLATILITY_STORE_PERIOD),
+                    Datasets.MAX_AGE_DAILY, "volatility_history");
+            if (snapshot.isPresent() && snapshot.get().payload() != null) {
+                return sliceTicker(snapshot.get().payload(), period);
+            }
+        }
+
+        Optional<JsonNode> live = collector.liveTicker(symbol, period);
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (live.isEmpty()) {
+            out.put("available", false);
+            out.put("symbol", symbol);
+            out.put("points", List.of());
+            out.put("message", "수집기에서 시계열을 받지 못했습니다.");
+            return out;
+        }
+        JsonNode payload = live.get();
+        out.put("available", !Json.array(payload, "points").isEmpty());
+        out.put("symbol", symbol);
+        out.put("period", period);
+        out.put("isProxy", Json.asBoolean(payload, "isProxy"));
+        out.put("sourceLabel", Json.asText(payload, "sourceLabel"));
+        out.put("points", payload.get("points"));
+        return out;
+    }
+
+    private Map<String, Object> sliceTicker(JsonNode payload, String period) {
+        List<JsonNode> points = Json.array(payload, "points");
+        Integer days = SeriesMath.periodDays(period);
+
+        List<JsonNode> sliced = points;
+        if (days != null && !points.isEmpty()) {
+            LocalDate lastDate = Json.parseDate(Json.asText(points.get(points.size() - 1), "date"));
+            if (lastDate != null) {
+                LocalDate cutoff = lastDate.minusDays(days);
+                List<JsonNode> filtered = points.stream()
+                        .filter(p -> {
+                            LocalDate date = Json.parseDate(Json.asText(p, "date"));
+                            return date != null && !date.isBefore(cutoff);
+                        })
+                        .toList();
+                if (filtered.size() >= 2) {
+                    sliced = filtered;
+                }
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", !sliced.isEmpty());
+        out.put("symbol", Json.asText(payload, "symbol"));
+        out.put("period", period);
+        // 잘라 내도 "이 값은 실제 지표가 아니다"라는 표시가 사라지면 안 됩니다.
+        out.put("isProxy", Json.asBoolean(payload, "isProxy"));
+        out.put("sourceLabel", Json.asText(payload, "sourceLabel"));
+        out.put("points", sliced);
+        return out;
+    }
+}

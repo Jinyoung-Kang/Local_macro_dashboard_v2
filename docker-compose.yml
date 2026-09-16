@@ -1,0 +1,125 @@
+# =============================================================================
+# docker-compose.yml
+# 로컬 실행용 전체 스택.
+#
+#   postgres  저장 계층 (구버전 SQLite 파일을 대체)
+#   redis     백엔드 응답 캐시
+#   collector 수집기 (Python/FastAPI) — 외부 소스에서 받아 PostgreSQL에 적재
+#   backend   API (Java/Spring Boot) — 저장본 읽기·분석·인증
+#   frontend  화면 (Next.js)
+#
+# 실행:  docker compose up -d --build
+# 접속:  http://localhost:3000  (기본 비밀번호 admin1234@ — .env에서 변경하세요)
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-macro}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-macro}
+      POSTGRES_DB: ${DATABASE_NAME:-macrodash}
+      # 한국어 데이터가 많아 UTF-8 로케일을 명시합니다.
+      LANG: C.UTF-8
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # 최초 기동 시 스키마를 적용합니다(멱등).
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-macro} -d ${DATABASE_NAME:-macrodash}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # 캐시 전용이므로 디스크 저장은 끕니다(재기동하면 비어도 됩니다).
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  collector:
+    build: ./collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DATABASE_USER:-macro}:${DATABASE_PASSWORD:-macro}@postgres:5432/${DATABASE_NAME:-macrodash}
+      COLLECTOR_SCHEDULER: "${COLLECTOR_SCHEDULER:-true}"
+      COLLECTOR_FAST_INTERVAL: "${COLLECTOR_FAST_INTERVAL:-300}"
+      COLLECTOR_SLOW_INTERVAL: "${COLLECTOR_SLOW_INTERVAL:-3600}"
+      COLLECTOR_WEEKLY_INTERVAL: "${COLLECTOR_WEEKLY_INTERVAL:-43200}"
+      COLLECTOR_API_TOKEN: "${COLLECTOR_API_TOKEN:-}"
+      COLLECTOR_INIT_SCHEMA: "true"
+      MACRO_SCHEMA_SQL: /app/db/migrations/V1__init.sql
+      # 외부 API 키 — 없으면 해당 기능만 비활성화됩니다.
+      FRED_API_KEY: "${FRED_API_KEY:-}"
+      KRX_API_KEY: "${KRX_API_KEY:-}"
+      KIS_APP_KEY: "${KIS_APP_KEY:-}"
+      KIS_APP_SECRET: "${KIS_APP_SECRET:-}"
+      LS_APP_KEY: "${LS_APP_KEY:-}"
+      LS_APP_SECRET: "${LS_APP_SECRET:-}"
+      TOSS_CLIENT_ID: "${TOSS_CLIENT_ID:-}"
+      TOSS_CLIENT_SECRET: "${TOSS_CLIENT_SECRET:-}"
+    volumes:
+      - ./db/migrations:/app/db/migrations:ro
+    ports:
+      - "${COLLECTOR_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${DATABASE_NAME:-macrodash}
+      DATABASE_USER: ${DATABASE_USER:-macro}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-macro}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      COLLECTOR_URL: http://collector:8000
+      COLLECTOR_API_TOKEN: "${COLLECTOR_API_TOKEN:-}"
+      DASHBOARD_READ_MODE: "${DASHBOARD_READ_MODE:-auto}"
+      APP_PASSWORD: "${APP_PASSWORD:-admin1234@}"
+      JWT_SECRET: "${JWT_SECRET:-change-me-please-change-me-please-32b}"
+      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:3000}"
+      NVIDIA_API_KEY: "${NVIDIA_API_KEY:-}"
+      CEREBRAS_API_KEY: "${CEREBRAS_API_KEY:-}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8080}"
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8080}"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:

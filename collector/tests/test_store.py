@@ -1,0 +1,173 @@
+"""
+tests/test_store.py
+저장 계층 회귀 테스트.
+
+구버전 tests/test_store.py가 지키던 성질을 PostgreSQL 위에서 다시 확인합니다.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app import catalog
+
+
+def test_snapshot_upsert_keeps_single_row(store):
+    store.put_snapshot("demo.snap", {"value": 1})
+    store.put_snapshot("demo.snap", {"value": 2})
+
+    snapshot = store.read_snapshot("demo.snap")
+    assert snapshot is not None
+    assert snapshot.payload == {"value": 2}
+    assert len(store.list_snapshots()) == 1
+
+
+def test_snapshot_freshness(store):
+    store.put_snapshot("demo.snap", {"value": 1})
+    snapshot = store.read_snapshot("demo.snap")
+
+    assert snapshot.is_fresh(60) is True
+    assert snapshot.age_seconds < 60
+
+
+def test_missing_snapshot_returns_none(store):
+    assert store.read_snapshot("never.collected") is None
+
+
+def test_stock_codes_keep_leading_zeros(store):
+    """
+    "069500"이 숫자로 바뀌면 69500이 되어 이후 모든 조회가 실패합니다.
+    구버전에서 실제로 났던 사고라 계약으로 고정합니다.
+    """
+    store.put_snapshot("radar.demo", {"rows": [{"code": "069500", "name": "KODEX 200"}]})
+
+    payload = store.read_snapshot("radar.demo").payload
+    assert payload["rows"][0]["code"] == "069500"
+
+
+def test_timeseries_upsert_is_idempotent(store):
+    points = [("2026-01-02", 1.0), ("2026-01-03", 2.0)]
+    assert store.put_timeseries("demo", "SERIES", points) == 2
+
+    # 같은 날짜를 다시 쓰면 갱신만 되고 행이 늘지 않습니다.
+    store.put_timeseries("demo", "SERIES", [("2026-01-03", 9.9)])
+
+    rows = store.read_timeseries("demo", "SERIES")
+    assert len(rows) == 2
+    assert rows[-1] == {"date": "2026-01-03", "value": 9.9}
+
+
+def test_timeseries_drops_unparseable_points(store):
+    written = store.put_timeseries(
+        "demo", "SERIES",
+        [("2026-01-02", 1.0), ("bad-date", 5.0), (None, 7.0)],
+    )
+    assert written == 1
+
+
+def test_observations_filter_by_payload(store):
+    records = [
+        {"entity": "K|F|B|001", "market": "KOSPI", "investor": "외국인",
+         "tradeType": "순매수", "code": "005930", "netAmountEok": 120.0},
+        {"entity": "K|I|B|002", "market": "KOSPI", "investor": "기관",
+         "tradeType": "순매수", "code": "000660", "netAmountEok": 80.0},
+    ]
+    store.put_observations(catalog.OBS_RADAR, "2026-09-11", records, entity_key="entity")
+
+    foreign = store.read_observations(
+        catalog.OBS_RADAR, filters={"investor": "외국인"}
+    )
+    assert len(foreign) == 1
+    assert foreign[0]["code"] == "005930"
+
+    assert store.list_observation_dates(catalog.OBS_RADAR) == ["2026-09-11"]
+
+
+def test_run_lifecycle_and_task_summary(store):
+    run_id = store.start_run("fast")
+    store.record_task_run(
+        run_id, "macro_collected",
+        speed="fast", status="ok",
+        started_at=datetime.now(timezone.utc), duration_ms=1200, detail="21/21 지표",
+    )
+    store.finish_run(run_id, status="ok", ok_count=1, fail_count=0)
+
+    last = store.read_last_run()
+    assert last["status"] == "ok"
+    assert store.resolve_run_status(last) == "ok"
+
+    summary = store.read_task_summary()
+    assert summary[0]["task"] == "macro_collected"
+    assert summary[0]["status"] == "ok"
+
+
+def test_dead_running_record_is_reported_as_interrupted(store):
+    """
+    수집기가 Ctrl+C·절전으로 죽으면 status가 'running'에 영구히 남습니다.
+    그것을 "진행 중"이라고 보고하면 상태 화면이 거짓말을 합니다.
+    """
+    dead = {
+        "status": "running",
+        "pid": 999_999,                 # 존재하지 않는 PID
+        "host": None,                   # None이면 같은 호스트로 간주
+        "heartbeat_at": datetime.now(timezone.utc),
+        "started_at": datetime.now(timezone.utc),
+    }
+    assert store.resolve_run_status(dead) == "interrupted"
+
+
+def test_stale_heartbeat_is_interrupted(store):
+    stale = {
+        "status": "running",
+        "pid": None,
+        "host": "other-host",
+        "heartbeat_at": datetime.now(timezone.utc) - timedelta(hours=2),
+        "started_at": datetime.now(timezone.utc) - timedelta(hours=3),
+    }
+    assert store.resolve_run_status(stale) == "interrupted"
+
+
+def test_mark_stale_runs_interrupted(store):
+    run_id = store.start_run("fast")
+    with store.connection() as conn:
+        conn.execute(
+            "UPDATE collector_runs SET pid = 999999, heartbeat_at = now() - interval '2 hours' "
+            "WHERE id = %s",
+            (run_id,),
+        )
+
+    assert store.mark_stale_runs_interrupted() == 1
+    assert store.read_last_run()["status"] == "interrupted"
+
+
+def test_refresh_request_moves_forward(store):
+    first = store.request_refresh()
+    second = store.request_refresh()
+
+    assert second >= first
+    assert store.refresh_requested_at() == second
+
+
+def test_missing_datasets_lists_expected_names(store):
+    """
+    존재하는 스냅샷만 나열하면 "수집이 아예 안 된" 데이터셋을 놓칩니다.
+    기대 목록과 대조해야 누락을 알아챌 수 있습니다.
+    """
+    missing = store.missing_datasets()
+    names = {entry["name"] for entry in missing}
+
+    assert catalog.SNAP_MACRO_COLLECTED in names
+    assert catalog.snap_fred_series("T10Y3M") in names
+
+    store.put_snapshot(catalog.SNAP_MACRO_COLLECTED, {"categories": []})
+    names_after = {entry["name"] for entry in store.missing_datasets()}
+    assert catalog.SNAP_MACRO_COLLECTED not in names_after
+
+
+def test_purge_removes_old_history_only(store):
+    store.put_timeseries("demo", "S", [("2000-01-03", 1.0), ("2026-01-03", 2.0)])
+    removed = store.purge_older_than(365)
+
+    assert removed["timeseries"] == 1
+    assert [row["date"] for row in store.read_timeseries("demo", "S")] == ["2026-01-03"]
