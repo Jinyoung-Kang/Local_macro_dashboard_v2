@@ -13,6 +13,7 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { apiPost } from "@/lib/api";
 import { EMPTY, formatAge, formatDateTimeKst, formatNumber } from "@/lib/format";
 import type { StatusResponse, VerificationResponse } from "@/lib/types";
@@ -38,6 +39,7 @@ export default function StatusPage() {
   const { data, loading, error, reload } = useApi<StatusResponse>("/api/status", 60_000);
   const [running, setRunning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const { reloadAll } = useRefreshSignal();
 
   const runTask = async (taskName: string) => {
     setRunning(taskName);
@@ -51,7 +53,9 @@ export default function StatusPage() {
           ? `${taskName} 실행 완료 (성공 ${result.okCount ?? 0} · 실패 ${result.failCount ?? 0})`
           : "수집기에 연결하지 못했습니다.",
       );
-      reload();
+      // 개별 태스크 실행도 화면 전체를 갱신합니다. 이 태스크가 바꾼 스냅샷을
+      // 다른 메뉴도 보고 있을 수 있습니다.
+      reloadAll();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "실행에 실패했습니다.");
     } finally {

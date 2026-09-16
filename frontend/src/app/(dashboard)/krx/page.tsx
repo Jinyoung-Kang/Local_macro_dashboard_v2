@@ -62,7 +62,11 @@ export default function KrxPage() {
             KOSPI200 선물 종가·미결제약정·베이시스 · 한국판 COT Index (계약수 기준)
           </p>
         </div>
-        <Freshness collectedAt={data?.collectedAtKst} stale={data?.stale} />
+        <Freshness
+          collectedAt={data?.collectedAtKst}
+          ageSeconds={data?.ageSeconds}
+          stale={data?.stale}
+        />
       </header>
 
       {!data?.available && (

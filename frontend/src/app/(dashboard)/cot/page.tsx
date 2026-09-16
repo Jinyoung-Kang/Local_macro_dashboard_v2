@@ -27,7 +27,12 @@ export default function CotPage() {
   const assets = useApi<{ assets: { name: string; code: string; category: string }[] }>(
     "/api/cot/assets",
   );
-  const overview = useApi<{ available: boolean; collectedAtKst?: string; assets: CotSummary[] }>(
+  const overview = useApi<{
+    available: boolean;
+    collectedAtKst?: string;
+    ageSeconds?: number;
+    assets: CotSummary[];
+  }>(
     "/api/cot/overview",
     600_000,
   );
@@ -46,7 +51,10 @@ export default function CotPage() {
             CFTC 공개 데이터 · 비상업(투기) / 상업(헤저) / 비보고(소액) 순포지션
           </p>
         </div>
-        <Freshness collectedAt={overview.data?.collectedAtKst} />
+        <Freshness
+          collectedAt={overview.data?.collectedAtKst}
+          ageSeconds={overview.data?.ageSeconds}
+        />
       </header>
 
       {overview.data && !overview.data.available && (

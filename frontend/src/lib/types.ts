@@ -127,6 +127,7 @@ export interface LiquidityResponse {
   isEstimated?: boolean;
   message?: string;
   collectedAtKst?: string;
+  ageSeconds?: number;
   stale?: boolean;
   rows: LiquidityRow[];
   latest?: {
@@ -158,6 +159,7 @@ export interface SectorResponse {
   period: string;
   periods: string[];
   collectedAtKst?: string;
+  ageSeconds?: number;
   stale?: boolean;
   benchmark: string;
   benchmarkReturns: Record<string, number | null>;
@@ -184,6 +186,7 @@ export interface PortfolioResponse {
   cik: string;
   institution?: { name?: string; desc?: string };
   collectedAtKst?: string;
+  ageSeconds?: number;
   quarters: { filingDate: string; reportDate: string; totalValue: number; holdingCount: number }[];
   latest?: { reportDate: string; filingDate: string; totalValue: number | null };
   holdings: Holding[];
@@ -236,6 +239,7 @@ export interface CotAssetResponse {
   code?: string;
   category?: string;
   collectedAtKst?: string;
+  ageSeconds?: number;
   rows: { date: string; ncNet: number; commNet: number; nrNet: number }[];
   summary?: CotSummary;
 }
@@ -261,6 +265,7 @@ export interface KrxFuturesResponse {
   isEstimated?: boolean;
   estimateNotice?: string;
   collectedAtKst?: string;
+  ageSeconds?: number;
   stale?: boolean;
   rows: KrxRow[];
   latest?: {
@@ -286,6 +291,7 @@ export interface InvestorTrendResponse {
   available: boolean;
   message?: string;
   collectedAtKst?: string;
+  ageSeconds?: number;
   dataDate?: string | null;
   measure?: string;
   unit?: string;
@@ -318,6 +324,7 @@ export interface RadarResponse {
   isHistorical?: boolean;
   historyDate?: string | null;
   collectedAtKst?: string;
+  ageSeconds?: number;
   stale?: boolean;
   rows: RadarRow[];
 }

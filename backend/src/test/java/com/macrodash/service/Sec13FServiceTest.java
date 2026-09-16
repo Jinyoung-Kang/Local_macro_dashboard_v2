@@ -117,4 +117,75 @@ class Sec13FServiceTest {
                 "name", name, "cusip", cusip, "class", "COM",
                 "value", value, "shares", shares, "weight", weight);
     }
+
+    // =========================================================================
+    // 13F 공시에는 shares가 빠진 보유 항목이 실제로 있습니다.
+    // =========================================================================
+    // 예전 코드는 `before == null ? 0.0 : Json.asDouble(before, "shares")` 였습니다.
+    // 한쪽이 primitive 0.0이라 삼항식 전체가 double로 승격되고, Double이 자동
+    // 언박싱됩니다. shares가 없으면 여기서 NullPointerException → 500.
+    // 기관 포트폴리오 화면 전체가 뜨지 않았습니다.
+
+    private JsonNode quarter(String json) {
+        try {
+            return mapper.readTree(json);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("직전 분기에 shares가 없어도 터지지 않는다")
+    void missingSharesDoesNotCrash() {
+        JsonNode previous = quarter("""
+                {"holdings":[{"name":"APPLE INC","value":500,"weight":50.0}]}
+                """);
+        JsonNode current = quarter("""
+                {"holdings":[{"name":"APPLE INC","value":600,"weight":60.0,"shares":100}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 30);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("name")).isEqualTo("APPLE INC");
+    }
+
+    @Test
+    @DisplayName("주식 수를 모르면 '신규 매수'라고 단정하지 않는다")
+    void unknownSharesIsNotReportedAsNewPosition() {
+        // 직전 분기에 **있었던** 종목입니다. 주식 수만 비어 있을 뿐인데
+        // 0으로 메우면 "신규 매수"가 됩니다 — 없는 매매를 지어내는 것입니다.
+        JsonNode previous = quarter("""
+                {"holdings":[{"name":"APPLE INC","value":500,"weight":50.0}]}
+                """);
+        JsonNode current = quarter("""
+                {"holdings":[{"name":"APPLE INC","value":600,"weight":60.0,"shares":100}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 30);
+
+        assertThat(String.valueOf(rows.get(0).get("action")))
+                .doesNotContain("신규 매수")
+                .contains("비교 불가");
+    }
+
+    @Test
+    @DisplayName("직전 분기에 정말 없던 종목은 여전히 신규 매수")
+    void trulyNewPositionStillClassified() {
+        JsonNode previous = quarter("""
+                {"holdings":[{"name":"COCA COLA CO","value":400,"weight":40.0,"shares":50}]}
+                """);
+        JsonNode current = quarter("""
+                {"holdings":[{"name":"APPLE INC","value":600,"weight":60.0,"shares":100}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 30);
+        Map<String, Object> apple = rows.stream()
+                .filter(r -> "APPLE INC".equals(r.get("name")))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(String.valueOf(apple.get("action"))).contains("신규 매수");
+    }
+
 }

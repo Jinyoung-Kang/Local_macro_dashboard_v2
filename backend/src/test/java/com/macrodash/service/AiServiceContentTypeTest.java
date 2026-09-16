@@ -39,11 +39,15 @@ class AiServiceContentTypeTest {
     }
 
     private String startServer(String contentType, String body) throws Exception {
+        return startServer(contentType, body, 200);
+    }
+
+    private String startServer(String contentType, String body, int status) throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat", exchange -> {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", contentType);
-            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
             }
@@ -81,15 +85,33 @@ class AiServiceContentTypeTest {
     }
 
     @Test
-    @DisplayName("본문이 JSON이 아니면 실패로 보고한다 — 성공으로 위장하지 않는다")
-    void reportsFailureOnNonJsonBody() throws Exception {
-        String endpoint = startServer("text/html", "<html>502 Bad Gateway</html>");
+    @DisplayName("본문이 JSON이 아니면 실패로 보고하고, 서버가 보낸 본문을 같이 보여준다")
+    void reportsFailureOnNonJsonBodyWithPreview() throws Exception {
+        // 오류 메시지가 "읽지 못했습니다"에서 끝나면 다음에 또 추측해야 합니다.
+        String endpoint = startServer("text/html", "<html>프록시가 막았습니다</html>");
 
         Map<String, Object> result = new AiService()
                 .callOpenAiFormat("테스트", endpoint, "dummy-key", "test-model", "질문", null);
 
         assertThat(result.get("status")).isEqualTo(false);
-        assertThat(String.valueOf(result.get("error"))).isNotBlank();
+        assertThat(String.valueOf(result.get("error")))
+                .as("서버가 실제로 보낸 내용이 메시지에 있어야 합니다")
+                .contains("프록시가 막았습니다");
+    }
+
+    @Test
+    @DisplayName("4xx면 상태코드와 서버 설명을 함께 남긴다")
+    void reportsHttpErrorWithServerMessage() throws Exception {
+        String endpoint = startServer("application/json",
+                "{\"error\":{\"message\":\"model not found\"}}", 404);
+
+        Map<String, Object> result = new AiService()
+                .callOpenAiFormat("테스트", endpoint, "dummy-key", "test-model", "질문", null);
+
+        assertThat(result.get("status")).isEqualTo(false);
+        String error = String.valueOf(result.get("error"));
+        assertThat(error).contains("404");
+        assertThat(error).contains("model not found");
     }
 
     @Test

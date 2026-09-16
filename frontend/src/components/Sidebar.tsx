@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
-import { apiPost, auth } from "@/lib/api";
+import { auth } from "@/lib/api";
 import { Button } from "@/components/ui";
+import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 
 /**
  * 좌측 메뉴 — 구버전 사이드바의 12개 메뉴를 그대로 옮겼습니다.
@@ -28,22 +28,11 @@ export const MENUS = [
 export function Sidebar({ readMode }: { readMode?: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
-  const refresh = async () => {
-    setRefreshing(true);
-    setMessage(null);
-    try {
-      const result = await apiPost<{ message?: string }>("/api/status/refresh?runFast=true");
-      setMessage(result.message ?? "새로고침을 요청했습니다.");
-      router.refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "새로고침에 실패했습니다.");
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  // 수집 요청 → 끝날 때까지 대기 → 화면 전체 갱신까지 한 번에 처리합니다.
+  // (예전에는 router.refresh()만 불렀는데, 화면이 클라이언트에서 데이터를
+  //  읽으므로 아무 일도 일어나지 않아 사용자가 직접 새로고침해야 했습니다.)
+  const { requestRefresh, collecting, message } = useRefreshSignal();
 
   const logout = async () => {
     await auth.logout();
@@ -89,8 +78,12 @@ export function Sidebar({ readMode }: { readMode?: string }) {
           )}
         </div>
 
-        <Button variant="primary" onClick={refresh} disabled={refreshing}>
-          {refreshing ? "요청 중…" : "데이터 수동 새로고침 🚀"}
+        <Button
+          variant="primary"
+          onClick={() => void requestRefresh()}
+          disabled={collecting}
+        >
+          {collecting ? "수집 중… 끝나면 자동 갱신" : "데이터 수동 새로고침 🚀"}
         </Button>
         {message && <p className="text-[11px] leading-relaxed text-muted">{message}</p>}
 

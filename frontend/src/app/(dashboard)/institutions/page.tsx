@@ -70,7 +70,7 @@ export default function InstitutionsPage() {
             SEC EDGAR 공식 공시 · 분기 공시, 공시 마감 45일 지연
           </p>
         </div>
-        <Freshness collectedAt={data?.collectedAtKst} />
+        <Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} />
       </header>
 
       <Card>

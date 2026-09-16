@@ -58,7 +58,11 @@ export default function LiquidityPage() {
         </div>
         <div className="flex items-center gap-3">
           <Select label="조회 기간" value={years} onChange={setYears} options={PERIODS} />
-          <Freshness collectedAt={data?.collectedAtKst} stale={data?.stale} />
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            stale={data?.stale}
+          />
         </div>
       </header>
 

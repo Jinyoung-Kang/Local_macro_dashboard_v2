@@ -5,11 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -242,41 +247,72 @@ public class AiService {
     /**
      * AI 제공자에 POST하고 응답을 JSON으로 읽습니다.
      *
-     * <p><b>응답을 String으로 받아 직접 파싱하는 이유</b> — NVIDIA는 같은
-     * 엔드포인트인데도 모델에 따라 {@code Content-Type: application/octet-stream}을
-     * 붙여 보내는 경우가 있습니다. Jackson 메시지 컨버터는 {@code application/json}
-     * 계열만 처리하므로 그대로 두면 본문이 멀쩡한 JSON인데도 이렇게 터집니다.
+     * <p><b>메시지 컨버터를 쓰지 않고 본문 스트림을 직접 읽는 이유</b> —
+     * NVIDIA는 같은 엔드포인트인데도 모델에 따라
+     * {@code Content-Type: application/octet-stream}을 붙여 보냅니다. 본문은
+     * 멀쩡한 JSON인데 {@code retrieve().body(...)} 경로가 이렇게 터졌습니다.
      *
      * <pre>
-     * Error while extracting response for type
-     *   [com.fasterxml.jackson.databind.JsonNode]
-     *   and content type [application/octet-stream]
+     * Error while extracting response for type [...] and content type
+     *   [application/octet-stream]
      * </pre>
      *
-     * <p><b>byte[]로 받는 이유</b> — Content-Type이 무엇이든 받을 수 있으면서
-     * <b>문자 인코딩을 추측하지 않기</b> 위해서입니다. String으로 받으면 Spring의
-     * StringHttpMessageConverter가 charset 없는 응답을 ISO-8859-1로 읽습니다.
-     * {@code application/octet-stream}에는 charset이 없으므로 한국어 응답이
-     * "분석 결과입니다." → "ë¶„ì„..." 처럼 깨집니다(테스트로 고정해 둔 실제 증상).
-     * JSON 규격은 UTF-8/16/32 자동 판별을 정의하고 Jackson이 이를 구현하므로,
-     * 바이트를 그대로 넘기는 쪽이 정확합니다.
+     * <p>이 오류는 요청 타입을 JsonNode에서 byte[]로 바꿔도 그대로 재현됐습니다.
+     * 즉 "읽을 컨버터가 없다"가 아니라 <b>협상 단계 자체가 문제</b>였습니다.
+     * {@code exchange()}로 {@link org.springframework.http.client.ClientHttpResponse}를
+     * 직접 받아 스트림을 읽으면 Content-Type 협상이 아예 개입하지 않습니다.
      *
-     * <p>Accept 헤더도 함께 보내 서버가 JSON으로 협상해 주면 그대로 따릅니다.
+     * <p>바이트 그대로 Jackson에 넘기는 것도 의도입니다. String으로 받으면
+     * charset 없는 응답이 ISO-8859-1로 해석돼 한국어가 깨집니다
+     * ("분석 결과입니다." → "ë¶„ì„..." — 테스트로 고정해 둔 실제 증상).
+     * JSON 규격은 UTF-8/16/32 자동 판별을 정의하고 Jackson이 이를 구현합니다.
+     *
+     * <p>실패하면 <b>서버가 실제로 보낸 본문 앞부분</b>을 예외 메시지에 담습니다.
+     * 다음에 또 막혔을 때 추측하지 않고 바로 원인을 볼 수 있어야 합니다.
      */
-    private JsonNode postJson(String endpoint, String bearerToken, Object body) throws Exception {
-        byte[] raw = http.post()
+    private JsonNode postJson(String endpoint, String bearerToken, Object body) {
+        return http.post()
                 .uri(endpoint)
                 .header("Authorization", "Bearer " + bearerToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(body)
-                .retrieve()
-                .body(byte[].class);
+                .exchange((request, response) -> {
+                    HttpStatusCode status = response.getStatusCode();
+                    byte[] raw = readAll(response);
 
-        if (raw == null || raw.length == 0) {
-            throw new IllegalStateException("응답 본문이 비어 있습니다");
+                    if (status.isError()) {
+                        throw new IllegalStateException(
+                                "HTTP %s — %s".formatted(status.value(), preview(raw)));
+                    }
+                    if (raw.length == 0) {
+                        throw new IllegalStateException("응답 본문이 비어 있습니다 (HTTP %s)"
+                                .formatted(status.value()));
+                    }
+                    try {
+                        return MAPPER.readTree(raw);
+                    } catch (IOException e) {
+                        throw new IllegalStateException(
+                                "응답을 JSON으로 읽지 못했습니다 — 받은 본문: " + preview(raw), e);
+                    }
+                }, false);   // false = 4xx/5xx에 기본 예외를 던지지 않고 위에서 직접 처리
+    }
+
+    private static byte[] readAll(ClientHttpResponse response) {
+        try (InputStream in = response.getBody()) {
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new IllegalStateException("응답 본문을 읽지 못했습니다: " + e.getMessage(), e);
         }
-        return MAPPER.readTree(raw);
+    }
+
+    /** 오류 메시지에 넣을 본문 앞부분. 길면 자릅니다. */
+    private static String preview(byte[] raw) {
+        if (raw == null || raw.length == 0) {
+            return "(본문 없음)";
+        }
+        String text = new String(raw, StandardCharsets.UTF_8).replaceAll("\\s+", " ").trim();
+        return text.length() > 300 ? text.substring(0, 300) + "…" : text;
     }
 
     private String extractOpenAiText(JsonNode response) {

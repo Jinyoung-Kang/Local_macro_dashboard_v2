@@ -59,7 +59,11 @@ export default function RadarPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Freshness collectedAt={data?.collectedAtKst} stale={data?.stale} />
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            stale={data?.stale}
+          />
           <Button onClick={reload}>새로고침</Button>
           <Button onClick={() => setShowDiagnostics((value) => !value)}>
             {showDiagnostics ? "진단 닫기" : "데이터 소스 연결 테스트"}

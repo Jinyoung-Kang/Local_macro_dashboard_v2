@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { MarketClock } from "@/components/MarketClock";
 import { Sidebar } from "@/components/Sidebar";
 import { useApi } from "@/hooks/useApi";
+import { RefreshProvider } from "@/hooks/useRefreshSignal";
 
 /**
  * 대시보드 공통 레이아웃 — 사이드바 + 거래소 시계.
@@ -13,6 +14,18 @@ import { useApi } from "@/hooks/useApi";
  * 역할이며, 실제 접근 차단은 백엔드가 합니다(프런트 검사는 UX용입니다).
  */
 export default function DashboardLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  // 레이아웃 자신도 useApi를 쓰므로 Provider 안쪽에 있어야 합니다.
+  // (수동 새로고침이 사이드바의 읽기 모드 표시까지 갱신합니다.)
+  return (
+    <RefreshProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </RefreshProvider>
+  );
+}
+
+function DashboardShell({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();

@@ -118,7 +118,7 @@ public class RadarService {
     private Map<String, Object> fillFromSnapshot(Map<String, Object> out, Snapshot snapshot) {
         JsonNode payload = snapshot.payload();
         out.put("available", !Json.array(payload, "rows").isEmpty());
-        out.put("collectedAtKst", snapshot.collectedAtKst());
+        snapshot.putFreshness(out);
         out.put("stale", !snapshot.isFresh(Datasets.MAX_AGE_REALTIME));
         out.put("source", Json.asText(payload, "source"));
         out.put("sourceKind", Json.asText(payload, "sourceKind"));

@@ -57,8 +57,7 @@ public class MacroService {
 
         out.put("available", true);
         out.put("collectedAt", snap.collectedAt());
-        out.put("collectedAtKst", snap.collectedAtKst());
-        out.put("ageSeconds", snap.ageSeconds());
+        snap.putFreshness(out);
         out.put("stale", !snap.isFresh(Datasets.MAX_AGE_REALTIME));
         out.put("categories", payload.get("categories"));
         out.put("rates", payload.get("rates"));
@@ -169,7 +168,7 @@ public class MacroService {
         }
 
         out.put("available", !points.isEmpty());
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("points", points);
         return out;
     }
@@ -217,7 +216,7 @@ public class MacroService {
         entry.put("pct", SeriesMath.percentChange(latest, previous));
         entry.put("isProxy", Json.asBoolean(payload, "isProxy"));
         entry.put("sourceLabel", Json.asText(payload, "sourceLabel"));
-        entry.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(entry);
         return entry;
     }
 
@@ -391,7 +390,7 @@ public class MacroService {
             return out;
         }
         out.put("available", true);
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("updatedAt", Json.asText(snapshot.get().payload(), "updatedAt"));
         out.put("items", snapshot.get().payload().get("items"));
         return out;

@@ -66,7 +66,7 @@ public class KrxService {
                     "KRX 수집 실패로 KODEX 200 기반 추정치를 보여 주고 있습니다. "
                             + "미결제약정·베이시스는 추정하지 않으므로 비어 있습니다.");
         }
-        out.put("collectedAtKst", snap.collectedAtKst());
+        snap.putFreshness(out);
         out.put("stale", !snap.isFresh(Datasets.MAX_AGE_DAILY));
         out.put("rows", rows);
         out.put("latest", latestBlock(rows));
@@ -141,7 +141,7 @@ public class KrxService {
 
         JsonNode payload = snapshot.get().payload();
         out.put("available", !Json.array(payload, "rows").isEmpty());
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("dataDate", Json.asText(payload, "dataDate"));
         // 금액(억원) 기준은 Daum이 제공하지 않습니다. 단위를 명시해 오해를 막습니다.
         out.put("measure", Json.asText(payload, "measure"));

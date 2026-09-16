@@ -72,7 +72,7 @@ public class LiquidityService {
         out.put("available", !rows.isEmpty());
         // ⚠️ 추정치 여부를 그대로 전달합니다. 화면은 이 값을 보고 경고해야 합니다.
         out.put("isEstimated", Json.asBoolean(payload, "isEstimated") || snap.isEstimated());
-        out.put("collectedAtKst", snap.collectedAtKst());
+        snap.putFreshness(out);
         out.put("stale", !snap.isFresh(Datasets.MAX_AGE_DAILY));
         out.put("rows", rows);
 

@@ -73,7 +73,7 @@ public class CotService {
 
         List<JsonNode> rows = Json.array(snapshot.get().payload(), "rows");
         out.put("available", !rows.isEmpty());
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("rows", rows);
         out.put("summary", summarize(assetName, rows));
         return out;
@@ -105,7 +105,7 @@ public class CotService {
         }
 
         out.put("available", !summaries.isEmpty());
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("assets", summaries);
         return out;
     }

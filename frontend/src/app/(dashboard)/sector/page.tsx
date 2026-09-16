@@ -59,7 +59,11 @@ export default function SectorPage() {
             S&amp;P 11개 섹터 + 글로벌 자산군 모멘텀 · 벤치마크 {data?.benchmark ?? "SPY"}
           </p>
         </div>
-        <Freshness collectedAt={data?.collectedAtKst} stale={data?.stale} />
+        <Freshness
+          collectedAt={data?.collectedAtKst}
+          ageSeconds={data?.ageSeconds}
+          stale={data?.stale}
+        />
       </header>
 
       {!data?.available && (

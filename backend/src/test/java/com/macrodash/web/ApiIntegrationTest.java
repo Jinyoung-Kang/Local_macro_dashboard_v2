@@ -197,6 +197,38 @@ class ApiIntegrationTest {
         return cookies.get(0).split(";")[0];
     }
 
+    @Test
+    @DisplayName("13F: quarters가 0이나 음수여도 500이 아니다")
+    void sec13fSurvivesOutOfRangeQuarters() {
+        // quarters는 URL 파라미터입니다. 예전에는 그대로 subList(0, quarters)에
+        // 넘겨서 quarters=0이면 빈 목록의 get(0)으로, quarters=-1이면 subList가
+        // 곧바로 예외를 던져 500이 났습니다.
+        String cik = "0001067983";      // 버크셔
+        insertSnapshot(
+                Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS),
+                """
+                {"quarters":[
+                  {"filingDate":"2026-08-14","reportDate":"2026-06-30","totalValue":1000,
+                   "holdings":[{"name":"APPLE INC","value":600,"weight":60.0},
+                               {"name":"COCA COLA CO","value":400,"weight":40.0}]},
+                  {"filingDate":"2026-05-15","reportDate":"2026-03-31","totalValue":900,
+                   "holdings":[{"name":"APPLE INC","value":500,"weight":55.6},
+                               {"name":"COCA COLA CO","value":400,"weight":44.4}]}
+                ]}
+                """);
+
+        for (int quarters : new int[]{0, -1, 1, 8, 999}) {
+            JsonNode body = authorizedGet(
+                    "/api/sec13f/portfolio?cik=" + cik + "&quarters=" + quarters);
+            assertThat(body.path("available").asBoolean())
+                    .as("quarters=%d 에서도 응답이 나와야 합니다", quarters)
+                    .isTrue();
+            assertThat(body.path("quarters").size())
+                    .as("quarters=%d 에서 최소 한 분기는 나와야 합니다", quarters)
+                    .isGreaterThanOrEqualTo(1);
+        }
+    }
+
     private JsonNode authorizedGet(String path) {
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.COOKIE, sessionCookie);

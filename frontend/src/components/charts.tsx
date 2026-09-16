@@ -21,6 +21,72 @@ import { EMPTY, formatNumber } from "@/lib/format";
 const AXIS = { stroke: "#8B949E", fontSize: 11 };
 const GRID = "#30363D";
 
+/**
+ * 축 라벨 길이를 눈대중으로 잽니다.
+ *
+ * 한글·한자는 폭이 라틴 문자의 약 두 배입니다. 글자 수만 세면
+ * "KODEX 레버리지"와 "TIGER 미국필라델피아반도체나스닥"을 같게 보게 됩니다.
+ */
+function visualWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    width += /[가-힣ㄱ-ㅎㅏ-ㅣ一-鿿ぁ-ヿ]/.test(char) ? 2 : 1;
+  }
+  return width;
+}
+
+function truncateToWidth(text: string, maxWidth: number): string {
+  if (visualWidth(text) <= maxWidth) {
+    return text;
+  }
+  let out = "";
+  let width = 0;
+  for (const char of text) {
+    const next = width + (/[가-힣ㄱ-ㅎㅏ-ㅣ一-鿿ぁ-ヿ]/.test(char) ? 2 : 1);
+    if (next > maxWidth - 1) {
+      break;
+    }
+    out += char;
+    width = next;
+  }
+  return out + "…";
+}
+
+/**
+ * 한 줄로만 그리는 세로축 라벨.
+ *
+ * Recharts 기본 렌더러는 폭을 넘는 라벨을 여러 줄로 접습니다. 막대가 15개면
+ * 한 칸이 24px 남짓인데 두 줄은 26px이 넘어서 **위아래 라벨이 서로 겹칩니다**
+ * (실제로 수급 레이더 화면에서 종목명이 뭉개져 읽을 수 없었습니다).
+ * 잘라서 한 줄로 그리고, 전체 이름은 툴팁이 보여 줍니다.
+ */
+function CategoryTick({
+  x,
+  y,
+  payload,
+  maxWidth,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string | number };
+  maxWidth: number;
+}) {
+  const label = String(payload?.value ?? "");
+  return (
+    <text
+      x={x}
+      y={y}
+      dy={4}
+      textAnchor="end"
+      fill={AXIS.stroke}
+      fontSize={AXIS.fontSize}
+    >
+      <title>{label}</title>
+      {truncateToWidth(label, maxWidth)}
+    </text>
+  );
+}
+
 function tooltipStyle() {
   return {
     contentStyle: {
@@ -166,8 +232,12 @@ export function HorizontalBars({
     return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
   }
 
+  // 항목이 많으면 높이를 늘립니다. 고정 높이로 30개를 그리면 한 칸이 12px이라
+  // 막대도 라벨도 읽을 수 없습니다.
+  const chartHeight = Math.max(height, data.length * 26 + 48);
+
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={chartHeight}>
       <BarChart
         data={data}
         layout="vertical"
@@ -180,7 +250,14 @@ export function HorizontalBars({
           tickLine={false}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
         />
-        <YAxis type="category" dataKey="name" tick={AXIS} width={120} tickLine={false} />
+        <YAxis
+          type="category"
+          dataKey="name"
+          width={150}
+          tickLine={false}
+          interval={0}
+          tick={(props) => <CategoryTick {...props} maxWidth={24} />}
+        />
         <Tooltip
           {...tooltipStyle()}
           formatter={(value: number) => [`${formatNumber(value, 2)}${unit}`, "값"]}

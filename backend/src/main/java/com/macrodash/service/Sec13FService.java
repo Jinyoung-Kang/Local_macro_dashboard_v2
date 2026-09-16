@@ -50,7 +50,14 @@ public class Sec13FService {
         out.put("cik", cik);
         out.put("quartersRequested", quarters);
 
-        Optional<Snapshot> snapshot = readHistory(cik, quarters);
+        // quarters는 URL 파라미터입니다. 0·음수·9999 같은 값이 그대로 들어오면
+        //   - 0 이하: subList(0, 0)이 빈 목록이 되어 뒤의 get(0)에서 500
+        //   - 저장 한도 초과: 존재하지 않는 데이터셋 이름(q999)을 찾아 "없음" 응답
+        // 이 됩니다. 우리가 보관하는 범위로 먼저 접어 둡니다.
+        int wanted = Math.min(Math.max(1, quarters), Datasets.MAX_TRACKED_QUARTERS);
+        out.put("quartersUsed", wanted);
+
+        Optional<Snapshot> snapshot = readHistory(cik, wanted);
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
             out.put("quarters", List.of());
@@ -67,12 +74,12 @@ public class Sec13FService {
             return out;
         }
 
-        List<JsonNode> selected = allQuarters.size() > quarters
-                ? allQuarters.subList(0, quarters)
+        List<JsonNode> selected = allQuarters.size() > wanted
+                ? allQuarters.subList(0, wanted)
                 : allQuarters;
 
         out.put("available", true);
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("error", Json.asText(payload, "error"));
         out.put("institution", institutionByCik(cik));
 
@@ -136,12 +143,25 @@ public class Sec13FService {
                 row.put("sharesDiff", null);
             } else {
                 JsonNode before = previousByName.get(name);
-                Double prevWeight = before == null ? 0.0 : Json.asDouble(before, "weight");
-                Double prevShares = before == null ? 0.0 : Json.asDouble(before, "shares");
+                // ⚠️ Double.valueOf가 꼭 필요합니다. 한쪽이 primitive 0.0이면
+                // 삼항식 전체가 double로 승격되어 반대편 Double이 자동 언박싱되고,
+                // 값이 없을 때 NullPointerException으로 500이 납니다.
+                // 13F 공시에는 shares가 빠진 보유 항목이 실제로 있습니다.
+                Double prevWeight = before == null
+                        ? Double.valueOf(0.0) : Json.asDouble(before, "weight");
+                Double prevShares = before == null
+                        ? Double.valueOf(0.0) : Json.asDouble(before, "shares");
                 Double weightDiff = subtract(weight, prevWeight);
                 row.put("weightDiff", weightDiff);
                 row.put("sharesDiff", subtract(shares, prevShares));
-                row.put("action", classify(weightDiff, shares, prevShares));
+
+                // 직전 분기에 **있었는데** 주식 수를 모르면 매매를 판정할 수
+                // 없습니다. 0으로 메우면 "신규 매수"로 단정하게 되는데, 그건
+                // 데이터가 없다는 사실을 매매 사실로 바꿔 말하는 것입니다.
+                boolean cannotCompare = before != null && (prevShares == null || shares == null);
+                row.put("action", cannotCompare
+                        ? "⚪ 비교 불가 (주식 수 없음)"
+                        : classify(weightDiff, shares, prevShares));
             }
             rows.add(row);
         }

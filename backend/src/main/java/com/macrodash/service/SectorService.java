@@ -65,7 +65,7 @@ public class SectorService {
 
         JsonNode tickers = Json.child(snapshot.get().payload(), "tickers");
         out.put("available", tickers != null && tickers.size() > 0);
-        out.put("collectedAtKst", snapshot.get().collectedAtKst());
+        snapshot.get().putFreshness(out);
         out.put("stale", !snapshot.get().isFresh(Datasets.MAX_AGE_DAILY));
 
         List<Map<String, Object>> sectors = buildRows(tickers, SECTOR_ETFS, "type");

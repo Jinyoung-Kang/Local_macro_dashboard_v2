@@ -117,16 +117,29 @@ public class DataStatusService {
         out.put("refreshRequested", refreshed.isPresent());
 
         if (runFast) {
+            // 수집 시작 **전**의 실행 번호를 함께 돌려줍니다. 화면은 이 번호가
+            // 바뀌고 finishedAt이 찍힐 때까지 기다렸다가 스스로 다시 읽습니다.
+            // 이게 없으면 "잠시 후 새로고침하세요"라고 사람에게 떠넘기게 됩니다.
+            out.put("baselineRunId", currentRunId().orElse(null));
+
             Optional<JsonNode> result = collector.runGroup("fast", false);
             out.put("triggered", result.isPresent());
             out.put("message", result.isPresent()
-                    ? "수집기에 fast 작업을 요청했습니다. 잠시 후 새로고침하세요."
+                    ? "수집기에 fast 작업을 요청했습니다. 끝나면 화면이 자동으로 갱신됩니다."
                     : "수집기에 연결하지 못했습니다. 저장본을 그대로 표시합니다.");
         } else {
             out.put("triggered", false);
             out.put("message", "다음 조회에서 저장본을 다시 확인합니다.");
         }
         return out;
+    }
+
+    /** 수집기가 기록한 마지막 실행 번호. 수집기가 죽어 있으면 비어 있습니다. */
+    private Optional<Long> currentRunId() {
+        return collector.status()
+                .map(node -> node.path("lastRun").path("id"))
+                .filter(JsonNode::isNumber)
+                .map(JsonNode::asLong);
     }
 
     /** 수집 작업 목록 (화면에서 개별 실행 버튼을 그리기 위해). */
