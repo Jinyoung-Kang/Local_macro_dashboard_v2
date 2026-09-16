@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#
+# scripts/setup.sh
+# 최초 1회 준비 스크립트 (macOS · Linux 공통).
+#
+#   1) .env 생성 (.env.example 복사)
+#   2) 세션 서명 키(JWT_SECRET) 자동 생성 — 기본 placeholder를 쓰면 안 됩니다
+#   3) 필수 도구 확인 (Docker / 네이티브 실행용 Java·Node·Python)
+#   4) 포트 충돌 확인 (3000 · 8080 · 8000 · 5432 · 6379)
+#
+# 이미 .env가 있으면 덮어쓰지 않습니다. 여러 번 실행해도 안전합니다.
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# macOS 기본 터미널에서도 색이 깨지지 않는 범위만 씁니다.
+BOLD=$(printf '\033[1m')
+GREEN=$(printf '\033[32m')
+YELLOW=$(printf '\033[33m')
+RED=$(printf '\033[31m')
+DIM=$(printf '\033[2m')
+RESET=$(printf '\033[0m')
+
+ok()    { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
+warn()  { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
+fail()  { printf '  %s✗%s %s\n' "$RED" "$RESET" "$1"; }
+note()  { printf '    %s%s%s\n' "$DIM" "$1" "$RESET"; }
+title() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"; }
+
+printf '%s\n' "${BOLD}Local Macro Dashboard v2 — 준비${RESET}"
+printf '%s\n' "${DIM}경로: $REPO_ROOT${RESET}"
+
+# ==============================================================================
+# 1. .env
+# ==============================================================================
+title "1. 환경 파일"
+
+if [ -f .env ]; then
+  ok ".env가 이미 있습니다 (덮어쓰지 않습니다)"
+else
+  cp .env.example .env
+  ok ".env를 만들었습니다 (.env.example 복사)"
+fi
+
+# --- 세션 서명 키 ---------------------------------------------------------
+# 기본값(placeholder)을 그대로 쓰면 누구나 세션 토큰을 위조할 수 있습니다.
+if grep -q '^JWT_SECRET=change-me' .env 2>/dev/null; then
+  if command -v openssl >/dev/null 2>&1; then
+    SECRET=$(openssl rand -base64 48 | tr -d '\n=+/' | cut -c1-48)
+    # BSD sed(macOS)와 GNU sed(Linux)의 -i 문법이 달라, 임시 파일로 처리합니다.
+    tmp=$(mktemp)
+    awk -v secret="$SECRET" \
+      '/^JWT_SECRET=/ { print "JWT_SECRET=" secret; next } { print }' .env > "$tmp"
+    mv "$tmp" .env
+    ok "JWT_SECRET을 무작위 값으로 생성했습니다"
+  else
+    warn "openssl이 없어 JWT_SECRET을 생성하지 못했습니다. .env에서 직접 바꾸세요"
+  fi
+else
+  ok "JWT_SECRET이 이미 설정돼 있습니다"
+fi
+
+# --- 접속 비밀번호 --------------------------------------------------------
+if grep -q '^APP_PASSWORD=admin1234@' .env 2>/dev/null; then
+  warn "APP_PASSWORD가 기본값(admin1234@)입니다"
+  note ".env에서 바꾸는 것을 권합니다. 이 값 하나가 대시보드 전체의 접근 통제입니다."
+else
+  ok "APP_PASSWORD가 기본값이 아닙니다"
+fi
+
+# --- API 키 현황 ----------------------------------------------------------
+title "2. 외부 API 키 (없어도 실행됩니다)"
+
+check_key() {
+  local var="$1" label="$2" effect="$3"
+  local value
+  value=$(grep "^${var}=" .env 2>/dev/null | head -1 | cut -d= -f2- || true)
+  if [ -n "$value" ]; then
+    ok "$label"
+  else
+    warn "$label 없음 → $effect"
+  fi
+}
+
+check_key FRED_API_KEY "FRED"        "웹 CSV로 폴백 (대부분 정상 동작)"
+check_key KRX_API_KEY  "KRX"         "선물이 KODEX 200 기반 추정치로 표시"
+check_key KIS_APP_KEY  "한국투자증권" "장중 수급 가집계·교차 검증 비활성화"
+check_key LS_APP_KEY   "LS증권"       "수급 레이더에서 LS 단계만 건너뜀"
+check_key NVIDIA_API_KEY "AI(NVIDIA)" "AI 메뉴 비활성화 (Cerebras/Cloudflare로 대체 가능)"
+
+# ==============================================================================
+# 3. 실행 도구
+# ==============================================================================
+title "3. 실행 방법 확인"
+
+DOCKER_READY=0
+if command -v docker >/dev/null 2>&1; then
+  if docker info >/dev/null 2>&1; then
+    DOCKER_READY=1
+    ok "Docker 실행 중 → 'make up' 한 줄로 전체 스택을 띄울 수 있습니다"
+  else
+    warn "Docker는 설치돼 있지만 데몬이 꺼져 있습니다"
+    note "Docker Desktop을 실행한 뒤 다시 시도하세요 (또는 아래 네이티브 실행)"
+  fi
+else
+  warn "Docker가 없습니다 → 네이티브 실행 경로를 쓰세요 (docs/LOCAL_SETUP.md)"
+fi
+
+NATIVE_READY=1
+check_tool() {
+  local cmd="$1" label="$2" hint="$3" version
+  if command -v "$cmd" >/dev/null 2>&1; then
+    # JAVA_TOOL_OPTIONS 같은 환경 안내가 섞여 나오는 경우가 있어 걸러 냅니다.
+    version=$("$cmd" --version 2>&1 | grep -v '^Picked up' | head -1 | cut -c1-60)
+    ok "$label: $version"
+  else
+    NATIVE_READY=0
+    warn "$label 없음 — $hint"
+  fi
+}
+
+check_tool java   "Java"       "brew install --cask temurin@21"
+check_tool mvn    "Maven"      "brew install maven"
+check_tool node   "Node.js"    "brew install node@22"
+check_tool python3 "Python"    "brew install python@3.11"
+
+if [ "$DOCKER_READY" -eq 0 ] && [ "$NATIVE_READY" -eq 0 ]; then
+  fail "Docker도, 네이티브 도구도 준비되지 않았습니다. 둘 중 하나를 갖추세요."
+fi
+
+# ==============================================================================
+# 4. 포트 충돌
+# ==============================================================================
+title "4. 포트 확인"
+
+port_in_use() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+CONFLICT=0
+check_port() {
+  local port="$1" label="$2" envvar="$3"
+  if port_in_use "$port"; then
+    CONFLICT=1
+    warn "$port ($label) 사용 중"
+    note ".env의 ${envvar}를 다른 값으로 바꾸세요"
+  else
+    ok "$port ($label) 비어 있음"
+  fi
+}
+
+check_port 3000 "화면"       "FRONTEND_PORT"
+check_port 8080 "백엔드 API" "BACKEND_PORT"
+check_port 8000 "수집기"     "COLLECTOR_PORT"
+check_port 5432 "PostgreSQL" "DATABASE_PORT"
+check_port 6379 "Redis"      "REDIS_PORT"
+
+if [ "$CONFLICT" -eq 1 ]; then
+  note "포트를 바꾼 뒤에는 FRONTEND_ORIGIN·NEXT_PUBLIC_API_BASE도 함께 맞춰야 합니다."
+fi
+
+# ==============================================================================
+# 5. 다음 단계
+# ==============================================================================
+title "다음 단계"
+
+if [ "$DOCKER_READY" -eq 1 ]; then
+  cat <<'NEXT'
+    make up        # 전체 스택 기동 (최초 빌드 5~10분)
+    make collect   # 첫 데이터 수집 (없으면 화면이 비어 있습니다)
+    open http://localhost:3000
+NEXT
+else
+  cat <<'NEXT'
+    Docker 없이 실행하려면: docs/LOCAL_SETUP.md 의 "네이티브 실행" 절을 따르세요.
+NEXT
+fi
+
+printf '\n'

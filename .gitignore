@@ -25,3 +25,6 @@ next-env.d.ts
 # 로그·임시
 *.log
 .DS_Store
+
+# 백업 (make backup) — 용량이 크고 개인 데이터입니다
+backups/

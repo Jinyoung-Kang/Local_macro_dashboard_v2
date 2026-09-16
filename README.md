@@ -7,6 +7,9 @@
 Streamlit 앱)의 **기능을 그대로 유지**하면서, 화면·API·수집을 분리한 다중 언어
 스택으로 다시 만들었습니다.
 
+**실행 환경** — macOS(Apple Silicon 포함) 로컬 · Docker Desktop 한 줄 실행 또는
+Homebrew 네이티브 실행 · 권장 경로 `~/Projects/Local-macro-dashboard-v2`
+
 ```
 ┌─────────────┐   REST    ┌──────────────┐   JDBC    ┌────────────┐
 │  Next.js    │ ────────▶ │ Spring Boot  │ ────────▶ │ PostgreSQL │
@@ -55,43 +58,58 @@ Streamlit 앱)의 **기능을 그대로 유지**하면서, 화면·API·수집�
 
 ## 2. 실행
 
-### 2-1. Docker Compose (권장)
+### 2-1. 저장 · 실행 (Docker, 권장)
 
 ```bash
-git clone https://github.com/Jinyoung-Kang/Local_macro_dashboard_v2.git
-cd Local_macro_dashboard_v2
+# 저장 — 저장소 이름(밑줄)과 폴더 이름(하이픈)이 다르므로 경로를 직접 지정합니다
+git clone https://github.com/Jinyoung-Kang/Local_macro_dashboard_v2.git \
+  ~/Projects/Local-macro-dashboard-v2
+cd ~/Projects/Local-macro-dashboard-v2
 
-cp .env.example .env      # 비밀번호와 API 키를 채웁니다 (키가 없어도 실행됩니다)
-docker compose up -d --build
+make setup     # .env 생성 · 세션 키 자동 생성 · 키/포트 확인
+make up        # 전체 스택 기동 (최초 빌드 5~10분)
+make collect   # 첫 데이터 수집 — 이걸 해야 화면에 숫자가 찹니다
+open http://localhost:3000
 ```
 
-- 화면: <http://localhost:3000> (기본 비밀번호 `admin1234@` — `.env`의 `APP_PASSWORD`)
-- API: <http://localhost:8080/api/health>
-- 수집기: <http://localhost:8000/status>
+| 주소 | 용도 |
+|---|---|
+| <http://localhost:3000> | 화면 (비밀번호는 `.env`의 `APP_PASSWORD`) |
+| <http://localhost:8080/api/health> | 백엔드 상태 |
+| <http://localhost:8000/docs> | 수집기 API 문서 |
 
-### 2-2. 개발 모드 (각 서비스 따로)
+`make setup`은 `.env`를 만들고 **세션 서명 키를 무작위로 생성**합니다. 그다음
+`.env`에서 `APP_PASSWORD`부터 바꾸세요 — 이 값 하나가 대시보드 전체의 접근
+통제입니다.
+
+**자주 쓰는 명령** (`make help`로 전체 목록)
 
 ```bash
-# 0) 인프라
-docker compose up -d postgres redis
-
-# 1) 수집기
-cd collector
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash \
-  uvicorn app.main:app --reload --port 8000
-
-# 2) 백엔드
-cd backend
-DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash \
-  APP_PASSWORD=admin1234@ mvn spring-boot:run
-
-# 3) 화면
-cd frontend
-npm install
-NEXT_PUBLIC_API_BASE=http://localhost:8080 npm run dev
+make status            # 수집 현황 (구버전 collector.py --status)
+make logs S=collector  # 특정 서비스 로그
+make down / make up    # 정지 / 재기동
+make backup            # DB 백업 → backups/
+make test              # 세 언어 테스트 전부
 ```
+
+컨테이너에는 `restart: unless-stopped`가 걸려 있어 **맥을 재부팅해도 Docker
+Desktop이 뜨면 자동으로 복구**됩니다.
+
+> 📘 맥 기준 상세 절차(Docker 설치, 포트 변경, launchd 상주, 문제 해결)는
+> **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)** 에 있습니다.
+
+### 2-2. 개발 모드 (Docker 없이 / 코드 고치며 실행)
+
+```bash
+make infra            # PostgreSQL·Redis만 컨테이너로
+
+make dev-collector    # 터미널 1 — 자동 리로드
+make dev-backend      # 터미널 2
+make dev-frontend     # 터미널 3 — 핫 리로드
+```
+
+Homebrew로 PostgreSQL·Redis까지 직접 설치해 Docker를 전혀 쓰지 않는 방법은
+[docs/LOCAL_SETUP.md §5](docs/LOCAL_SETUP.md)에 있습니다.
 
 ### 2-3. 키가 없을 때의 동작 (구버전과 동일)
 
@@ -303,6 +321,7 @@ cd frontend && npm run lint && npm run build
 
 ## 10. 문서
 
+- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — **맥 로컬 설치·실행 상세** (포트 변경, launchd, 문제 해결)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 계층 구조, 데이터 흐름, 저장 스키마
 - [docs/MIGRATION.md](docs/MIGRATION.md) — 구버전 파일 → v2 파일 대응표
 - [docs/API.md](docs/API.md) — REST 엔드포인트 목록
