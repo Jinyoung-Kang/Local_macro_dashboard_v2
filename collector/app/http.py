@@ -41,14 +41,26 @@ BROWSER_HEADERS = {
 _UA_PRODUCT = "LocalMacroDashboard/2.0"
 
 
-class SecUserAgentMissing(RuntimeError):
+_ENV_HINT = "(open -e .env → SEC_USER_AGENT=your-name@example.com → make up)"
+
+# .env에 안내 문구를 지우지 않고 그대로 둔 경우를 걸러 냅니다.
+_PLACEHOLDERS = (
+    "이메일", "본인이메일", "your-name@example.com", "your-email",
+    "youremail", "example@example.com", "name@example.com",
+)
+
+
+class SecUserAgentInvalid(RuntimeError):
+    """SEC_USER_AGENT 값이 쓸 수 없는 상태입니다."""
+
+
+class SecUserAgentMissing(SecUserAgentInvalid):
     """SEC_USER_AGENT가 비어 있습니다."""
 
     def __init__(self) -> None:
         super().__init__(
             "SEC_USER_AGENT가 설정되지 않았습니다. SEC EDGAR는 연락처 없는 요청을 "
-            "403으로 막습니다. .env에 본인 이메일을 넣으세요 "
-            "(open -e .env → SEC_USER_AGENT=your-name@example.com)"
+            f"403으로 막습니다. .env에 본인 이메일을 넣으세요 {_ENV_HINT}"
         )
 
 
@@ -58,13 +70,45 @@ def sec_user_agent() -> str:
 
     .env에 이메일만 적어도 되도록, 연락처 형태가 아니면 SEC가 요구하는
     "제품명 (contact: 연락처)" 형태로 감싸 줍니다.
+
+    값이 잘못돼 있으면 **요청을 보내기 전에** 멈춥니다. 특히 한글이 섞이면
+    requests가 헤더를 latin-1로 인코딩하다가 이렇게 터집니다.
+
+        UnicodeEncodeError: 'latin-1' codec can't encode characters …
+
+    이 메시지만 보고 .env를 고쳐야 한다는 걸 알아채기는 어렵습니다.
     """
     from . import settings  # 순환 import 방지를 위해 함수 안에서 가져옵니다.
 
     configured = settings.sec_user_agent()
     if not configured:
         raise SecUserAgentMissing()
-    if "@" in configured and "(" not in configured:
+
+    # HTTP 헤더는 latin-1로만 보낼 수 있습니다. 한글 주소는 애초에 불가능합니다.
+    try:
+        configured.encode("latin-1")
+    except UnicodeEncodeError:
+        raise SecUserAgentInvalid(
+            f"SEC_USER_AGENT에 영문/숫자가 아닌 문자가 있습니다: {configured!r}. "
+            "HTTP 헤더는 한글을 담을 수 없습니다. 실제 이메일 주소를 "
+            f"영문 그대로 적어 주세요 {_ENV_HINT}"
+        ) from None
+
+    lowered = configured.lower()
+    if any(token in lowered for token in _PLACEHOLDERS):
+        raise SecUserAgentInvalid(
+            f"SEC_USER_AGENT가 예시 값 그대로입니다: {configured!r}. "
+            "SEC는 연락이 닿지 않는 요청을 차단합니다. 실제 이메일로 바꿔 주세요 "
+            f"{_ENV_HINT}"
+        )
+
+    if "@" not in configured:
+        raise SecUserAgentInvalid(
+            f"SEC_USER_AGENT에 이메일 주소가 없습니다: {configured!r}. "
+            f"SEC는 연락처를 요구합니다 {_ENV_HINT}"
+        )
+
+    if "(" not in configured:
         # 이메일만 적어 둔 경우(구버전 secrets.toml 형식)
         return f"{_UA_PRODUCT} (contact: {configured})"
     return configured

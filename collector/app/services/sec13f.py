@@ -20,7 +20,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from ..http import (
-    SecUserAgentMissing,
+    SecUserAgentInvalid,
     brief_error,
     get_sec_session,
     sec_rate_limit,
@@ -48,7 +48,7 @@ def collect_13f(cik: str, max_quarters: int = 8) -> dict:
     """
     try:
         session = get_sec_session()
-    except SecUserAgentMissing as exc:
+    except SecUserAgentInvalid as exc:
         # 설정 누락은 '연결 실패'가 아닙니다. 12개 기관마다 같은 망 오류가 뜬 것처럼
         # 보이면 진짜 원인(.env 한 줄)을 찾기 어려워집니다.
         return _fail(cik, str(exc))

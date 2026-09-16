@@ -347,7 +347,7 @@ def task_sec_13f() -> str:
     # 설정이 없으면 기관 12곳에 같은 실패를 12번 만들지 않고 여기서 한 번 말합니다.
     try:
         http.sec_user_agent()
-    except http.SecUserAgentMissing as exc:
+    except http.SecUserAgentInvalid as exc:
         raise EmptyResult(f"0/{len(indicators.INSTITUTIONS)} 기관 — {exc}") from exc
 
     quarters = catalog.MAX_TRACKED_QUARTERS

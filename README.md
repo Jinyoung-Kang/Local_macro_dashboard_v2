@@ -125,7 +125,19 @@ Homebrew로 PostgreSQL·Redis까지 직접 설치해 Docker를 전혀 쓰지 않
 | `LS_APP_KEY` / `LS_APP_SECRET` | 수급 레이더 폴백 체인에서 LS 단계만 건너뜀 |
 | `TOSS_*` | 토스 연결 테스트 메뉴만 비활성화 |
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 리포트·연결 테스트 메뉴만 비활성화 |
-| `SEC_USER_AGENT` | **키가 아니라 본인 이메일입니다.** 없으면 SEC가 13F 요청을 403으로 막을 수 있습니다 (구버전 `.streamlit/secrets.toml`의 `[sec] user_agent`와 같은 값) |
+| `SEC_USER_AGENT` | **키가 아니라 본인 이메일입니다.** 없으면 13F 수집만 멈춥니다 (구버전 `.streamlit/secrets.toml`의 `[sec] user_agent`와 같은 값) |
+
+> **`SEC_USER_AGENT`는 영문 이메일이어야 합니다.** HTTP 헤더는 latin-1로만
+> 보낼 수 있어 한글이 섞이면 요청 자체가 불가능합니다. 예시 값
+> (`your-name@example.com`)을 그대로 두는 것도 막습니다 — SEC는 연락이 닿지
+> 않는 요청을 차단합니다. 잘못된 값은 **요청을 보내기 전에** 무엇을 고칠지
+> 알려 주고 멈춥니다.
+>
+> ```ini
+> SEC_USER_AGENT=hong@naver.com          # ✅
+> SEC_USER_AGENT=이메일@이메일.com        # ❌ 한글 불가
+> SEC_USER_AGENT=your-name@example.com   # ❌ 예시 값
+> ```
 
 ---
 
@@ -186,6 +198,12 @@ KOSPI200 선물 4대 국면은 등락률과 미결제약정 증감이 모두 있
 *현재가*를 주므로 시세 대조는 **장 마감 후**에만, KIS 수급 가집계 TR은 장중
 전용이라 수급 대조는 **정규장 중**에만 가능합니다.
 
+**기준일이 다르면 비교하지 않습니다.** 시간대가 맞아도 KRX 확정치는 하루 이상
+늦게 올라오는 반면 KIS는 최신값을 줍니다. 이때 그냥 비교하면 "불일치"가 뜨는데,
+값이 갈라진 게 아니라 **서로 다른 날을 본 것**입니다. 읽기값마다 기준 거래일을
+달고, 날짜가 어긋나면 "확인 못 함"으로 둡니다. 이 검사가 없으면 KRX가 밀리는
+날마다 거짓 경보가 울리고 그 사이 진짜 불일치가 묻힙니다.
+
 ### 4-5. 화면은 수집을 기다리지 않습니다
 
 읽기 모드(`DASHBOARD_READ_MODE`)는 구버전을 그대로 계승합니다.
@@ -199,6 +217,11 @@ KOSPI200 선물 4대 국면은 등락률과 미결제약정 증감이 모두 있
 수동 새로고침은 저장본을 **지우지 않습니다.** "이 시각 이전 저장본은 낡은
 것으로 본다"는 기준만 세웁니다 — 수집이 실패하면 보여 줄 값이 아예 없어지기
 때문입니다.
+
+버튼을 누르면 수집을 요청하고 **끝날 때까지 기다렸다가 화면이 스스로
+갱신됩니다.** 기다리는 동안 버튼은 `수집 중… 끝나면 자동 갱신`으로 바뀝니다.
+수집은 백그라운드로 돌기 때문에, 요청 직후에 다시 읽으면 아직 예전 값입니다.
+수집기가 새 실행 번호를 남기고 끝났는지를 보고 갱신 시점을 정합니다.
 
 ### 4-6. 과거 조회가 안 되는 소스는 우리가 이력을 쌓습니다
 
@@ -290,9 +313,17 @@ make test-frontend     # 화면만
   건너뛰기, 이력 대체 표시
 - `collector/tests/test_tasks.py` — 빈 결과가 기존 저장본을 덮지 않는지,
   추정치가 누적되지 않는지, 13F q1이 q8에서 유도되는지
-- `backend/.../VerificationTest.java` — 판정 네 가지 구분, 장 시간 게이트
+- `collector/tests/test_failure_reasons.py` — 수집 0건일 때 **왜**가 남는지,
+  사유 중복 합치기, SEC 연락처 형식 검증(한글·예시 값 차단)
+- `backend/.../VerificationTest.java` — 판정 네 가지 구분, 장 시간 게이트,
+  **기준일이 다르면 불일치로 세지 않기**
 - `backend/.../SeriesMathTest.java` — 표본 부족이 0.0이 아니라 null인지
-- `backend/.../Sec13FServiceTest.java` — 분기 대비 액션 분류, CUSIP 문자열 보존
+- `backend/.../Sec13FServiceTest.java` — 분기 대비 액션 분류, CUSIP 문자열 보존,
+  `shares`가 빠진 보유 항목, 모르는 것을 '신규 매수'로 단정하지 않기
+- `backend/.../AiServiceContentTypeTest.java` — `application/octet-stream` 응답
+  파싱과 한국어 왕복, 실패 시 서버 본문·상태코드를 그대로 보여주기
+- `backend/.../SnapshotFreshnessTest.java` — "언제 수집한 값인지"를 항상 함께
+  담기, 수집 시각을 모를 때 경과 시간을 지어내지 않기
 - `backend/.../DatasetsParityTest.java` — **Python과 Java가 같은 데이터셋 이름을
   쓰는지** (실제 `catalog.py`를 읽어 대조)
 - `backend/.../ApiIntegrationTest.java` — 인증 강제, 저장본이 없을 때 500이 아니라
@@ -329,6 +360,10 @@ make test-frontend     # 화면만
 | 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 낡으면 Yahoo 응답 변경에 대응하지 못합니다. `git pull && make up`(재빌드) |
 | 사유가 `CSV HTTP 403` | FRED 웹 CSV 차단입니다. `.env`에 무료 `FRED_API_KEY`를 넣으면 공식 API로 우회합니다 |
 | 13F가 `SEC_USER_AGENT가 설정되지 않았습니다` | `open -e .env` → `SEC_USER_AGENT=본인이메일` → `make up`. 키가 아니라 연락처입니다 |
+| 13F가 `영문/숫자가 아닌 문자가 있습니다` | `SEC_USER_AGENT`에 한글이 들어갔습니다. HTTP 헤더는 한글을 담을 수 없습니다 |
+| `.env` 첫 줄이 `# .env.example …`이라 잘못 저장한 것 같음 | **정상입니다.** `make setup`이 `.env.example`을 복사해 만들기 때문입니다(최신 버전은 머리말을 `.env`로 바꿔 줍니다). `KEY=VALUE` 줄만 맞으면 됩니다 |
+| `.env` 값에 따옴표를 둘렀는데 인식이 이상함 | docker compose는 `KEY=VALUE`를 그대로 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다. `export`나 들여쓰기도 안 됩니다 |
+| 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `git pull && make up` |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |
 | 로그인 후 401이 반복됨 | `FRONTEND_ORIGIN`과 실제 접속 주소가 달라 쿠키가 막힌 경우입니다(`localhost`와 `127.0.0.1`은 다른 오리진입니다) |
 | `수집기에 연결하지 못했습니다` | 백엔드의 `COLLECTOR_URL` 확인. 수집기가 죽어 있어도 저장본으로 화면은 뜹니다 |

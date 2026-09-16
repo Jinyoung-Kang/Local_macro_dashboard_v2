@@ -219,3 +219,54 @@ def test_KRX_추정치도_실패하면_사유를_남긴다(monkeypatch):
     assert payload["rows"] == []
     assert payload["error"]
     assert "거부" in payload["error"] or "refused" in payload["error"].lower()
+
+
+def test_한글_이메일은_요청_전에_막는다(monkeypatch):
+    """
+    .env에 한글이 들어가면 requests가 헤더를 latin-1로 인코딩하다가
+    UnicodeEncodeError를 냅니다. 그 메시지만 보고 .env를 고쳐야 한다는 걸
+    알아채기는 어렵습니다. 요청을 보내기 전에 무엇을 고칠지 말해야 합니다.
+    """
+    monkeypatch.setenv("SEC_USER_AGENT", "이메일@이메일.com")
+
+    with pytest.raises(http.SecUserAgentInvalid) as exc:
+        http.sec_user_agent()
+
+    message = str(exc.value)
+    assert "SEC_USER_AGENT" in message
+    assert ".env" in message
+
+
+def test_예시_값을_그대로_두면_막는다(monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "your-name@example.com")
+
+    with pytest.raises(http.SecUserAgentInvalid) as exc:
+        http.sec_user_agent()
+
+    assert "예시" in str(exc.value)
+
+
+def test_이메일이_아니면_막는다(monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "hong")
+
+    with pytest.raises(http.SecUserAgentInvalid):
+        http.sec_user_agent()
+
+
+def test_통과한_값은_헤더로_인코딩된다(monkeypatch):
+    """검증을 통과했다면 requests가 실제로 보낼 수 있어야 합니다."""
+    monkeypatch.setenv("SEC_USER_AGENT", "hong@naver.com")
+
+    ua = http.sec_user_agent()
+    ua.encode("latin-1")          # 여기서 터지면 검증이 헛돈 것입니다
+    assert "hong@naver.com" in ua
+
+
+def test_미설정_오류도_같은_계열로_잡힌다(monkeypatch):
+    """호출부가 예외를 하나만 잡아도 되도록 상속 관계를 고정합니다."""
+    monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+
+    assert issubclass(http.SecUserAgentMissing, http.SecUserAgentInvalid)
+    with pytest.raises(http.SecUserAgentInvalid):
+        http.sec_user_agent()
+

@@ -40,8 +40,21 @@ title "1. 환경 파일"
 if [ -f .env ]; then
   ok ".env가 이미 있습니다 (덮어쓰지 않습니다)"
 else
-  cp .env.example .env
+  # 머리말까지 그대로 복사하면 .env 첫 줄이 "# .env.example — …"로 남습니다.
+  # 파일을 열어 본 사람이 "내가 잘못 저장했나?" 하고 헷갈립니다. 바꿔 둡니다.
+  sed '1,6s|^# \.env\.example — docker compose가 읽는 값들\.$|# .env — 이 파일이 실제로 쓰입니다 (scripts/setup.sh가 .env.example에서 생성).|' \
+      .env.example > .env
   ok ".env를 만들었습니다 (.env.example 복사)"
+fi
+
+# --- .env 형식 점검 -------------------------------------------------------
+# docker compose는 KEY=VALUE 한 줄 형식만 읽습니다. 값에 따옴표를 두르거나
+# `export KEY=...`로 적으면 따옴표·export가 값의 일부가 되어 조용히 틀립니다.
+bad_lines=$(grep -nE '^[[:space:]]*export[[:space:]]|^[[:space:]]+[A-Z_]+=' .env 2>/dev/null || true)
+if [ -n "$bad_lines" ]; then
+  warn ".env에 docker compose가 못 읽는 줄이 있습니다"
+  printf '%s\n' "$bad_lines" | head -5 | sed 's/^/      /'
+  note "KEY=VALUE 형식으로, 줄 맨 앞에서 시작해야 합니다 (export·들여쓰기 금지)"
 fi
 
 # --- 세션 서명 키 ---------------------------------------------------------
@@ -90,6 +103,22 @@ check_key KIS_APP_KEY  "한국투자증권" "장중 수급 가집계·교차 검
 check_key LS_APP_KEY   "LS증권"       "수급 레이더에서 LS 단계만 건너뜀"
 check_key NVIDIA_API_KEY "AI(NVIDIA)" "AI 메뉴 비활성화 (Cerebras/Cloudflare로 대체 가능)"
 check_key SEC_USER_AGENT "SEC 연락처" "13F 수집 중단 — .env에 본인 이메일을 넣으세요 (키 아님)"
+
+# SEC 연락처는 "있다/없다"만으로 부족합니다. 한글이 섞이면 HTTP 헤더를
+# latin-1로 인코딩할 수 없어 UnicodeEncodeError가 나는데, 그 메시지만 보고
+# .env를 고쳐야 한다는 걸 알아채기 어렵습니다.
+sec_ua=$(grep "^SEC_USER_AGENT=" .env 2>/dev/null | head -1 | cut -d= -f2- || true)
+if [ -n "$sec_ua" ]; then
+  if printf '%s' "$sec_ua" | LC_ALL=C grep -q '[^ -~]'; then
+    fail "SEC_USER_AGENT에 영문/숫자가 아닌 문자가 있습니다: $sec_ua"
+    note "HTTP 헤더는 한글을 담을 수 없습니다. 실제 이메일을 영문 그대로 적으세요"
+  elif printf '%s' "$sec_ua" | grep -qi 'example\.com\|your-name\|your-email'; then
+    warn "SEC_USER_AGENT가 예시 값 그대로입니다: $sec_ua"
+    note "SEC는 연락이 닿지 않는 요청을 차단합니다. 실제 이메일로 바꾸세요"
+  elif ! printf '%s' "$sec_ua" | grep -q '@'; then
+    warn "SEC_USER_AGENT에 이메일 주소가 없습니다: $sec_ua"
+  fi
+fi
 
 # ==============================================================================
 # 3. 실행 도구

@@ -114,6 +114,26 @@ make setup
 open -e .env            # 또는 code .env / vi .env
 ```
 
+> **`.env` 첫 줄이 `# .env.example …`로 보여도 잘못 저장한 게 아닙니다.**
+> `make setup`이 `.env.example`을 복사해 만들기 때문입니다(최신 버전은 복사할 때
+> 머리말을 `.env`로 바꿔 줍니다). 실제로 쓰이는 건 주석이 아니라 `KEY=VALUE`
+> 줄입니다.
+>
+> 형식 규칙은 세 가지뿐입니다.
+>
+> ```ini
+> APP_PASSWORD=0000                  # ✅ 줄 맨 앞에서 KEY=VALUE
+> APP_PASSWORD="0000"                # ❌ 따옴표까지 비밀번호가 됩니다
+> export APP_PASSWORD=0000           # ❌ docker compose는 export를 모릅니다
+>   APP_PASSWORD=0000                # ❌ 앞에 공백이 있으면 안 됩니다
+> ```
+>
+> 값 뒤에 **공백 + `#`** 을 붙이면 그 뒤는 주석으로 처리됩니다
+> (`APP_PASSWORD=0000 # 내 비번` → 값은 `0000`).
+>
+> `make setup`을 다시 돌리면 `export`나 들여쓰기가 섞인 줄을 찾아 알려 줍니다
+> (기존 `.env`는 덮어쓰지 않습니다).
+
 ```ini
 APP_PASSWORD=원하는_비밀번호
 ```
