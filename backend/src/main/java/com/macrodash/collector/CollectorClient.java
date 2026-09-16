@@ -47,9 +47,23 @@ public class CollectorClient {
         this.client = builder.build();
     }
 
-    /** 태스크 1건을 지금 실행합니다 (auto 모드에서 저장본이 오래됐을 때). */
+    /** 태스크 1건을 지금 실행하고 **끝날 때까지 기다립니다**. 저장본이 아예 없을 때만 씁니다. */
     public Optional<JsonNode> runTask(String taskName) {
-        return post("/collect/task/" + taskName, Map.of());
+        return runTask(taskName, true);
+    }
+
+    /**
+     * 태스크 1건 실행.
+     *
+     * @param wait false면 수집기가 백그라운드로 돌리고 즉시 응답합니다.
+     *             보여 줄 저장본이 이미 있다면 기다릴 이유가 없습니다 —
+     *             기다리면 그만큼 화면이 멈춥니다(sec_13f 31.8초, fred_series 11.5초).
+     */
+    public Optional<JsonNode> runTask(String taskName, boolean wait) {
+        String uri = UriComponentsBuilder.fromPath("/collect/task/" + taskName)
+                .queryParam("wait", wait)
+                .toUriString();
+        return post(uri, Map.of());
     }
 
     /** 작업군 전체 실행 (수동 새로고침 버튼 등). */

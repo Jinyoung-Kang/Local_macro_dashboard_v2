@@ -96,8 +96,7 @@ def collect_scraped_markets() -> dict:
     """
     results: list[dict] = []
 
-    with ThreadPoolExecutor(max_workers=len(SCRAPER_MARKETS) + 1) as pool:
-        bonds_future = pool.submit(fetch_treasury_yields)
+    with ThreadPoolExecutor(max_workers=len(SCRAPER_MARKETS)) as pool:
         futures = {
             pool.submit(_collect_one, config): config
             for config in SCRAPER_MARKETS
@@ -108,26 +107,41 @@ def collect_scraped_markets() -> dict:
             except Exception as exc:  # noqa: BLE001
                 results.append(_fail(config, str(exc)))
 
+    # bonds scanner는 미국채 수익률 **폴백**입니다. Symbol Scanner가 세 개를
+    # 모두 채웠으면 부를 이유가 없습니다.
+    #
+    # 예전에는 매번 병렬로 함께 호출했습니다. 그런데 이 엔드포인트는 계속
+    # 빈 응답을 주고 Symbol Scanner가 항상 성공해서, 5분마다 쓸모없는 요청이
+    # 한 번씩 나가고 로그에는 같은 줄이 반복됐습니다.
+    #
+    #     bonds scanner 미수집: ['us02y', 'us10y', 'us30y'] — Symbol Scanner 값으로 대체합니다.
+    #
+    # 폴백은 남겨 두되, 실제로 필요할 때만 부릅니다.
+    by_key = {item["key"]: item for item in results}
+    need_bonds = [
+        key for key in TREASURY_KEYS
+        if (by_key.get(key) or {}).get("price") is None
+    ]
+
+    if need_bonds:
+        logger.info("미국채 수익률 %s 미수집 — bonds scanner로 보강합니다.", need_bonds)
         try:
-            bonds = bonds_future.result()
+            bonds = fetch_treasury_yields()
         except Exception as exc:  # noqa: BLE001
             logger.warning("TradingView bonds scanner 조회 실패: %s", exc)
             bonds = {}
 
-    # bonds scanner는 "현재 수익률"만 주고 전일 종가가 없습니다. 이미 Symbol
-    # Scanner가 전일 종가까지 채웠다면 그대로 두고, 현재가가 비어 있을 때만
-    # 보강합니다.
-    by_key = {item["key"]: item for item in results}
-    for key, reading in bonds.items():
-        item = by_key.get(key)
-        if item is None or item.get("price") is not None:
-            continue
-        item.update({
-            "status": "ok",
-            "price": reading["price"],
-            "provider": reading["provider"],
-            "error": None,
-        })
+        # bonds scanner는 "현재 수익률"만 주고 전일 종가가 없습니다.
+        for key, reading in bonds.items():
+            item = by_key.get(key)
+            if item is None or item.get("price") is not None:
+                continue
+            item.update({
+                "status": "ok",
+                "price": reading["price"],
+                "provider": reading["provider"],
+                "error": None,
+            })
 
     order = {config["key"]: index for index, config in enumerate(SCRAPER_MARKETS)}
     results.sort(key=lambda item: order.get(item["key"], 999))
@@ -341,8 +355,8 @@ def fetch_treasury_yields() -> dict:
 
     missing = set(TREASURY_KEYS) - set(out)
     if missing:
-        logger.info(
-            "bonds scanner 미수집: %s — Symbol Scanner 값으로 대체합니다.",
+        logger.warning(
+            "bonds scanner도 %s를 주지 못했습니다 — 해당 수익률은 빈 값으로 남습니다.",
             sorted(missing),
         )
     return out

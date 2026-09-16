@@ -184,14 +184,29 @@ def collect(
 @app.post("/collect/task/{task_name}")
 def collect_task(
     task_name: str,
+    wait: bool = Query(True, description="false면 백그라운드로 실행하고 즉시 응답"),
+    background: BackgroundTasks = None,          # type: ignore[assignment]
     x_service_token: str | None = Header(default=None),
 ) -> dict:
+    """
+    태스크 1건을 실행합니다.
+
+    wait=false는 **화면이 수집을 기다리지 않게** 하려고 있습니다. 저장본이
+    이미 있는데 조금 오래된 경우, 백엔드가 이 호출이 끝나기를 기다리면 화면이
+    그만큼 멈춥니다. 실제로 sec_13f 한 건에 31.8초, fred_series에 11.5초
+    동안 페이지가 붙잡혔습니다.
+    """
     _check_token(x_service_token)
     if task_name not in tasks.TASKS_BY_NAME:
         raise HTTPException(
             status_code=404,
             detail=f"알 수 없는 태스크: {task_name} (가능: {sorted(tasks.TASKS_BY_NAME)})",
         )
+
+    if not wait:
+        background.add_task(tasks.run_group, task_name=task_name)
+        return {"task": task_name, "accepted": True}
+
     return tasks.run_group(task_name=task_name)
 
 

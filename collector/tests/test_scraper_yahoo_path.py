@@ -276,3 +276,60 @@ def test_성공하면_사유가_남지_않는다(monkeypatch):
 
     assert rows and rows[0]["code"] == "005930"
     assert radar._NAVER_LAST_REASON["value"] is None
+
+
+# ==============================================================================
+# bonds scanner는 폴백입니다 — 매번 부르지 않습니다
+# ==============================================================================
+# 로그에 5분마다 같은 줄이 찍혔습니다.
+#   bonds scanner 미수집: ['us02y', 'us10y', 'us30y'] — Symbol Scanner 값으로 대체합니다.
+# Symbol Scanner가 세 개를 항상 채우는데도 매번 병렬로 함께 호출했기 때문입니다.
+# 쓸모없는 왕복 한 번과 같은 로그가 반복됐습니다.
+
+
+def _stub_all_markets(monkeypatch, price=4.5):
+    monkeypatch.setattr(
+        scraper, "fetch_symbol_snapshot",
+        lambda symbol: (price, price - 0.1, 0.1, 2.2),
+    )
+    monkeypatch.setattr(
+        scraper, "fetch_yahoo_chart", lambda symbol: (price, price - 0.1)
+    )
+
+
+def test_국채를_모두_받으면_bonds_scanner를_부르지_않는다(monkeypatch):
+    _stub_all_markets(monkeypatch)
+    called = {"count": 0}
+
+    def spy():
+        called["count"] += 1
+        return {}
+
+    monkeypatch.setattr(scraper, "fetch_treasury_yields", spy)
+
+    payload = scraper.collect_scraped_markets()
+
+    assert called["count"] == 0, "폴백을 매번 부르면 5분마다 쓸모없는 요청이 나갑니다"
+    assert len(payload["items"]) == len(scraper.SCRAPER_MARKETS)
+
+
+def test_국채가_비면_bonds_scanner로_보강한다(monkeypatch):
+    def only_non_treasury(symbol):
+        if symbol.startswith("TVC:US"):
+            raise RuntimeError("국채 심볼 실패")
+        return (100.0, 99.0, 1.0, 1.0)
+
+    monkeypatch.setattr(scraper, "fetch_symbol_snapshot", only_non_treasury)
+    monkeypatch.setattr(scraper, "fetch_yahoo_chart", lambda s: (100.0, 99.0))
+    monkeypatch.setattr(
+        scraper, "fetch_treasury_yields",
+        lambda: {"us10y": {"price": 4.99, "provider": "TradingView Scanner"}},
+    )
+
+    payload = scraper.collect_scraped_markets()
+    by_key = {item["key"]: item for item in payload["items"]}
+
+    assert by_key["us10y"]["status"] == "ok"
+    assert by_key["us10y"]["price"] == 4.99
+    # 폴백도 못 채운 것은 실패로 남습니다 — 지어내지 않습니다.
+    assert by_key["us02y"]["status"] == "fail"
