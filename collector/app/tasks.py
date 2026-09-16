@@ -543,7 +543,11 @@ def _inject_scraped_indices(payload: dict) -> dict:
 
     existing = {item.get("key") for item in target["items"]}
 
-    for key, label in (("nikkei", "닛케이225 선물"), ("hang_seng", "항셍 선물")):
+    for key, label in (
+        ("kospi200_night", "코스피200 야간선물 (CME 연계)"),
+        ("nikkei", "닛케이225 선물"),
+        ("hang_seng", "항셍 선물"),
+    ):
         source = scraped.get(key)
         card_key = f"{key}_scraped"
         if not source or card_key in existing:
@@ -561,12 +565,14 @@ def _inject_scraped_indices(payload: dict) -> dict:
         card = {
             "key": card_key,
             "name": label,
-            "note": "참고 시세",
+            "note": source.get("note") or "참고 시세",
             "status": "ok",
             "price": price,
             "priceStr": f"{price:,.2f}",
             "source": source.get("provider"),
             "isReference": True,
+            # 추정치를 확정치처럼 보여 주면 교차 검증이 무의미해집니다.
+            "isEstimated": bool(source.get("isEstimated")),
         }
         if previous:
             previous = float(previous)

@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from . import market
 from ..http import get_session
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 TRADINGVIEW_BONDS_SCANNER_URL = "https://scanner.tradingview.com/bonds/scan"
 TRADINGVIEW_SYMBOL_SCANNER_URL = "https://scanner.tradingview.com/symbol"
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-
 TRADINGVIEW_US_TREASURY_SYMBOLS = {
     "TVC:US02Y": "us02y",
     "TVC:US10Y": "us10y",
@@ -73,6 +72,15 @@ SCRAPER_MARKETS = [
     {"key": "shanghai", "name": "상해종합", "kind": "yahoo_chart",
      "symbol": "000001.SS", "provider": "Yahoo Finance", "unit": "pt",
      "url": "https://finance.yahoo.com/quote/000001.SS/"},
+    # 코스피200 야간선물(CME 연계). 구버전은 TradingView HTML을 정규식으로 긁고
+    # Investing.com으로 폴백했는데, 둘 다 페이지 구조가 바뀌면 조용히 깨집니다.
+    # 여기서는 같은 값을 JSON으로 주는 Symbol Scanner를 쓰고, 실패하면 구버전과
+    # 같은 KODEX 200 프록시로 내려갑니다(반드시 추정치로 표시).
+    {"key": "kospi200_night", "name": "코스피200 야간선물 (CME 연계)",
+     "kind": "tradingview_symbol", "symbol": "KRX:K2I1!",
+     "provider": "TradingView Scanner", "unit": "pt",
+     "fallback": "kodex_proxy",
+     "url": "https://kr.tradingview.com/symbols/KRX-K2I1!/"},
     {"key": "hang_seng", "name": "항셍", "kind": "tradingview_symbol",
      "symbol": "TVC:HSI", "provider": "TradingView Scanner", "unit": "pt",
      "url": "https://www.tradingview.com/symbols/TVC-HSI/"},
@@ -131,6 +139,9 @@ def collect_scraped_markets() -> dict:
 
 
 def _collect_one(config: dict) -> dict:
+    reason: str | None = None
+    price = previous = change = change_pct = None
+
     try:
         if config["kind"] == "tradingview_symbol":
             price, previous, change, change_pct = fetch_symbol_snapshot(config["symbol"])
@@ -141,9 +152,21 @@ def _collect_one(config: dict) -> dict:
                 (change / previous * 100.0) if (change is not None and previous) else None
             )
     except requests.RequestException as exc:
-        return _fail(config, f"통신 실패: {exc}")
+        reason = f"통신 실패: {exc}"
     except ValueError as exc:
-        return _fail(config, f"응답 해석 실패: {exc}")
+        reason = f"응답 해석 실패: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        reason = str(exc)
+
+    if price is None and config.get("fallback") == "kodex_proxy":
+        # 구버전과 같은 마지막 수단입니다. 실제 야간선물 값이 아니므로 반드시
+        # 추정치로 표시합니다 — 확정치인 척하면 교차 검증이 무의미해집니다.
+        fallback = _kodex_proxy_card(config, reason)
+        if fallback is not None:
+            return fallback
+
+    if reason is not None:
+        return _fail(config, reason)
 
     if price is None:
         return _fail(config, "현재가를 얻지 못했습니다")
@@ -160,6 +183,43 @@ def _collect_one(config: dict) -> dict:
         "change": change,
         "changePct": change_pct,
         "error": None,
+    }
+
+
+def _kodex_proxy_card(config: dict, reason: str | None) -> dict | None:
+    """
+    KODEX 200(069500.KS) 종가로 코스피200 수준을 추정한 카드.
+
+    ⚠️ 실제 야간선물 값이 아닙니다. 구버전과 동일하게 마지막 수단으로만 쓰고
+    isEstimated로 표시합니다. KODEX 200은 지수의 약 100배 가격이라 스케일을
+    맞춥니다.
+    """
+    current, previous, _ = market.last_two_closes("069500.KS")
+    if current is None:
+        return None
+
+    scale = 0.01 if current > 1000 else 1.0
+    price = round(current * scale, 2)
+    prev = round(previous * scale, 2) if previous else None
+    change = price - prev if prev else None
+
+    return {
+        "key": config["key"],
+        "name": config["name"],
+        "url": config["url"],
+        "provider": "KODEX 200 프록시 (추정치)",
+        "unit": config["unit"],
+        "status": "ok",
+        "price": price,
+        "previousClose": prev,
+        "change": change,
+        "changePct": (change / prev * 100.0) if (change is not None and prev) else None,
+        "isEstimated": True,
+        "error": None,
+        "note": (
+            "실제 야간선물이 아니라 KODEX 200 현물 기반 추정치입니다"
+            + (f" (원인: {reason})" if reason else "")
+        ),
     }
 
 
@@ -223,27 +283,21 @@ def fetch_symbol_snapshot(
 
 
 def fetch_yahoo_chart(symbol: str) -> tuple[float | None, float | None]:
-    """Yahoo chart JSON에서 최근 종가와 직전 거래일 종가를 읽습니다."""
-    response = get_session().get(
-        YAHOO_CHART_URL.format(symbol=symbol),
-        params={"range": "10d", "interval": "1d", "includePrePost": "false"},
-        timeout=10,
-    )
-    response.raise_for_status()
+    """
+    Yahoo에서 최근 종가와 직전 거래일 종가를 읽습니다.
 
-    results = response.json().get("chart", {}).get("result") or []
-    if not results:
-        return None, None
+    ⚠️ 예전에는 query1.finance.yahoo.com/v8/finance/chart 를 requests로 직접
+    호출했습니다. 그러다 429(Too Many Requests)로 WTI·브렌트유·상해종합이
+    한꺼번에 막혔습니다. 같은 시각 같은 종목을 매크로 카드(yfinance)는 정상
+    수집하고 있었습니다 — 차이는 클라이언트였습니다.
 
-    quotes = results[0].get("indicators", {}).get("quote") or []
-    if not quotes:
-        return None, None
-
-    closes = [float(c) for c in (quotes[0].get("close") or []) if c is not None]
-    if not closes:
-        return None, None
-
-    return closes[-1], (closes[-2] if len(closes) >= 2 else None)
+    이제 앱 전체가 쓰는 yfinance 경로 하나로 모읍니다
+    (market.last_two_closes 주석 참고).
+    """
+    current, previous, reason = market.last_two_closes(symbol)
+    if current is None and reason:
+        raise RuntimeError(reason)
+    return current, previous
 
 
 def fetch_treasury_yields() -> dict:

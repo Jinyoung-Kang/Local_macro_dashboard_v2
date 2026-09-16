@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 KST = ZoneInfo("Asia/Seoul")
 
 DAUM_RANKING_URL = "https://finance.daum.net/api/trend/investor_purchase/"
+# 마지막 Naver 수집이 왜 비었는지. 진단 화면이 "빈 결과입니다"에서 끝나지
+# 않도록, 실패한 단계를 그대로 들고 있습니다.
+_NAVER_LAST_REASON: dict[str, str | None] = {"value": None}
+
 NAVER_RANKING_URL = "https://finance.naver.com/sise/sise_deal_rank_iframe.naver"
 
 DAUM_INVESTOR_TYPES = {"외국인": "FOREIGN", "기관": "INSTITUTION"}
@@ -367,16 +371,34 @@ def fetch_naver_ranking(
     }
 
     try:
-        res = get_session().get(NAVER_RANKING_URL, params=params, timeout=10)
+        res = get_session().get(
+            NAVER_RANKING_URL,
+            params=params,
+            # iframe 페이지는 부모 문서에서 불리는 것을 전제로 합니다. Referer가
+            # 없으면 네이버가 빈 페이지를 주는 경우가 있어 함께 보냅니다.
+            headers={"Referer": "https://finance.naver.com/sise/sise_deal_rank.naver"},
+            timeout=10,
+        )
         res.encoding = res.apparent_encoding or "euc-kr"
         html = res.text
     except Exception as exc:  # noqa: BLE001
         logger.warning("Naver 랭킹 수집 실패: %s", exc)
+        _NAVER_LAST_REASON["value"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        return []
+
+    if res.status_code != 200:
+        _NAVER_LAST_REASON["value"] = f"HTTP {res.status_code}"
         return []
 
     soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table", {"class": "type_1"}) or soup.find_all("table")
     if not tables:
+        # "표가 아예 없다"와 "표는 있는데 행이 없다"는 원인이 다릅니다.
+        # 전자는 차단·JS 렌더링 요구, 후자는 휴장·구조 변경 쪽입니다.
+        _NAVER_LAST_REASON["value"] = (
+            f"응답에 표가 없습니다 (본문 {len(html):,}자). 차단이거나 "
+            "이 페이지가 JS 렌더링을 요구하게 바뀐 경우입니다."
+        )
         return []
 
     table = max(
@@ -419,6 +441,14 @@ def fetch_naver_ranking(
         })
         if len(records) >= top_n:
             break
+
+    if records:
+        _NAVER_LAST_REASON["value"] = None
+    else:
+        _NAVER_LAST_REASON["value"] = (
+            f"표 {len(tables)}개는 받았지만 종목 행이 없습니다 "
+            "(휴장일이거나 표 구조가 바뀐 경우입니다)."
+        )
 
     return _rank(records, trade_type, top_n)
 
@@ -626,9 +656,13 @@ def test_naver_connection() -> dict:
     )
     if rows:
         return {"ok": True, "stage": "ok", "message": f"{len(rows)}건 수신", "sample": rows[:3]}
+    reason = _NAVER_LAST_REASON["value"]
     return {
         "ok": False, "stage": "empty",
-        "message": "빈 결과입니다. 페이지 구조 변경 또는 차단을 의심하세요.",
+        "message": (
+            f"빈 결과입니다. {reason}" if reason
+            else "빈 결과입니다. 페이지 구조 변경 또는 차단을 의심하세요."
+        ),
     }
 
 

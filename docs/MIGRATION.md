@@ -120,3 +120,19 @@ psql "$DATABASE_URL" -c "\copy observations(dataset, obs_date, entity, payload, 
 기존 데이터가 깨지지는 않습니다.
 
 `snapshots`는 이관하지 않아도 됩니다 — 수집기가 한 번 돌면 다시 채워집니다.
+
+---
+
+## 구버전에만 있던 것 (이관 후 확인)
+
+포팅 과정에서 빠졌다가 되살린 항목입니다.
+
+| 구버전 | v2 | 비고 |
+|---|---|---|
+| `services/night_futures_scraper_service.py`<br>코스피200 야간선물 (CME 연계) | `services/scraper.py`의 `kospi200_night` | **한동안 빠져 있었습니다.** 구버전은 TradingView HTML 정규식 → Investing.com → KODEX 프록시 순서였습니다. v2는 앞 두 단계를 Symbol Scanner JSON 하나로 바꾸고, 마지막 KODEX 프록시는 그대로 살렸습니다(반드시 추정치 표시) |
+| `services/foreign_index_futures_scraper_service.py`<br>닛케이225·항셍 선물 | `tasks.py`의 `_inject_scraped_indices` | Symbol Scanner JSON으로 대체 |
+| `services/browser_pool.py`<br>헤드리스 Chromium 렌더링 | 없음 (의도적) | Naver iframe은 서버가 완성된 HTML을 줍니다. 브라우저 의존성을 없애 이미지가 가벼워집니다. 다만 Naver가 비면 원인을 구분해 보여 줍니다 — "표가 없습니다"(차단·JS 요구)면 이 판단을 다시 봐야 한다는 신호입니다 |
+| `services/kis_websocket_service.py` | 없음 (의도적) | 구버전에서도 어디에서도 호출되지 않는 죽은 코드였습니다 |
+
+11개 수집 태스크는 이름·주기·의미가 모두 동일합니다.
+

@@ -119,6 +119,39 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str 
         return None, False, brief_error(exc)
 
 
+def last_two_closes(symbol: str) -> tuple[float | None, float | None, str | None]:
+    """
+    최근 종가와 직전 거래일 종가를 돌려줍니다. (현재가, 직전, 실패 사유)
+
+    <b>왜 여기에 있나</b> — 스크래핑 비교표가 query1.finance.yahoo.com에
+    requests로 직접 붙다가 429를 받고 있었습니다.
+
+        WTI 원유    수집 실패  429 Client Error: Too Many Requests
+        브렌트유    수집 실패  429 Client Error: Too Many Requests
+        상해종합    수집 실패  429 Client Error: Too Many Requests
+
+    같은 시각 같은 종목을 매크로 카드(yfinance 경로)는 정상으로 받았습니다
+    (WTI 102.47, 브렌트 105.77). 차이는 **클라이언트**입니다. yfinance는
+    Yahoo가 요구하는 쿠키·crumb를 관리하고 자체 캐시를 두지만, 생 requests
+    호출은 그 처리가 없어 먼저 차단당합니다.
+
+    그래서 Yahoo로 가는 길을 하나로 모읍니다. 같은 출처에 두 가지 방식으로
+    붙으면 한쪽만 조용히 막히고, 화면에는 "왜 매크로 카드에는 값이 있는데
+    비교표는 실패인가"라는 설명 불가능한 상태가 남습니다.
+    """
+    frame, _, reason = _download(symbol, "10d")
+    if frame is None or "Close" not in frame.columns:
+        return None, None, reason or _empty_reason()
+
+    closes = [float(v) for v in frame["Close"].dropna().tolist()]
+    if not closes:
+        return None, None, _empty_reason()
+
+    current = closes[-1]
+    previous = closes[-2] if len(closes) >= 2 else None
+    return current, previous, None
+
+
 def _empty_reason() -> str:
     return (
         f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
