@@ -16,10 +16,10 @@ Homebrew 네이티브 실행 · 권장 경로 `~/Projects/Local-macro-dashboard-
 │  React · TS │ ◀──────── │  Java 21     │ ◀──────── │            │
 └─────────────┘   JSON    └──────────────┘           └────────────┘
                                 │  ▲                        ▲
-                          REST  │  │ 캐시                   │ 적재
+                          REST  │  │ 캐시                    │ 적재
                                 ▼  │                        │
                           ┌──────────────┐          ┌──────────────┐
-                          │    Redis     │          │  Collector   │
+                          │    Redis     │          │  Collector    │
                           └──────────────┘          │ Python·FastAPI│
                                                     └──────────────┘
                                                             │
@@ -85,6 +85,9 @@ open http://localhost:3000
 **자주 쓰는 명령** (`make help`로 전체 목록)
 
 ```bash
+git pull && make up
+open http://localhost:3000
+
 make status            # 수집 현황 (구버전 collector.py --status)
 make doctor            # 데이터가 안 보일 때 — 어디가 막혔는지 한 번에 진단
 make logs S=collector  # 특정 서비스 로그
