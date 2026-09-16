@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LineSeries, MultiLineSeries } from "@/components/charts";
+import { LineSeries, SERIES_COLORS } from "@/components/charts";
 import {
   Banner,
   Card,
@@ -46,6 +46,19 @@ export default function LiquidityPage() {
 
   const rows = data?.rows ?? [];
   const latest = data?.latest;
+
+  // 기간은 머리말의 '조회 기간' 하나가 두 차트를 함께 좁힙니다.
+  // 카드마다 따로 두면 화면에 기간 컨트롤이 셋이 되고, 어느 것이 무엇에
+  // 걸리는지 읽는 사람이 추적해야 합니다.
+  const netLiquidity = rows.map((row) => ({
+    date: row.date,
+    value: row.netLiquidityT,
+  }));
+  const componentSeries = {
+    walcl: rows.map((row) => ({ date: row.date, value: row.walclT ?? null })),
+    tga: rows.map((row) => ({ date: row.date, value: row.wtregenB / 1000 })),
+    rrp: rows.map((row) => ({ date: row.date, value: row.rrpB / 1000 })),
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -148,35 +161,88 @@ export default function LiquidityPage() {
         </div>
       )}
 
-      <Card title="📈 순유동성 추이" subtitle="단위: 조 달러">
+      <Card
+        title="📈 순유동성 추이"
+        subtitle="단위: 조 달러 · 축은 데이터 범위에 맞춥니다 (0부터 그리면 변동이 보이지 않습니다)"
+      >
         <LineSeries
-          data={rows.map((row) => ({ date: row.date, value: row.netLiquidityT }))}
+          data={netLiquidity}
           unit="T"
-          color="#3FB950"
-          height={300}
+          color={SERIES_COLORS.green}
+          height={320}
         />
       </Card>
 
+      {/*
+        구성 항목은 자릿수가 다릅니다 — 총자산 약 6.7조, 재무부 계정 약 0.88조,
+        역레포 약 0.005조. 한 축에 겹쳐 그리면 아래 둘이 바닥에 눌려 직선이
+        됩니다(예전 화면이 그랬습니다). 축을 둘로 나누는 것은 두 축의 정렬이
+        임의라 없는 상관을 만들어 냅니다. 그래서 **패널을 나눕니다** —
+        각자 제 범위를 갖고, 시간축은 공유합니다.
+      */}
       <Card
         title="🧩 구성 항목 분해"
-        subtitle="총자산이 늘어도 TGA·RRP가 더 늘면 시장 유동성은 줄어듭니다."
+        subtitle="총자산이 늘어도 TGA·RRP가 더 늘면 시장 유동성은 줄어듭니다. 자릿수가 달라 패널을 나눠 그립니다."
       >
-        <MultiLineSeries
-          data={rows.map((row) => ({
-            date: row.date,
-            WALCL: row.walclT,
-            TGA: row.wtregenB / 1000,
-            RRP: row.rrpB / 1000,
-          }))}
-          series={[
-            { key: "WALCL", name: "연준 총자산 (조$)", color: "#58A6FF" },
-            { key: "TGA", name: "재무부 계정 (조$)", color: "#D29922" },
-            { key: "RRP", name: "역레포 (조$)", color: "#F85149" },
-          ]}
-          unit="T"
-          height={300}
-        />
+        <div className="grid gap-4 lg:grid-cols-3">
+          {COMPONENTS.map((component) => (
+            <div key={component.key}>
+              <div className="mb-1 flex items-baseline gap-2">
+                <span
+                  aria-hidden
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: component.color }}
+                />
+                <h3 className="text-xs font-semibold text-body">{component.name}</h3>
+                <span className="text-[11px] text-muted">{component.unit}</span>
+              </div>
+              <p className="mb-2 text-[11px] leading-relaxed text-muted">
+                {component.note}
+              </p>
+              <LineSeries
+                data={componentSeries[component.key]}
+                unit={component.suffix}
+                color={component.color}
+                height={200}
+              />
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   );
 }
+
+/**
+ * 구성 항목 패널.
+ *
+ * 색은 dataviz 검증기를 통과한 조합입니다. 패널마다 계열이 하나뿐이라
+ * 색이 의미를 나르지는 않지만, 제목 옆 점과 선 색을 맞춰 두면 눈이 덜
+ * 헤맵니다.
+ */
+const COMPONENTS = [
+  {
+    key: "walcl" as const,
+    name: "연준 총자산 (WALCL)",
+    unit: "조 달러",
+    suffix: "T",
+    color: SERIES_COLORS.blue,
+    note: "자산 매입은 유동성을 늘리고, 축소(QT)는 줄입니다.",
+  },
+  {
+    key: "tga" as const,
+    name: "재무부 일반계정 (TGA)",
+    unit: "조 달러",
+    suffix: "T",
+    color: SERIES_COLORS.orange,
+    note: "TGA 증가 = 시장에서 자금 흡수.",
+  },
+  {
+    key: "rrp" as const,
+    name: "역레포 (ON RRP)",
+    unit: "조 달러",
+    suffix: "T",
+    color: SERIES_COLORS.green,
+    note: "RRP 감소 = 시장으로 유동성 환류.",
+  },
+];

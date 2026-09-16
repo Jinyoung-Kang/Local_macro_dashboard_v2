@@ -84,18 +84,56 @@ public class MacroService {
         Double us02Prev = rates == null ? null : Json.asDouble(Json.child(rates, "us02y"), "previous");
         Double us10Prev = rates == null ? null : Json.asDouble(Json.child(rates, "us10y"), "previous");
 
-        Map<String, Object> realtime = new LinkedHashMap<>();
-        realtime.put("us02y", us02);
-        realtime.put("us10y", us10);
-        realtime.put("spread", SeriesMath.difference(us10, us02));
-        realtime.put("previousSpread", SeriesMath.difference(us10Prev, us02Prev));
-        realtime.put("delta", SeriesMath.difference(
-                SeriesMath.difference(us10, us02),
-                SeriesMath.difference(us10Prev, us02Prev)));
-        out.put("realtime", realtime);
+        Double us30 = rates == null ? null : Json.asDouble(Json.child(rates, "us30y"), "current");
+        Double us30Prev = rates == null ? null : Json.asDouble(Json.child(rates, "us30y"), "previous");
 
-        out.put("official10y2y", officialSpread("DGS10", "DGS2"));
-        out.put("official30y2y", officialSpread("DGS30", "DGS2"));
+        // 스크래핑 시세로 계산한 "지금" 스프레드.
+        //
+        // 공식(FRED) 확정치는 하루 이상 늦게 나옵니다. 두 값은 서로를 대체하는
+        // 것이 아니라 **서로 다른 질문에 답합니다** — 공식은 "확정된 어제까지",
+        // 스크래핑은 "지금 시장". 그래서 한쪽만 보여 주지 않고 둘 다 내려보내고,
+        // 화면이 출처와 성격을 함께 적습니다.
+        //
+        // 예전에는 10Y−2Y에만 스크래핑 값이 있었습니다. 30Y−2Y 카드는 공식
+        // 확정치만 보여 줘서, 같은 화면의 두 카드가 서로 다른 것을 재고 있는데도
+        // 그 차이가 드러나지 않았습니다.
+        out.put("realtime", scrapedSpread(us10, us02, us10Prev, us02Prev, "us10y", "us02y"));
+
+        Map<String, Object> official10y2y = officialSpread("DGS10", "DGS2");
+        official10y2y.put("scraped",
+                scrapedSpread(us10, us02, us10Prev, us02Prev, "us10y", "us02y"));
+        out.put("official10y2y", official10y2y);
+
+        Map<String, Object> official30y2y = officialSpread("DGS30", "DGS2");
+        official30y2y.put("scraped",
+                scrapedSpread(us30, us02, us30Prev, us02Prev, "us30y", "us02y"));
+        out.put("official30y2y", official30y2y);
+        return out;
+    }
+
+    /**
+     * 스크래핑 수익률로 계산한 스프레드 한 건.
+     *
+     * <p>어느 한쪽이 없으면 0으로 메우지 않고 null로 둡니다. 0은 "차이가 없다"로
+     * 읽히는데, 사실은 "모른다"이기 때문입니다.
+     */
+    private Map<String, Object> scrapedSpread(Double longValue, Double shortValue,
+                                              Double longPrev, Double shortPrev,
+                                              String longKey, String shortKey) {
+        Double spread = SeriesMath.difference(longValue, shortValue);
+        Double previousSpread = SeriesMath.difference(longPrev, shortPrev);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("longKey", longKey);
+        out.put("shortKey", shortKey);
+        out.put("longValue", longValue);
+        out.put("shortValue", shortValue);
+        // 기존 화면이 쓰던 이름도 유지합니다(10Y−2Y 카드).
+        out.put("us02y", shortValue);
+        out.put("us10y", longValue);
+        out.put("spread", spread);
+        out.put("previousSpread", previousSpread);
+        out.put("delta", SeriesMath.difference(spread, previousSpread));
         return out;
     }
 

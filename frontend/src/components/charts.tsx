@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   Area,
   AreaChart,
@@ -20,6 +21,59 @@ import { EMPTY, formatNumber } from "@/lib/format";
 
 const AXIS = { stroke: "#8B949E", fontSize: 11 };
 const GRID = "#30363D";
+
+/**
+ * 시계열 색 (다크 표면 #161B22 기준).
+ *
+ * dataviz 검증기(scripts/validate_palette.js)를 통과한 조합입니다.
+ * 이전 조합(#58A6FF·#D29922·#F85149)은 적록색약에서 노랑↔빨강 ΔE가 5.8로
+ * 구분 한계(6) 아래였습니다 — 화면에서도 두 선이 겹쳐 보였습니다.
+ */
+export const SERIES_COLORS = {
+  blue: "#3987e5",
+  orange: "#d95926",
+  green: "#199e70",
+} as const;
+
+/**
+ * Y축 표시 범위.
+ *
+ * <b>왜 필요한가</b> — Recharts는 면적 차트의 Y축을 0부터 그립니다. 순유동성처럼
+ * 값이 5.85~6.0조 달러 사이에서 움직이는 계열에 0~8조 축을 쓰면, 정작 읽어야 할
+ * 변동이 축 꼭대기 얇은 띠에 눌려 직선처럼 보입니다.
+ *
+ * 0이 의미를 갖는 계열(스프레드처럼 부호가 중요한 값)만 0을 포함시키고,
+ * 나머지는 데이터 범위에 맞춰 여백만 둡니다.
+ */
+function valueDomain(
+  data: { value: number | null }[],
+  includeZero: boolean,
+): [number | "auto", number | "auto"] {
+  const values = data
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  if (values.length === 0) {
+    return ["auto", "auto"];
+  }
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (includeZero) {
+    min = Math.min(min, 0);
+    max = Math.max(max, 0);
+  }
+
+  // 위아래로 8%씩 숨 쉴 공간. 선이 축에 붙어 잘린 것처럼 보이지 않게 합니다.
+  const span = max - min;
+  const pad = span === 0 ? Math.abs(max) * 0.05 || 1 : span * 0.08;
+
+  // 값이 모두 0 이상인 계열은 축을 0 아래로 내리지 않습니다. 역레포처럼
+  // 음수가 될 수 없는 양에 "-0.11T" 눈금이 찍히면 있을 수 없는 값을
+  // 있을 수 있는 것처럼 보여 주게 됩니다.
+  const lower = min >= 0 ? Math.max(0, min - pad) : min - pad;
+  return [lower, max + pad];
+}
 
 /**
  * 축 라벨 길이를 눈대중으로 잽니다.
@@ -117,49 +171,59 @@ export function LineSeries({
   unit?: string;
   /** 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값). */
   zeroLine?: boolean;
-  /** 음수 구간을 붉게 강조합니다 (금리 역전 구간 표시). */
+  /**
+   * 예전에는 음수 구간을 붉게 칠했습니다. 지금은 0선을 실선으로 그려
+   * 역전 여부를 보여 주고, 판정 문구는 카드 상단 배너가 맡습니다
+   * (색만으로 의미를 전달하지 않기 위해서입니다).
+   */
   negativeShade?: boolean;
 }) {
+  // ⚠️ 그라디언트 id는 문서 전체에서 유일해야 합니다. 예전에는 "fill"로
+  // 고정돼 있어서, 한 페이지에 차트가 여러 개면(매크로 화면은 3개) 전부
+  // 첫 번째 차트의 색을 쓰는 상태였습니다.
+  //
+  // 훅은 조기 반환보다 **위**에 있어야 합니다 — 렌더마다 호출 순서가 같아야
+  // 하기 때문입니다.
+  const gradientId = `line-fill-${useId().replace(/:/g, "")}`;
+
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
   }
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
         <defs>
-          <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.35} />
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
             <stop offset="95%" stopColor={color} stopOpacity={0.02} />
           </linearGradient>
-          {negativeShade && (
-            <linearGradient id="negative" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#F85149" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#F85149" stopOpacity={0.05} />
-            </linearGradient>
-          )}
         </defs>
-        <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+        {/* 점선 격자는 '임계선'처럼 읽힙니다. 격자는 실선 헤어라인으로. */}
+        <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="date" tick={AXIS} minTickGap={40} tickLine={false} />
         <YAxis
           tick={AXIS}
           tickLine={false}
-          width={56}
+          width={64}
+          domain={valueDomain(data, zeroLine)}
           tickFormatter={(value: number) => `${formatNumber(value, 2)}${unit}`}
         />
         <Tooltip
           {...tooltipStyle()}
+          cursor={{ stroke: "#8B949E", strokeWidth: 1 }}
           formatter={(value: number) => [`${formatNumber(value, 3)}${unit}`, "값"]}
         />
-        {zeroLine && <ReferenceLine y={0} stroke="#F85149" strokeDasharray="4 4" />}
+        {zeroLine && <ReferenceLine y={0} stroke="#8B949E" strokeWidth={1} />}
         <Area
           type="monotone"
           dataKey="value"
           stroke={color}
           strokeWidth={2}
-          fill="url(#fill)"
+          fill={`url(#${gradientId})`}
           connectNulls={false}
           dot={false}
+          activeDot={{ r: 4, strokeWidth: 2, stroke: "#161B22" }}
         />
       </AreaChart>
     </ResponsiveContainer>
@@ -185,7 +249,7 @@ export function MultiLineSeries({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="date" tick={AXIS} minTickGap={40} tickLine={false} />
         <YAxis
           tick={AXIS}
@@ -243,7 +307,7 @@ export function HorizontalBars({
         layout="vertical"
         margin={{ top: 8, right: 16, bottom: 0, left: 8 }}
       >
-        <CartesianGrid stroke={GRID} strokeDasharray="3 3" horizontal={false} />
+        <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis
           type="number"
           tick={AXIS}
@@ -291,7 +355,7 @@ export function SignedBars({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="name" tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         <YAxis
           tick={AXIS}

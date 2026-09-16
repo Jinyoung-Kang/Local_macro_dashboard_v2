@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LineSeries } from "@/components/charts";
+import { LineSeries, SERIES_COLORS } from "@/components/charts";
+import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import {
   Banner,
   Card,
@@ -150,12 +151,11 @@ export default function MacroPage() {
       {data?.spreads && (
         <>
           <SpreadSection
-            title="📊 공식 일별 10Y−2Y 장단기 금리차"
-            realtime={data.spreads.realtime}
+            title="📊 10Y−2Y 장단기 금리차"
             block={data.spreads.official10y2y}
           />
           <SpreadSection
-            title="📊 공식 일별 30Y−2Y 장단기 금리차"
+            title="📊 30Y−2Y 장단기 금리차"
             block={data.spreads.official30y2y}
           />
           <Card
@@ -186,61 +186,113 @@ export default function MacroPage() {
 
 function SpreadSection({
   title,
-  realtime,
   block,
 }: {
   title: string;
-  realtime?: MacroOverview["spreads"] extends undefined
-    ? never
-    : NonNullable<MacroOverview["spreads"]>["realtime"];
   block: NonNullable<MacroOverview["spreads"]>["official10y2y"];
 }) {
-  const points = block?.points ?? [];
+  const [range, setRange] = useState<RangeValue>("10y");
+
+  const allPoints = block?.points ?? [];
+  const points = sliceByRange(allPoints, range);
+  const scraped = block?.scraped;
   const inverted = (block?.latest ?? 0) < 0;
+  const pair = `${block?.longId?.replace("DGS", "")}Y−${block?.shortId?.replace("DGS", "")}Y`;
 
   return (
     <Card
       title={title}
       subtitle={`FRED ${block?.longId} − ${block?.shortId} (미 재무부 공식 일별 확정치)`}
+      actions={<RangeTabs value={range} onChange={setRange} />}
     >
-      <div className="grid gap-3 sm:grid-cols-3">
-        {realtime && (
-          <>
+      {/*
+        두 값은 서로를 대체하지 않습니다 — 공식은 "확정된 어제까지",
+        스크래핑은 "지금 시장". 한쪽만 보여 주면 어제 값을 지금 값으로
+        읽거나 그 반대가 됩니다. 나란히 두고 출처와 성격을 함께 적습니다.
+      */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
+          <p className="mb-2 text-[11px] font-semibold text-body">
+            공식 확정치 · FRED
+            <span className="ml-1 font-normal text-muted">(일별, 하루 이상 지연)</span>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
             <Metric
-              label="실시간 10Y−2Y 스프레드"
-              value={realtime.spread === null ? "수집 실패" : `${formatSigned(realtime.spread, 3)}%p`}
-              delta={realtime.delta}
-              deltaText={
-                realtime.delta === null ? EMPTY : `${formatSigned(realtime.delta, 3)}%p`
+              label={`${pair} 스프레드`}
+              value={
+                block?.latest === null || block?.latest === undefined
+                  ? EMPTY
+                  : `${formatSigned(block.latest, 3)}%p`
               }
-              caption="TradingView 참고 수익률 기준"
+              delta={
+                block?.latest !== null && block?.previous !== null
+                  ? (block?.latest ?? 0) - (block?.previous ?? 0)
+                  : null
+              }
+              deltaText={
+                block?.latest !== null && block?.previous !== null
+                  ? `${formatSigned((block?.latest ?? 0) - (block?.previous ?? 0), 3)}%p`
+                  : EMPTY
+              }
+              caption={
+                allPoints.length > 0
+                  ? `기준일 ${allPoints[allPoints.length - 1].date}`
+                  : undefined
+              }
             />
             <Metric
-              label="미국채 10년물"
-              value={realtime.us10y === null ? EMPTY : `${formatNumber(realtime.us10y, 3)}%`}
+              label="직전 확정치"
+              value={
+                block?.previous === null || block?.previous === undefined
+                  ? EMPTY
+                  : `${formatSigned(block.previous, 3)}%p`
+              }
             />
-            <Metric
-              label="미국채 2년물"
-              value={realtime.us02y === null ? EMPTY : `${formatNumber(realtime.us02y, 3)}%`}
-            />
-          </>
-        )}
-        {!realtime && (
-          <Metric
-            label="공식 일별 스프레드 (최신)"
-            value={block?.latest === null ? EMPTY : `${formatSigned(block?.latest ?? null, 3)}%p`}
-            delta={
-              block?.latest !== null && block?.previous !== null
-                ? (block?.latest ?? 0) - (block?.previous ?? 0)
-                : null
-            }
-            deltaText={
-              block?.latest !== null && block?.previous !== null
-                ? `${formatSigned((block?.latest ?? 0) - (block?.previous ?? 0), 3)}%p`
-                : EMPTY
-            }
-          />
-        )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-hover/30 p-3">
+          <p className="mb-2 text-[11px] font-semibold text-body">
+            스크래핑 참고 시세 · TradingView
+            <span className="ml-1 font-normal text-muted">(지금, 공식 확정치 아님)</span>
+          </p>
+          {scraped ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Metric
+                label={`${pair} 스프레드`}
+                value={
+                  scraped.spread === null
+                    ? "수집 실패"
+                    : `${formatSigned(scraped.spread, 3)}%p`
+                }
+                delta={scraped.delta}
+                deltaText={
+                  scraped.delta === null ? EMPTY : `${formatSigned(scraped.delta, 3)}%p`
+                }
+              />
+              <Metric
+                label={`미국채 ${block?.longId?.replace("DGS", "")}년물`}
+                value={
+                  scraped.longValue === null
+                    ? EMPTY
+                    : `${formatNumber(scraped.longValue, 3)}%`
+                }
+              />
+              <Metric
+                label={`미국채 ${block?.shortId?.replace("DGS", "")}년물`}
+                value={
+                  scraped.shortValue === null
+                    ? EMPTY
+                    : `${formatNumber(scraped.shortValue, 3)}%`
+                }
+              />
+            </div>
+          ) : (
+            <p className="py-4 text-xs text-muted">
+              스크래핑 시세를 받지 못했습니다. 공식 확정치만 표시합니다.
+            </p>
+          )}
+        </div>
       </div>
 
       {inverted && (
@@ -253,12 +305,16 @@ function SpreadSection({
       )}
 
       <div className="mt-4">
+        <p className="mb-2 text-[11px] text-muted">
+          아래 차트는 <strong className="text-body">공식 확정치</strong> 시계열입니다
+          (스크래핑 값은 지금 시점 한 점이라 추이로 그리지 않습니다).
+        </p>
         <LineSeries
           data={points.map((point) => ({ date: point.date, value: point.value }))}
           unit="%p"
           zeroLine
-          negativeShade
-          color="#58A6FF"
+          color={SERIES_COLORS.blue}
+          height={280}
         />
       </div>
     </Card>
@@ -353,6 +409,10 @@ function AdvancedSection({
   loading: boolean;
 }) {
   const [selected, setSelected] = useState("T10Y3M");
+  const [range, setRange] = useState<RangeValue>("10y");
+
+  // 10년치를 한 번 받아 두고 기간은 화면에서 자릅니다. 기간을 바꿀 때마다
+  // 다시 부르면 FRED 호출만 늘고 반응도 느립니다.
   const series = useApi<{ available: boolean; points: { date: string; value: number }[] }>(
     `/api/macro/fred/${selected}?years=10`,
   );
@@ -371,6 +431,7 @@ function AdvancedSection({
     <Card
       title="🧭 심화 매크로 지표"
       subtitle="명목금리·하이일드만으로는 보이지 않는 구조를 메우는 5종 (모두 FRED 공식 시계열)"
+      actions={<RangeTabs value={range} onChange={setRange} />}
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {entries.map((entry) => (
@@ -427,13 +488,17 @@ function AdvancedSection({
           </p>
         </div>
         <LineSeries
-          data={(series.data?.points ?? []).map((point) => ({
-            date: point.date,
-            value: point.value,
-          }))}
+          data={sliceByRange(
+            (series.data?.points ?? []).map((point) => ({
+              date: point.date,
+              value: point.value,
+            })),
+            range,
+          )}
           unit={data?.latest[selected]?.unit ?? ""}
           zeroLine={selected === "T10Y3M" || selected === "NFCI"}
-          negativeShade={selected === "T10Y3M"}
+          color={SERIES_COLORS.blue}
+          height={280}
         />
       </div>
     </Card>

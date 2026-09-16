@@ -38,6 +38,8 @@ export interface SpreadBlock {
   points: { date: string; value: number }[];
   latest: number | null;
   previous: number | null;
+  /** 같은 쌍을 스크래핑 시세로 계산한 "지금" 값. 공식 확정치와 함께 보여 줍니다. */
+  scraped?: ScrapedSpread;
 }
 
 export interface MacroOverview {
@@ -50,16 +52,24 @@ export interface MacroOverview {
   categories: MacroCategory[];
   rates?: Record<string, { current: number | null; previous: number | null }>;
   spreads?: {
-    realtime: {
-      us02y: number | null;
-      us10y: number | null;
-      spread: number | null;
-      previousSpread: number | null;
-      delta: number | null;
-    };
+    realtime: ScrapedSpread;
     official10y2y: SpreadBlock;
     official30y2y: SpreadBlock;
   };
+}
+
+/** 스크래핑 수익률로 계산한 "지금" 스프레드 (공식 확정치와 성격이 다릅니다). */
+export interface ScrapedSpread {
+  longKey?: string;
+  shortKey?: string;
+  longValue: number | null;
+  shortValue: number | null;
+  /** 10Y−2Y 카드가 쓰던 이름 (호환용). */
+  us02y: number | null;
+  us10y: number | null;
+  spread: number | null;
+  previousSpread: number | null;
+  delta: number | null;
 }
 
 export interface RiskEntry {
