@@ -166,6 +166,7 @@ def test_run_group_summarizes_results(store, monkeypatch):
 
 def test_sec_13f_q1_is_derived_from_q8(store, monkeypatch):
     """q1은 q8의 앞부분입니다. 같은 데이터를 두 번 받지 않습니다."""
+    monkeypatch.setenv("SEC_USER_AGENT", "test@example.com")
     calls = {"count": 0}
 
     def fake_collect(cik, quarters):

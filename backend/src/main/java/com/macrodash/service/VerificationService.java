@@ -118,6 +118,7 @@ public class VerificationService {
             entry.put("ok", reading.ok());
             entry.put("value", reading.value());
             entry.put("detail", reading.detail());
+            entry.put("asOf", reading.asOf());
             return entry;
         }).toList());
         return map;
@@ -137,7 +138,8 @@ public class VerificationService {
                         storedFuturesReading("futuresClose", "KRX (화면이 쓰는 값)"),
                         readingFrom(Json.child(payload, "kisFutures"), "KIS Open API")),
                 Verification.TOLERANCE_PRICE_PCT,
-                null);
+                null,
+                referenceDate(payload));
     }
 
     private Verification.Result compareOpenInterest(JsonNode payload) {
@@ -151,7 +153,8 @@ public class VerificationService {
                 "KOSPI200 선물 미결제약정",
                 List.of(storedFuturesReading("openInterest", "KRX (화면이 쓰는 값)"), kisReading),
                 Verification.TOLERANCE_OI_PCT,
-                null);
+                null,
+                referenceDate(payload));
     }
 
     /**
@@ -220,7 +223,8 @@ public class VerificationService {
                         readingFrom(Json.child(payload, "kisIndex"), "KIS Open API"),
                         readingFrom(Json.child(payload, "yfinanceIndex"), "yfinance ^KS200")),
                 Verification.TOLERANCE_PRICE_PCT,
-                null);
+                null,
+                referenceDate(payload));
     }
 
     /**
@@ -296,8 +300,9 @@ public class VerificationService {
         if (value == null || value <= 0) {
             return Verification.Reading.failed(source, "값이 없습니다 (" + field + ")");
         }
-        return new Verification.Reading(source, true, value,
-                "기준일 " + Json.asText(last, "date"));
+        String asOf = Json.asText(last, "date");
+        return Verification.Reading.dated(source, value,
+                "기준일 " + asOf, asOf == null ? null : asOf.substring(0, Math.min(10, asOf.length())));
     }
 
     private boolean isEstimated(Snapshot snapshot) {
@@ -311,7 +316,26 @@ public class VerificationService {
         if (!Json.asBoolean(node, "ok")) {
             return Verification.Reading.failed(source, String.valueOf(Json.asText(node, "detail")));
         }
-        return new Verification.Reading(source, true, Json.asDouble(node, "value"),
-                String.valueOf(Json.asText(node, "detail")));
+        // asOf가 없는 출처(KIS 현재가 등)는 '최신값'으로 봅니다.
+        return Verification.Reading.dated(source, Json.asDouble(node, "value"),
+                String.valueOf(Json.asText(node, "detail")), Json.asText(node, "asOf"));
+    }
+
+    /**
+     * 이번 검증이 기준으로 삼을 최신 거래일.
+     *
+     * <p>읽기값들이 말하는 기준일 중 가장 최신을 씁니다. 공휴일 달력을 들고 있지
+     * 않아도 되고, "오늘이 거래일인가"를 우리가 추측하지 않아도 됩니다 — 데이터가
+     * 스스로 말한 날짜 중 가장 앞선 것이 곧 최신 거래일입니다.
+     */
+    private String referenceDate(JsonNode payload) {
+        String newest = null;
+        for (String key : List.of("krxIndex", "kisIndex", "kisFutures", "yfinanceIndex")) {
+            String asOf = Json.asText(Json.child(payload, key), "asOf");
+            if (asOf != null && !asOf.isBlank() && (newest == null || asOf.compareTo(newest) > 0)) {
+                newest = asOf;
+            }
+        }
+        return newest;
     }
 }

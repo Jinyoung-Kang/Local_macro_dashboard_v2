@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from . import catalog, indicators, store
+from . import catalog, http, indicators, store
 from .services import (
     cot as cot_service,
     fred as fred_service,
@@ -344,6 +344,12 @@ def task_sec_13f() -> str:
     2) SEC 한도는 토큰 버킷이 전역으로 지키므로 기관을 병렬 처리해도
        합계 한도를 넘지 않습니다.
     """
+    # 설정이 없으면 기관 12곳에 같은 실패를 12번 만들지 않고 여기서 한 번 말합니다.
+    try:
+        http.sec_user_agent()
+    except http.SecUserAgentMissing as exc:
+        raise EmptyResult(f"0/{len(indicators.INSTITUTIONS)} 기관 — {exc}") from exc
+
     quarters = catalog.MAX_TRACKED_QUARTERS
     targets = [(inst["name"], inst["cik"]) for inst in indicators.INSTITUTIONS]
 

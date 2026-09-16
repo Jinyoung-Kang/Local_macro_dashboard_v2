@@ -35,9 +35,25 @@ public final class Verification {
     /** 등락률은 비율값이라 상대 오차가 아니라 절대 %p 차이로 봅니다. */
     public static final double TOLERANCE_CHANGE_PP = 0.05;
 
-    public record Reading(String source, boolean ok, Double value, String detail) {
+    /**
+     * 한 출처가 말한 값 한 건.
+     *
+     * @param asOf 이 값의 <b>기준 거래일</b>(yyyy-MM-dd). 모르면 null.
+     *             기준일이 다른 값을 비교하면 "불일치"가 아니라 그냥 다른 날을
+     *             본 것이므로, 판정 전에 이 값으로 걸러 냅니다.
+     */
+    public record Reading(String source, boolean ok, Double value, String detail, String asOf) {
+        public Reading(String source, boolean ok, Double value, String detail) {
+            this(source, ok, value, detail, null);
+        }
+
         public static Reading failed(String source, String detail) {
-            return new Reading(source, false, null, detail);
+            return new Reading(source, false, null, detail, null);
+        }
+
+        /** 기준일을 아는 읽기값. */
+        public static Reading dated(String source, Double value, String detail, String asOf) {
+            return new Reading(source, true, value, detail, asOf);
         }
     }
 
@@ -62,6 +78,19 @@ public final class Verification {
      */
     public static Result compare(String name, List<Reading> readings,
                                  double tolerancePct, String skipNote) {
+        return compare(name, readings, tolerancePct, skipNote, null);
+    }
+
+    /**
+     * 두 개 이상의 읽기값을 비교합니다.
+     *
+     * @param referenceDate 이번 검증이 기준으로 삼는 최신 거래일(yyyy-MM-dd, 모르면 null).
+     *                      기준일을 아는 읽기값이 이 날짜보다 오래됐으면 비교하지
+     *                      않고 {@link #SKIPPED}입니다.
+     */
+    public static Result compare(String name, List<Reading> readings,
+                                 double tolerancePct, String skipNote,
+                                 String referenceDate) {
         List<Reading> usable = readings.stream()
                 .filter(r -> r.ok() && r.value() != null)
                 .toList();
@@ -76,6 +105,15 @@ public final class Verification {
                     tolerancePct, null, note);
         }
 
+        // ── 기준일 게이트 ───────────────────────────────────────────────
+        // 다른 날의 값을 비교하면 "불일치"가 아니라 그냥 다른 날을 본 것입니다.
+        // KRX 확정치는 하루 이상 지연되는 반면 KIS는 최신값을 주므로, 이 검사가
+        // 없으면 KRX가 밀린 날마다 매번 거짓 경보가 울립니다.
+        String staleNote = staleNote(usable, referenceDate);
+        if (staleNote != null) {
+            return new Result(name, SKIPPED, readings, tolerancePct, null, staleNote);
+        }
+
         double low = usable.stream().mapToDouble(Reading::value).min().orElseThrow();
         double high = usable.stream().mapToDouble(Reading::value).max().orElseThrow();
         double base = low == 0 ? 1.0 : Math.abs(low);
@@ -87,6 +125,54 @@ public final class Verification {
                         + "단위 오해를 의심하세요.";
 
         return new Result(name, match ? MATCH : MISMATCH, readings, tolerancePct, diffPct, note);
+    }
+
+    /**
+     * 비교해도 되는 기준일인지 확인하고, 아니면 그 이유를 돌려줍니다.
+     *
+     * <p>두 가지를 봅니다.
+     * <ol>
+     *   <li>기준일을 아는 읽기값끼리 날짜가 다르면 → 비교 불가</li>
+     *   <li>기준일을 아는 읽기값이 이번 검증의 최신 거래일보다 오래됐으면 → 비교 불가
+     *       (기준일을 모르는 출처는 보통 '현재가'라 최신입니다)</li>
+     * </ol>
+     *
+     * @return 비교해도 되면 null, 아니면 화면에 띄울 사유
+     */
+    private static String staleNote(List<Reading> usable, String referenceDate) {
+        List<Reading> dated = usable.stream()
+                .filter(r -> r.asOf() != null && !r.asOf().isBlank())
+                .toList();
+        if (dated.isEmpty()) {
+            return null;
+        }
+
+        String newest = dated.stream().map(Reading::asOf).max(String::compareTo).orElseThrow();
+        String oldest = dated.stream().map(Reading::asOf).min(String::compareTo).orElseThrow();
+
+        if (!newest.equals(oldest)) {
+            return "기준일이 서로 다릅니다 (%s). 다른 날의 값을 비교한 것이므로 "
+                    .formatted(describeDates(dated))
+                    + "불일치로 판정하지 않습니다.";
+        }
+
+        // 날짜를 아는 값끼리는 같은 날. 이번 검증의 최신 거래일보다 오래됐는지 봅니다.
+        if (referenceDate != null && !referenceDate.isBlank()
+                && newest.compareTo(referenceDate) < 0) {
+            return ("이 값들의 기준일은 %s인데 이번 검증의 최신 거래일은 %s입니다. "
+                    + "KRX 확정치는 하루 이상 늦게 올라오는 반면 KIS는 최신값을 주므로, "
+                    + "지금 비교하면 날짜가 다른 값을 대조하게 됩니다. "
+                    + "KRX 확정치가 올라온 뒤 'make collect'로 다시 수집하세요.")
+                    .formatted(newest, referenceDate);
+        }
+        return null;
+    }
+
+    private static String describeDates(List<Reading> dated) {
+        return dated.stream()
+                .map(r -> "%s=%s".formatted(r.source(), r.asOf()))
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
     }
 
     public static Result skipped(String name, String reason) {

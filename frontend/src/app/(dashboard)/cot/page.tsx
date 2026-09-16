@@ -88,7 +88,7 @@ export default function CotPage() {
                 header: "스마트머니 순포지션",
                 align: "right",
                 render: (row) => (
-                  <span className={deltaColor(row.ncNet ?? null)}>
+                  <span className={deltaColor(row.ncNet ?? null, 0)}>
                     {row.ncNet === null || row.ncNet === undefined
                       ? EMPTY
                       : formatSigned(row.ncNet, 0)}
@@ -109,7 +109,7 @@ export default function CotPage() {
                 header: "1주 변화",
                 align: "right",
                 render: (row) => (
-                  <span className={deltaColor(row.change1w ?? null)}>
+                  <span className={deltaColor(row.change1w ?? null, 0)}>
                     {row.change1w === null || row.change1w === undefined
                       ? EMPTY
                       : formatSigned(row.change1w, 0)}
@@ -121,7 +121,7 @@ export default function CotPage() {
                 header: "4주 변화",
                 align: "right",
                 render: (row) => (
-                  <span className={deltaColor(row.change4w ?? null)}>
+                  <span className={deltaColor(row.change4w ?? null, 0)}>
                     {row.change4w === null || row.change4w === undefined
                       ? EMPTY
                       : formatSigned(row.change4w, 0)}

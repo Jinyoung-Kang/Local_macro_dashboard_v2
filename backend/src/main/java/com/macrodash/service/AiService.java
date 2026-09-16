@@ -1,6 +1,7 @@
 package com.macrodash.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -84,6 +85,8 @@ public class AiService {
             4. 원문의 분석·투자 의견을 추가하거나 삭제하지 마십시오.
             5. 번역문만 출력하고, "번역:" 같은 서문은 쓰지 마십시오.
             """;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final RestClient http;
 
@@ -199,8 +202,9 @@ public class AiService {
         };
     }
 
-    private Map<String, Object> callOpenAiFormat(String label, String endpoint, String apiKey,
-                                                 String model, String prompt, String systemPrompt) {
+    // 테스트가 임의 엔드포인트로 호출할 수 있도록 package-private입니다.
+    Map<String, Object> callOpenAiFormat(String label, String endpoint, String apiKey,
+                                         String model, String prompt, String systemPrompt) {
         if (apiKey == null || apiKey.isBlank()) {
             return failure(label, label + " API Key 누락");
         }
@@ -219,13 +223,7 @@ public class AiService {
 
         long started = System.currentTimeMillis();
         try {
-            JsonNode response = http.post()
-                    .uri(endpoint)
-                    .header("Authorization", "Bearer " + apiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = postJson(endpoint, apiKey, body);
 
             long elapsed = System.currentTimeMillis() - started;
             String text = extractOpenAiText(response);
@@ -239,6 +237,46 @@ public class AiService {
             log.warn("AI 호출 실패 ({}): {}", label, e.getMessage());
             return failure(label, e.getMessage(), elapsed);
         }
+    }
+
+    /**
+     * AI 제공자에 POST하고 응답을 JSON으로 읽습니다.
+     *
+     * <p><b>응답을 String으로 받아 직접 파싱하는 이유</b> — NVIDIA는 같은
+     * 엔드포인트인데도 모델에 따라 {@code Content-Type: application/octet-stream}을
+     * 붙여 보내는 경우가 있습니다. Jackson 메시지 컨버터는 {@code application/json}
+     * 계열만 처리하므로 그대로 두면 본문이 멀쩡한 JSON인데도 이렇게 터집니다.
+     *
+     * <pre>
+     * Error while extracting response for type
+     *   [com.fasterxml.jackson.databind.JsonNode]
+     *   and content type [application/octet-stream]
+     * </pre>
+     *
+     * <p><b>byte[]로 받는 이유</b> — Content-Type이 무엇이든 받을 수 있으면서
+     * <b>문자 인코딩을 추측하지 않기</b> 위해서입니다. String으로 받으면 Spring의
+     * StringHttpMessageConverter가 charset 없는 응답을 ISO-8859-1로 읽습니다.
+     * {@code application/octet-stream}에는 charset이 없으므로 한국어 응답이
+     * "분석 결과입니다." → "ë¶„ì„..." 처럼 깨집니다(테스트로 고정해 둔 실제 증상).
+     * JSON 규격은 UTF-8/16/32 자동 판별을 정의하고 Jackson이 이를 구현하므로,
+     * 바이트를 그대로 넘기는 쪽이 정확합니다.
+     *
+     * <p>Accept 헤더도 함께 보내 서버가 JSON으로 협상해 주면 그대로 따릅니다.
+     */
+    private JsonNode postJson(String endpoint, String bearerToken, Object body) throws Exception {
+        byte[] raw = http.post()
+                .uri(endpoint)
+                .header("Authorization", "Bearer " + bearerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(byte[].class);
+
+        if (raw == null || raw.length == 0) {
+            throw new IllegalStateException("응답 본문이 비어 있습니다");
+        }
+        return MAPPER.readTree(raw);
     }
 
     private String extractOpenAiText(JsonNode response) {
@@ -275,14 +313,11 @@ public class AiService {
 
         long started = System.currentTimeMillis();
         try {
-            JsonNode response = http.post()
-                    .uri("https://api.cloudflare.com/client/v4/accounts/%s/ai/run/%s"
-                            .formatted(cloudflareAccountId, model))
-                    .header("Authorization", "Bearer " + cloudflareToken)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("messages", messages))
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = postJson(
+                    "https://api.cloudflare.com/client/v4/accounts/%s/ai/run/%s"
+                            .formatted(cloudflareAccountId, model),
+                    cloudflareToken,
+                    Map.of("messages", messages));
 
             long elapsed = System.currentTimeMillis() - started;
             if (response != null && response.path("success").asBoolean(false)) {

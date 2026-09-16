@@ -26,25 +26,47 @@ BROWSER_HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-# SEC는 연락처가 포함된 User-Agent를 요구합니다(미준수 시 403).
-# 예시 주소(research@example.com)를 그대로 쓰면 SEC가 차단할 수 있으므로
-# SEC_USER_AGENT 환경변수(또는 secrets.toml의 [sec] user_agent)로 본인 연락처를
-# 넣을 수 있게 합니다. 구버전 .streamlit/secrets.toml의 [sec] user_agent와 같은
-# 역할입니다.
-_SEC_UA_FALLBACK = "LocalMacroDashboard/2.0 (contact: research@example.com)"
+# ==============================================================================
+# SEC EDGAR User-Agent
+# ==============================================================================
+# SEC는 연락처가 포함된 User-Agent를 **의무**로 요구합니다(미준수 시 403).
+#
+# 이 값은 코드에 두지 않습니다. 연락처는 사람마다 다르고, 남의 이메일이 기본값으로
+# 박혀 있으면 (a) 본인 것을 넣을 이유가 사라지고 (b) SEC 입장에서는 정체를 숨긴
+# 요청이 됩니다. .env의 SEC_USER_AGENT로만 받습니다.
+#   open -e .env  →  SEC_USER_AGENT=your-name@example.com
+#
+# 미설정이면 SecUserAgentMissing을 던져 13F 수집만 멈춥니다. 예시 주소로 조용히
+# 요청을 보내면 403이 났을 때 원인을 찾기 어렵기 때문입니다.
+_UA_PRODUCT = "LocalMacroDashboard/2.0"
+
+
+class SecUserAgentMissing(RuntimeError):
+    """SEC_USER_AGENT가 비어 있습니다."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "SEC_USER_AGENT가 설정되지 않았습니다. SEC EDGAR는 연락처 없는 요청을 "
+            "403으로 막습니다. .env에 본인 이메일을 넣으세요 "
+            "(open -e .env → SEC_USER_AGENT=your-name@example.com)"
+        )
 
 
 def sec_user_agent() -> str:
-    """SEC EDGAR에 보낼 User-Agent. 설정이 없으면 예시 값으로 폴백합니다."""
+    """
+    SEC EDGAR에 보낼 User-Agent.
+
+    .env에 이메일만 적어도 되도록, 연락처 형태가 아니면 SEC가 요구하는
+    "제품명 (contact: 연락처)" 형태로 감싸 줍니다.
+    """
     from . import settings  # 순환 import 방지를 위해 함수 안에서 가져옵니다.
 
     configured = settings.sec_user_agent()
     if not configured:
-        return _SEC_UA_FALLBACK
+        raise SecUserAgentMissing()
     if "@" in configured and "(" not in configured:
-        # 이메일만 적어 둔 경우(구버전 secrets.toml 형식) SEC가 요구하는
-        # "이름 연락처" 형태로 감싸 줍니다.
-        return f"LocalMacroDashboard/2.0 (contact: {configured})"
+        # 이메일만 적어 둔 경우(구버전 secrets.toml 형식)
+        return f"{_UA_PRODUCT} (contact: {configured})"
     return configured
 
 
@@ -102,8 +124,18 @@ def get_fred_session() -> requests.Session:
 
 
 def get_sec_session() -> requests.Session:
-    """SEC EDGAR 전용 세션 (연락처 포함 UA + 넉넉한 재시도)."""
-    return _get("sec", headers=sec_headers(), retries=5, backoff=1.5, pool=10)
+    """
+    SEC EDGAR 전용 세션 (연락처 포함 UA + 넉넉한 재시도).
+
+    UA가 없으면 여기서 SecUserAgentMissing이 납니다. 세션을 만들어 두고
+    나중에 403을 받는 것보다, 요청 전에 설정 누락을 말하는 쪽이 낫습니다.
+    """
+    headers = sec_headers()
+    session = _get("sec", headers=headers, retries=5, backoff=1.5, pool=10)
+    # .env를 고치고 컨테이너만 재시작한 경우에도 새 UA가 반영되도록 맞춰 둡니다.
+    if session.headers.get("User-Agent") != headers["User-Agent"]:
+        session.headers.update(headers)
+    return session
 
 
 def _get(

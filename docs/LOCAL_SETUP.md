@@ -128,7 +128,7 @@ APP_PASSWORD=원하는_비밀번호
 | `LS_APP_KEY` / `LS_APP_SECRET` | LS증권 홈 > 매매시스템 > API | 수급 레이더의 LS 단계만 건너뜀 |
 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` | 토스증권 Open API | 토스 테스트 메뉴만 꺼짐 |
 | `NVIDIA_API_KEY` 등 AI 키 | <https://build.nvidia.com> 등 | AI 메뉴만 꺼짐 |
-| `SEC_USER_AGENT` | 키가 아니라 **본인 이메일** | 13F 수집이 403으로 막힐 수 있음 |
+| `SEC_USER_AGENT` | 키가 아니라 **본인 이메일** | 13F 수집만 멈춤 (나머지는 정상) |
 
 > **`SEC_USER_AGENT`는 발급받는 키가 아닙니다.** SEC EDGAR는 연락처 없는
 > 요청을 차단하므로(정책상 요구사항), 본인 이메일을 그대로 넣으면 됩니다.
@@ -137,6 +137,11 @@ APP_PASSWORD=원하는_비밀번호
 > ```
 > 이메일만 넣으면 수집기가 `LocalMacroDashboard/2.0 (contact: your-name@example.com)`
 > 형태로 감싸서 보냅니다.
+>
+> 코드에는 예시 이메일조차 두지 않습니다. 남의 주소가 기본값으로 박혀 있으면
+> 본인 것을 넣을 이유가 사라지고, SEC 입장에서도 정체를 숨긴 요청이 됩니다.
+> 비어 있으면 13F 수집이 `SEC_USER_AGENT가 설정되지 않았습니다`라고 말하며
+> 멈춥니다 — 403을 받고 원인을 찾아 헤매는 것보다 낫습니다.
 
 > 구버전의 `.streamlit/secrets.toml`은 더 이상 쓰지 않습니다. 같은 값을
 > `.env`에 넣으면 됩니다. 대응표:

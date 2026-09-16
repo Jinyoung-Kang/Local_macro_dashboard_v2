@@ -8,6 +8,8 @@ tests/test_failure_reasons.py
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app import http, settings
@@ -124,10 +126,26 @@ def test_완전한_UA를_넣으면_그대로_쓴다(monkeypatch):
     assert http.sec_user_agent() == "MyResearch/1.0 (contact: me@example.com)"
 
 
-def test_미설정이면_폴백_UA(monkeypatch):
+def test_미설정이면_조용히_넘어가지_않고_설정을_요구한다(monkeypatch):
+    """
+    예시 이메일로 폴백하면 안 됩니다. SEC 입장에서는 정체를 숨긴 요청이고,
+    403이 났을 때 "내 설정이 비었다"를 알아챌 방법이 사라집니다.
+    """
     monkeypatch.delenv("SEC_USER_AGENT", raising=False)
     monkeypatch.delenv("sec.user_agent", raising=False)
-    assert http.sec_user_agent() == http._SEC_UA_FALLBACK
+
+    with pytest.raises(http.SecUserAgentMissing) as exc:
+        http.sec_user_agent()
+
+    message = str(exc.value)
+    assert "SEC_USER_AGENT" in message
+    assert ".env" in message, "어디를 고쳐야 하는지가 메시지에 있어야 합니다"
+
+
+def test_코드에_예시_이메일이_남아있지_않다():
+    """하드코딩된 연락처가 다시 들어오는 것을 막습니다."""
+    source = Path(http.__file__).read_text(encoding="utf-8")
+    assert "research@example.com" not in source
 
 
 def test_구버전_secrets_키_경로도_읽는다(monkeypatch, tmp_path):

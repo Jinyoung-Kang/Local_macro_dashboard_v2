@@ -140,4 +140,82 @@ class VerificationTest {
         assertThat(report.errorCount()).isEqualTo(1);
         assertThat(report.headline()).isEqualTo("일치 1 · 불일치 1 · 수집 실패 1 · 확인 못 함 1");
     }
+
+    // =========================================================================
+    // 기준일 게이트 — 다른 날의 값을 비교하고 "불일치"라고 말하면 안 됩니다.
+    // =========================================================================
+    // 실제로 화면에 떴던 오보고입니다.
+    //   KOSPI200 선물 종가 — KRX 1,039.80 (기준일 2026-09-15) vs KIS 1,061.15
+    //   → "불일치 · 차이 2.053%"
+    // KRX 확정치가 하루 늦게 올라오는 동안 KIS는 최신값을 줍니다. 즉 갈라진 게
+    // 아니라 서로 다른 날을 본 것입니다. 이걸 불일치로 세면 KRX가 밀리는 날마다
+    // 매번 거짓 경보가 울리고, 진짜 불일치가 묻힙니다.
+
+    @Test
+    @DisplayName("기준일이 다르면 불일치가 아니라 '확인 못 함'")
+    void differentAsOfDatesAreNotMismatch() {
+        Verification.Result result = Verification.compare(
+                "KOSPI200 현물 지수",
+                List.of(
+                        Verification.Reading.dated("KRX Open API", 1042.46, "", "2026-09-15"),
+                        Verification.Reading.dated("yfinance ^KS200", 1053.30, "", "2026-09-16")),
+                Verification.TOLERANCE_PRICE_PCT, null, "2026-09-16");
+
+        assertThat(result.verdict()).isEqualTo(Verification.SKIPPED);
+        assertThat(result.label()).isEqualTo("확인 못 함");
+        assertThat(result.note()).contains("기준일이 서로 다릅니다");
+    }
+
+    @Test
+    @DisplayName("기준일을 아는 값이 최신 거래일보다 오래되면 '확인 못 함'")
+    void staleReadingAgainstLatestSourceIsNotMismatch() {
+        // KIS는 기준일을 주지 않습니다(현재가). KRX 저장본만 09-15이고
+        // 이번 검증의 최신 거래일은 09-16 → 비교 자체가 성립하지 않습니다.
+        Verification.Result result = Verification.compare(
+                "KOSPI200 선물 종가",
+                List.of(
+                        Verification.Reading.dated("KRX (화면이 쓰는 값)", 1039.80, "", "2026-09-15"),
+                        new Verification.Reading("KIS Open API", true, 1061.15, "")),
+                Verification.TOLERANCE_PRICE_PCT, null, "2026-09-16");
+
+        assertThat(result.verdict()).isEqualTo(Verification.SKIPPED);
+        assertThat(result.note()).contains("2026-09-15").contains("2026-09-16");
+        assertThat(result.note()).contains("make collect");
+    }
+
+    @Test
+    @DisplayName("기준일이 같으면 평소대로 판정한다 — 게이트가 검증을 무력화하면 안 됨")
+    void sameAsOfStillJudgesNormally() {
+        Verification.Result match = Verification.compare(
+                "KOSPI200 선물 종가",
+                List.of(
+                        Verification.Reading.dated("KRX", 1088.30, "", "2026-09-16"),
+                        Verification.Reading.dated("KIS", 1088.35, "", "2026-09-16")),
+                Verification.TOLERANCE_PRICE_PCT, null, "2026-09-16");
+        assertThat(match.verdict()).isEqualTo(Verification.MATCH);
+
+        Verification.Result mismatch = Verification.compare(
+                "KOSPI200 선물 종가",
+                List.of(
+                        Verification.Reading.dated("KRX", 1000.00, "", "2026-09-16"),
+                        Verification.Reading.dated("KIS", 1100.00, "", "2026-09-16")),
+                Verification.TOLERANCE_PRICE_PCT, null, "2026-09-16");
+        assertThat(mismatch.verdict())
+                .as("진짜 갈라진 값은 여전히 불일치여야 합니다")
+                .isEqualTo(Verification.MISMATCH);
+    }
+
+    @Test
+    @DisplayName("기준일을 아무도 모르면 종전대로 판정한다")
+    void noAsOfKeepsOldBehaviour() {
+        Verification.Result result = Verification.compare(
+                "선물 종가",
+                List.of(
+                        new Verification.Reading("KRX", true, 1000.00, ""),
+                        new Verification.Reading("KIS", true, 1100.00, "")),
+                Verification.TOLERANCE_PRICE_PCT, null, "2026-09-16");
+
+        assertThat(result.verdict()).isEqualTo(Verification.MISMATCH);
+    }
+
 }

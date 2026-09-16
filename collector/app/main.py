@@ -343,17 +343,41 @@ def _krx_index_reading() -> dict:
         day = today - timedelta(days=back)
         value = krx_service.fetch_kospi200_index_close(day.strftime("%Y%m%d"))
         if value:
-            return {"ok": True, "value": float(value), "detail": f"기준일 {day.isoformat()}"}
+            # asOf는 판정에 쓰입니다(백엔드가 기준일이 다른 값을 비교하지 않도록).
+            # detail은 사람이 읽는 문구, asOf는 기계가 읽는 날짜로 나눠 둡니다.
+            return {
+                "ok": True,
+                "value": float(value),
+                "asOf": day.isoformat(),
+                "detail": f"기준일 {day.isoformat()}",
+            }
     return {"ok": False, "value": None, "detail": "최근 7일 안에 확정 지수가 없습니다."}
 
 
 def _yfinance_index_reading() -> dict:
     """제3의 참고 출처. 공식은 아니지만 두 공식 출처가 갈릴 때 표를 던집니다."""
     payload = market_service.collect_ticker("^KS200", "5d")
-    closes = [p["close"] for p in payload.get("points", []) if p.get("close")]
-    if not closes:
-        return {"ok": False, "value": None, "detail": "^KS200 조회 실패"}
-    return {"ok": True, "value": float(closes[-1]), "detail": "^KS200 (참고)"}
+    points = [p for p in payload.get("points", []) if p.get("close")]
+    if not points:
+        return {
+            "ok": False,
+            "value": None,
+            "detail": f"^KS200 조회 실패{_reason(payload)}",
+        }
+
+    last = points[-1]
+    as_of = str(last.get("date") or "")[:10] or None
+    return {
+        "ok": True,
+        "value": float(last["close"]),
+        "asOf": as_of,
+        "detail": f"^KS200 (참고{', 기준일 ' + as_of if as_of else ''})",
+    }
+
+
+def _reason(payload: dict) -> str:
+    error = payload.get("error")
+    return f" — {error}" if error else ""
 
 
 def _top_ranking_row(market: str, investor: str, trade_type: str, now: datetime) -> dict:

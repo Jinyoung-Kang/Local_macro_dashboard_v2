@@ -178,7 +178,7 @@ export default function RadarPage() {
                   header: "순매수대금(억)",
                   align: "right",
                   render: (row) => (
-                    <span className={deltaColor(row.netAmountEok)}>
+                    <span className={deltaColor(row.netAmountEok, 1)}>
                       {formatNumber(row.netAmountEok, 1)}
                     </span>
                   ),
@@ -287,7 +287,7 @@ function HistoryPanel({
               header: "순매수대금(억)",
               align: "right",
               render: (row) => (
-                <span className={deltaColor(row.netAmountEok)}>
+                <span className={deltaColor(row.netAmountEok, 1)}>
                   {formatNumber(row.netAmountEok, 1)}
                 </span>
               ),

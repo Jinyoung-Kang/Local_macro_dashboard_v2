@@ -328,7 +328,7 @@ make test-frontend     # 화면만
 | `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 외부 소스가 데이터를 주지 않았습니다. `(사유: …)` 문구를 함께 출력하니 그것부터 보세요 |
 | 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 낡으면 Yahoo 응답 변경에 대응하지 못합니다. `git pull && make up`(재빌드) |
 | 사유가 `CSV HTTP 403` | FRED 웹 CSV 차단입니다. `.env`에 무료 `FRED_API_KEY`를 넣으면 공식 API로 우회합니다 |
-| 13F만 비어 있음 | `.env`에 `SEC_USER_AGENT=본인이메일` 을 넣고 `make up` |
+| 13F가 `SEC_USER_AGENT가 설정되지 않았습니다` | `open -e .env` → `SEC_USER_AGENT=본인이메일` → `make up`. 키가 아니라 연락처입니다 |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |
 | 로그인 후 401이 반복됨 | `FRONTEND_ORIGIN`과 실제 접속 주소가 달라 쿠키가 막힌 경우입니다(`localhost`와 `127.0.0.1`은 다른 오리진입니다) |
 | `수집기에 연결하지 못했습니다` | 백엔드의 `COLLECTOR_URL` 확인. 수집기가 죽어 있어도 저장본으로 화면은 뜹니다 |

@@ -195,7 +195,7 @@ export default function KrxPage() {
                     header: "당일 순매수",
                     align: "right",
                     render: (row) => (
-                      <span className={deltaColor(row.netToday)}>
+                      <span className={deltaColor(row.netToday, 0)}>
                         {formatSigned(row.netToday, 0)}
                       </span>
                     ),
@@ -205,7 +205,7 @@ export default function KrxPage() {
                     header: "5일 누적",
                     align: "right",
                     render: (row) => (
-                      <span className={deltaColor(row.net5d)}>{formatSigned(row.net5d, 0)}</span>
+                      <span className={deltaColor(row.net5d, 0)}>{formatSigned(row.net5d, 0)}</span>
                     ),
                   },
                   {
@@ -213,7 +213,7 @@ export default function KrxPage() {
                     header: "20일 누적",
                     align: "right",
                     render: (row) => (
-                      <span className={deltaColor(row.net20d)}>{formatSigned(row.net20d, 0)}</span>
+                      <span className={deltaColor(row.net20d, 0)}>{formatSigned(row.net20d, 0)}</span>
                     ),
                   },
                   { key: "stance", header: "포지션 성향", render: (row) => row.stance },
