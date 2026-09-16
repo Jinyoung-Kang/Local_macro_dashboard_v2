@@ -107,11 +107,14 @@ def test_fred_task_writes_snapshot_and_history(store, monkeypatch):
         tasks.indicators, "FRED_ALL_SERIES", ("T10Y3M",), raising=False
     )
     monkeypatch.setattr(
-        tasks.fred_service, "collect_series",
-        lambda series_id, period_years=10: [
-            {"date": "2026-09-10", "value": 0.42},
-            {"date": "2026-09-11", "value": 0.38},
-        ],
+        tasks.fred_service, "collect_series_with_reason",
+        lambda series_id, period_years=10: (
+            [
+                {"date": "2026-09-10", "value": 0.42},
+                {"date": "2026-09-11", "value": 0.38},
+            ],
+            None,
+        ),
     )
 
     detail = tasks.task_fred_series()
@@ -120,6 +123,28 @@ def test_fred_task_writes_snapshot_and_history(store, monkeypatch):
     snapshot = store.read_snapshot(catalog.snap_fred_series("T10Y3M"))
     assert snapshot.payload["points"][-1]["value"] == 0.38
     assert len(store.read_timeseries(catalog.TS_FRED, "T10Y3M")) == 2
+
+
+def test_fred_task_failure_detail_carries_reason(store, monkeypatch):
+    """
+    전부 실패했을 때 detail이 "0/1 시리즈"에서 끝나면 운영자가 무엇을
+    고쳐야 할지 알 수 없습니다. 사유가 실패 메시지에 실려야 합니다.
+    """
+    monkeypatch.setattr(
+        tasks.indicators, "FRED_ALL_SERIES", ("T10Y3M",), raising=False
+    )
+    monkeypatch.setattr(
+        tasks.fred_service, "collect_series_with_reason",
+        lambda series_id, period_years=10: (
+            [], "CSV HTTP 403 — FRED_API_KEY를 설정하면 공식 API 경로로 우회됩니다"
+        ),
+    )
+
+    with pytest.raises(tasks.EmptyResult) as exc:
+        tasks.task_fred_series()
+
+    assert "403" in str(exc.value)
+    assert "FRED_API_KEY" in str(exc.value)
 
 
 def test_run_group_summarizes_results(store, monkeypatch):

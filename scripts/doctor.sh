@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# scripts/doctor.sh
+# "화면에 데이터가 안 보인다"를 한 번에 진단합니다.
+#
+# 확인 순서는 데이터가 흐르는 순서와 같습니다.
+#   컨테이너 → 수집기 → 저장소(PostgreSQL) → 백엔드 → 화면
+# 앞 단계가 막혀 있으면 뒤 단계는 반드시 비어 있으므로, 가장 앞의 ✗ 하나만
+# 고치면 됩니다. (여러 곳을 동시에 건드리면 무엇이 고쳤는지 알 수 없습니다.)
+#
+set -uo pipefail          # -e는 쓰지 않습니다. 실패한 검사도 끝까지 보여줘야 합니다.
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+BOLD=$(printf '\033[1m'); GREEN=$(printf '\033[32m'); YELLOW=$(printf '\033[33m')
+RED=$(printf '\033[31m'); DIM=$(printf '\033[2m'); RESET=$(printf '\033[0m')
+ok()    { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
+warn()  { printf '  %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
+fail()  { printf '  %s✗%s %s\n' "$RED" "$RESET" "$1"; }
+note()  { printf '    %s%s%s\n' "$DIM" "$1" "$RESET"; }
+title() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"; }
+
+get_env() { grep -s "^$1=" .env | head -1 | cut -d= -f2-; }
+COLLECTOR_PORT=$(get_env COLLECTOR_PORT); COLLECTOR_PORT=${COLLECTOR_PORT:-8000}
+BACKEND_PORT=$(get_env BACKEND_PORT);     BACKEND_PORT=${BACKEND_PORT:-8080}
+FRONTEND_PORT=$(get_env FRONTEND_PORT);   FRONTEND_PORT=${FRONTEND_PORT:-3000}
+
+PY=python3
+[ -x collector/.venv/bin/python ] && PY=collector/.venv/bin/python
+
+printf '%s\n' "${BOLD}Local Macro Dashboard v2 — 진단${RESET}"
+
+FIRST_PROBLEM=""
+problem() { [ -z "$FIRST_PROBLEM" ] && FIRST_PROBLEM="$1"; }
+
+# ==============================================================================
+title "1. 컨테이너"
+# ==============================================================================
+if ! docker info >/dev/null 2>&1; then
+  fail "Docker 데몬에 연결하지 못했습니다"
+  note "Docker Desktop을 실행한 뒤 다시 시도하세요"
+  problem "Docker Desktop을 켜고 'make up'"
+else
+  RUNNING=$(docker compose ps --services --filter status=running 2>/dev/null | sort)
+  for svc in postgres redis collector backend frontend; do
+    if printf '%s\n' "$RUNNING" | grep -qx "$svc"; then
+      ok "$svc 실행 중"
+    else
+      fail "$svc 꺼져 있음"
+      note "make up  (또는 make logs S=$svc 로 기동 실패 원인 확인)"
+      problem "make up"
+    fi
+  done
+fi
+
+# ==============================================================================
+title "2. 수집기 (Python) — 외부에서 데이터를 받아오는 쪽"
+# ==============================================================================
+STATUS_JSON=$(curl -fsS --max-time 10 "http://localhost:$COLLECTOR_PORT/status" 2>/dev/null)
+if [ -z "$STATUS_JSON" ]; then
+  fail "수집기에 연결하지 못했습니다 (http://localhost:$COLLECTOR_PORT/status)"
+  note "make logs S=collector 로 기동 오류를 확인하세요"
+  problem "수집기 기동 실패 — make logs S=collector"
+else
+  ok "수집기 응답함"
+  printf '%s' "$STATUS_JSON" | "$PY" -c '
+import json, sys
+d = json.load(sys.stdin)
+tasks = d.get("taskSummary") or []
+bad = [t for t in tasks if t.get("status") != "ok"]
+print("    마지막 실행:", d.get("lastRunStatus"))
+print(f"    작업 {len(tasks) - len(bad)}/{len(tasks)} 정상")
+for t in bad:
+    detail = (t.get("detail") or "").strip()
+    print("    x %s: %s" % (t.get("task"), detail[:160]))
+missing = d.get("missingDatasets") or []
+if missing:
+    print("    비어 있는 데이터셋:", ", ".join(missing[:8]),
+          ("…" if len(missing) > 8 else ""))
+' 2>/dev/null || note "(상태 JSON을 해석하지 못했습니다)"
+
+  # 실패 작업이 있으면 원인을 로그에서 한 번 더 긁어 옵니다.
+  if printf '%s' "$STATUS_JSON" | grep -q '"status": *"fail"'; then
+    warn "실패한 수집 작업이 있습니다 — 최근 오류 로그:"
+    docker compose logs --tail=400 collector 2>/dev/null \
+      | grep -E 'ERROR|WARNING' | tail -8 | sed 's/^/      /'
+    problem "수집 실패 — 위 사유를 보고 키/네트워크를 확인"
+  fi
+fi
+
+# ==============================================================================
+title "3. 저장소 (PostgreSQL) — 실제로 쌓였는지"
+# ==============================================================================
+# psql이 로컬에 없어도 됩니다. 컨테이너 안의 psql을 씁니다.
+DB_USER=$(get_env DATABASE_USER); DB_USER=${DB_USER:-macro}
+DB_NAME=$(get_env DATABASE_NAME); DB_NAME=${DB_NAME:-macrodash}
+ROWS=$(docker compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -tA \
+  -c "select rpad(name, 22) || to_char(collected_at, 'MM-DD HH24:MI') || '  ' || status
+      from snapshots order by collected_at desc limit 10;" 2>/dev/null)
+if [ -z "$ROWS" ]; then
+  fail "snapshots 테이블이 비어 있습니다 (아직 한 번도 수집되지 않았습니다)"
+  note "make collect  로 한 번 수집한 뒤 다시 실행하세요"
+  problem "make collect"
+else
+  ok "최근 저장된 스냅샷:"
+  printf '%s\n' "$ROWS" | sed 's/^/      /'
+fi
+
+# ==============================================================================
+title "4. 백엔드 (Java) — 화면이 읽는 API"
+# ==============================================================================
+HEALTH=$(curl -fsS --max-time 10 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null)
+if [ -z "$HEALTH" ]; then
+  fail "백엔드에 연결하지 못했습니다 (http://localhost:$BACKEND_PORT/api/health)"
+  note "make logs S=backend"
+  problem "백엔드 기동 실패 — make logs S=backend"
+else
+  ok "백엔드 응답함: $(printf '%s' "$HEALTH" | cut -c1-120)"
+fi
+
+# ==============================================================================
+title "5. 화면 (Next.js)"
+# ==============================================================================
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:$FRONTEND_PORT/" 2>/dev/null)
+if [ "$CODE" = "200" ] || [ "$CODE" = "307" ] || [ "$CODE" = "302" ]; then
+  ok "화면 응답함 (HTTP $CODE) → http://localhost:$FRONTEND_PORT"
+else
+  fail "화면이 응답하지 않습니다 (HTTP ${CODE:-없음})"
+  note "make logs S=frontend"
+  problem "화면 기동 실패 — make logs S=frontend"
+fi
+
+# ==============================================================================
+title "결론"
+# ==============================================================================
+if [ -z "$FIRST_PROBLEM" ]; then
+  printf '  %s모든 단계가 정상입니다.%s\n' "$GREEN" "$RESET"
+  note "그래도 화면이 비어 있으면: 브라우저에서 로그인했는지, 그리고"
+  note "make status 의 '누락 데이터셋' 목록을 확인하세요."
+else
+  printf '  가장 먼저 할 일: %s%s%s\n' "$BOLD" "$FIRST_PROBLEM" "$RESET"
+  note "앞 단계가 막히면 뒤 단계는 반드시 비어 있습니다. 하나씩 고치세요."
+fi
+printf '\n'

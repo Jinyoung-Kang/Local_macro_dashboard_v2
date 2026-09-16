@@ -71,6 +71,8 @@ services:
       LS_APP_SECRET: "${LS_APP_SECRET:-}"
       TOSS_CLIENT_ID: "${TOSS_CLIENT_ID:-}"
       TOSS_CLIENT_SECRET: "${TOSS_CLIENT_SECRET:-}"
+      # SEC EDGAR는 연락처 없는 요청을 403으로 막습니다(13F 메뉴).
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-}"
     volumes:
       - ./db/migrations:/app/db/migrations:ro
     ports:

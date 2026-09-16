@@ -86,11 +86,15 @@ open http://localhost:3000
 
 ```bash
 make status            # 수집 현황 (구버전 collector.py --status)
+make doctor            # 데이터가 안 보일 때 — 어디가 막혔는지 한 번에 진단
 make logs S=collector  # 특정 서비스 로그
 make down / make up    # 정지 / 재기동
 make backup            # DB 백업 → backups/
 make test              # 세 언어 테스트 전부
 ```
+
+**Docker로 실행하면 맥에 Java·Maven·Node·psql을 설치할 필요가 없습니다.**
+전부 컨테이너 안에 있습니다. DB 셸이 필요하면 `make db`를 쓰세요.
 
 컨테이너에는 `restart: unless-stopped`가 걸려 있어 **맥을 재부팅해도 Docker
 Desktop이 뜨면 자동으로 복구**됩니다.
@@ -121,6 +125,7 @@ Homebrew로 PostgreSQL·Redis까지 직접 설치해 Docker를 전혀 쓰지 않
 | `LS_APP_KEY` / `LS_APP_SECRET` | 수급 레이더 폴백 체인에서 LS 단계만 건너뜀 |
 | `TOSS_*` | 토스 연결 테스트 메뉴만 비활성화 |
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 리포트·연결 테스트 메뉴만 비활성화 |
+| `SEC_USER_AGENT` | **키가 아니라 본인 이메일입니다.** 없으면 SEC가 13F 요청을 403으로 막을 수 있습니다 (구버전 `.streamlit/secrets.toml`의 `[sec] user_agent`와 같은 값) |
 
 ---
 
@@ -250,17 +255,27 @@ KIS(장중 가집계) → Daum(API) → Naver → LS(OPEN API) → PyKrx → 누
 
 ## 7. 테스트
 
+저장소 최상위에서 `make`로 부르는 편이 안전합니다(가상환경·DB 주소를 알아서 맞춥니다).
+
+```bash
+make test              # 세 가지 전부
+make test-collector    # 수집기만
+make test-backend      # 백엔드만
+make test-frontend     # 화면만
+```
+
+직접 부르려면 — 각 블록은 **최상위에서 새로 시작**한다고 보고 경로를 적었습니다.
+
 ```bash
 # 수집기 (PostgreSQL 필요 — 없으면 저장 계층 테스트만 자동 건너뜀)
-cd collector
-TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash python -m pytest tests -q
+(cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash \
+  python -m pytest tests -q)
 
-# 백엔드 (통합 테스트가 실제 DB를 사용)
-cd backend
-TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash mvn verify
+# 백엔드 (통합 테스트가 실제 DB를 사용 · Java 21 필요)
+(cd backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash mvn verify)
 
 # 화면 (타입 검사 포함)
-cd frontend && npm run lint && npm run build
+(cd frontend && npm run lint && npm run build)
 ```
 
 무엇을 고정하고 있는지:
@@ -305,8 +320,15 @@ cd frontend && npm run lint && npm run build
 
 ## 9. 자주 겪는 문제
 
+**먼저 `make doctor`를 실행하세요.** 컨테이너 → 수집기 → DB → 백엔드 → 화면
+순서로 검사하고 *가장 먼저 고칠 것 한 가지*를 알려 줍니다.
+
 | 증상 | 원인 / 해결 |
 |---|---|
+| `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 외부 소스가 데이터를 주지 않았습니다. `(사유: …)` 문구를 함께 출력하니 그것부터 보세요 |
+| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 낡으면 Yahoo 응답 변경에 대응하지 못합니다. `git pull && make up`(재빌드) |
+| 사유가 `CSV HTTP 403` | FRED 웹 CSV 차단입니다. `.env`에 무료 `FRED_API_KEY`를 넣으면 공식 API로 우회합니다 |
+| 13F만 비어 있음 | `.env`에 `SEC_USER_AGENT=본인이메일` 을 넣고 `make up` |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |
 | 로그인 후 401이 반복됨 | `FRONTEND_ORIGIN`과 실제 접속 주소가 달라 쿠키가 막힌 경우입니다(`localhost`와 `127.0.0.1`은 다른 오리진입니다) |
 | `수집기에 연결하지 못했습니다` | 백엔드의 `COLLECTOR_URL` 확인. 수집기가 죽어 있어도 저장본으로 화면은 뜹니다 |

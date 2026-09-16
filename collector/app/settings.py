@@ -128,6 +128,18 @@ def toss_credentials() -> tuple[str, str]:
     return get_secret("toss.client_id"), get_secret("toss.client_secret")
 
 
+def sec_user_agent() -> str:
+    """
+    SEC EDGAR가 요구하는 연락처 포함 User-Agent.
+
+    SEC는 "Declare your user agent in request headers"를 의무로 두고, 연락처가
+    없거나 예시 값이면 403을 돌려줍니다. 구버전은 .streamlit/secrets.toml의
+    [sec] user_agent 를 읽었으므로, 같은 키 경로("sec.user_agent")를 유지하고
+    환경변수 SEC_USER_AGENT도 함께 받습니다.
+    """
+    return get_secret("sec.user_agent") or get_secret("SEC_USER_AGENT")
+
+
 KRX_BASE_URL = "https://data-dbg.krx.co.kr/svc/apis"
 FRED_API_BASE = "https://api.stlouisfed.org/fred"
 FRED_CSV_BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv"

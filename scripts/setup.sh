@@ -89,6 +89,7 @@ check_key KRX_API_KEY  "KRX"         "선물이 KODEX 200 기반 추정치로 �
 check_key KIS_APP_KEY  "한국투자증권" "장중 수급 가집계·교차 검증 비활성화"
 check_key LS_APP_KEY   "LS증권"       "수급 레이더에서 LS 단계만 건너뜀"
 check_key NVIDIA_API_KEY "AI(NVIDIA)" "AI 메뉴 비활성화 (Cerebras/Cloudflare로 대체 가능)"
+check_key SEC_USER_AGENT "SEC 연락처" "13F 수집이 403으로 막힐 수 있음 (본인 이메일을 넣으세요)"
 
 # ==============================================================================
 # 3. 실행 도구
@@ -121,10 +122,28 @@ check_tool() {
   fi
 }
 
-check_tool java   "Java"       "brew install --cask temurin@21"
-check_tool mvn    "Maven"      "brew install maven"
-check_tool node   "Node.js"    "brew install node@22"
-check_tool python3 "Python"    "brew install python@3.11"
+if [ "$DOCKER_READY" -eq 1 ]; then
+  # Docker로 돌리면 Java·Maven·Node·psql이 **로컬에 없어도 됩니다**.
+  # 전부 컨테이너 안에 있습니다. 여기서 경고를 띄우면 없어도 되는 도구를
+  # 설치하러 가게 만듭니다.
+  note "Docker를 쓰면 Java·Maven·Node·psql을 따로 설치하지 않아도 됩니다"
+else
+  check_tool java   "Java 21"    "brew install --cask temurin@21 (17은 빌드되지 않습니다)"
+  check_tool mvn    "Maven"      "brew install maven"
+  check_tool node   "Node.js"    "brew install node@22"
+  check_tool python3 "Python"    "brew install python@3.11"
+
+  # 백엔드는 Java 21 문법(record pattern 등)을 씁니다. 17이면 컴파일 실패합니다.
+  if command -v java >/dev/null 2>&1; then
+    JAVA_MAJOR=$(java -version 2>&1 | head -1 \
+      | sed -E 's/.*version "([0-9]+).*/\1/')
+    if [ -n "$JAVA_MAJOR" ] && [ "$JAVA_MAJOR" -lt 21 ] 2>/dev/null; then
+      fail "Java $JAVA_MAJOR입니다 — 백엔드는 Java 21 이상이 필요합니다"
+      note "brew install --cask temurin@21 후 JAVA_HOME을 21로 맞추세요"
+      NATIVE_READY=0
+    fi
+  fi
+fi
 
 if [ "$DOCKER_READY" -eq 0 ] && [ "$NATIVE_READY" -eq 0 ]; then
   fail "Docker도, 네이티브 도구도 준비되지 않았습니다. 둘 중 하나를 갖추세요."
@@ -143,13 +162,37 @@ port_in_use() {
   fi
 }
 
+# 이 프로젝트의 컨테이너가 이미 그 포트를 잡고 있는 경우가 흔합니다
+# (make up → make setup 재실행). 그건 충돌이 아니라 정상 동작이므로
+# "포트를 바꾸세요"라고 안내하면 안 됩니다. 먼저 우리 컨테이너 목록을
+# 한 번만 조회해 둡니다.
+# compose 버전마다 --format 지원이 달라 두 경로를 모두 시도합니다.
+OWN_PORTS=""
+if [ "$DOCKER_READY" -eq 1 ]; then
+  OWN_PORTS=$(docker compose ps --format json 2>/dev/null \
+    | grep -oE '"PublishedPort":[[:space:]]*[0-9]+' \
+    | grep -oE '[0-9]+$' | sort -u || true)
+  if [ -z "$OWN_PORTS" ]; then
+    OWN_PORTS=$(docker compose ps 2>/dev/null \
+      | grep -oE '(0\.0\.0\.0|\[::\]|127\.0\.0\.1):[0-9]+->' \
+      | grep -oE ':[0-9]+->' | grep -oE '[0-9]+' | sort -u || true)
+  fi
+fi
+
+owned_by_us() {
+  [ -n "$OWN_PORTS" ] && printf '%s\n' "$OWN_PORTS" | grep -qx "$1"
+}
+
 CONFLICT=0
 check_port() {
   local port="$1" label="$2" envvar="$3"
-  if port_in_use "$port"; then
+  if owned_by_us "$port"; then
+    ok "$port ($label) — 이 프로젝트의 컨테이너가 사용 중 (정상)"
+  elif port_in_use "$port"; then
     CONFLICT=1
-    warn "$port ($label) 사용 중"
-    note ".env의 ${envvar}를 다른 값으로 바꾸세요"
+    warn "$port ($label) 다른 프로그램이 사용 중"
+    note ".env의 ${envvar}를 다른 값으로 바꾸거나, 그 프로그램을 끄세요"
+    note "무엇이 쓰는지 확인: lsof -nP -iTCP:$port -sTCP:LISTEN"
   else
     ok "$port ($label) 비어 있음"
   fi

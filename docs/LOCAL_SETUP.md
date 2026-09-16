@@ -102,8 +102,11 @@ make setup
 2. `JWT_SECRET`을 무작위 값으로 생성합니다 — 기본 placeholder를 그대로 두면
    누구나 세션 토큰을 위조할 수 있습니다
 3. API 키 보유 현황과 "없을 때 무엇이 꺼지는지"를 알려 줍니다
-4. Docker / Java / Node / Python 설치 여부를 확인합니다
-5. 포트 5개(3000·8080·8000·5432·6379)가 비어 있는지 확인합니다
+4. 실행 방법을 확인합니다 — **Docker가 떠 있으면 Java·Maven·Node·psql은
+   검사하지 않습니다.** 전부 컨테이너 안에 있어서 맥에 설치할 필요가 없습니다
+5. 포트 5개(3000·8080·8000·5432·6379)를 확인합니다. 이미 `make up`으로 이
+   프로젝트가 떠 있다면 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 표시되며,
+   **포트를 바꿀 필요가 없습니다**
 
 그다음 `.env`를 열어 **접속 비밀번호**부터 바꾸세요.
 
@@ -125,9 +128,27 @@ APP_PASSWORD=원하는_비밀번호
 | `LS_APP_KEY` / `LS_APP_SECRET` | LS증권 홈 > 매매시스템 > API | 수급 레이더의 LS 단계만 건너뜀 |
 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` | 토스증권 Open API | 토스 테스트 메뉴만 꺼짐 |
 | `NVIDIA_API_KEY` 등 AI 키 | <https://build.nvidia.com> 등 | AI 메뉴만 꺼짐 |
+| `SEC_USER_AGENT` | 키가 아니라 **본인 이메일** | 13F 수집이 403으로 막힐 수 있음 |
+
+> **`SEC_USER_AGENT`는 발급받는 키가 아닙니다.** SEC EDGAR는 연락처 없는
+> 요청을 차단하므로(정책상 요구사항), 본인 이메일을 그대로 넣으면 됩니다.
+> ```ini
+> SEC_USER_AGENT=your-name@example.com
+> ```
+> 이메일만 넣으면 수집기가 `LocalMacroDashboard/2.0 (contact: your-name@example.com)`
+> 형태로 감싸서 보냅니다.
 
 > 구버전의 `.streamlit/secrets.toml`은 더 이상 쓰지 않습니다. 같은 값을
-> `.env`에 넣으면 됩니다(`[fred] api_key` → `FRED_API_KEY`).
+> `.env`에 넣으면 됩니다. 대응표:
+>
+> | 구버전 `secrets.toml` | v2 `.env` |
+> |---|---|
+> | `[fred] api_key` | `FRED_API_KEY` |
+> | `[krx] api_key` | `KRX_API_KEY` |
+> | `[kis] app_key` / `app_secret` | `KIS_APP_KEY` / `KIS_APP_SECRET` |
+> | `[ls] app_key` / `app_secret` | `LS_APP_KEY` / `LS_APP_SECRET` |
+> | `[toss] client_id` / `client_secret` | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` |
+> | `[sec] user_agent` | `SEC_USER_AGENT` |
 
 ---
 
@@ -180,42 +201,86 @@ make backup             # DB 백업 → backups/
 
 ## 5. 실행 (Docker 없이 — 네이티브)
 
-터미널 4개를 씁니다. 구버전이 터미널 2개(수집기·화면)를 쓰던 것에서 서비스가
-늘어난 만큼 창도 늘었습니다.
+> ### ⚠️ Docker가 잘 돌고 있다면 이 절은 건너뛰세요.
+>
+> `make up`으로 컨테이너 다섯 개가 떠 있다면 **이 절의 작업은 전부 불필요**할
+> 뿐 아니라, 같은 포트를 두 번 잡으려다 오히려 고장납니다. 실제로 겪는 오류들:
+>
+> - `Error: listen EADDRINUSE: address already in use :::3000`
+>   → 이미 컨테이너가 3000을 쓰고 있습니다. 네이티브로 또 띄우지 마세요.
+> - `zsh: command not found: psql` / `command not found: mvn`
+>   → **설치하지 않아도 됩니다.** DB 셸은 `make db`, 백엔드 빌드는 컨테이너가 합니다.
+> - `ModuleNotFoundError: No module named 'apscheduler'`
+>   → conda base 같은 다른 파이썬으로 실행한 경우입니다. 아래 가상환경 절을 보세요.
+>
+> 이 절은 **코드를 고치면서 핫 리로드로 보고 싶을 때**만 쓰는 경로입니다.
+
+터미널 4개를 씁니다. 아래 명령은 모두 **저장소 최상위(`~/Projects/Local-macro-dashboard-v2`)
+에서 새 터미널을 연 상태**를 가정합니다. 이미 하위 폴더에 들어가 있다면
+`cd ~/Projects/Local-macro-dashboard-v2` 로 먼저 돌아가세요
+(`cd frontend`를 프런트 폴더 안에서 또 치면 `no such file or directory`가 납니다).
+
+먼저 DB·Redis만 컨테이너로 띄우면 `psql`·`brew services`가 필요 없습니다.
 
 ```bash
-# --- 터미널 0: DB 준비 (최초 1회) ---
-createdb -U $(whoami) macrodash 2>/dev/null || true
-psql -d macrodash -f db/migrations/V1__init.sql
+cd ~/Projects/Local-macro-dashboard-v2
+make infra      # postgres + redis 만 기동 (스키마도 자동 적용)
+```
 
+```bash
 # --- 터미널 1: 수집기 ---
-cd ~/Projects/Local-macro-dashboard-v2/collector
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export $(grep -v '^#' ../.env | grep -E '^(FRED|KRX|KIS|LS|TOSS)_' | xargs)
-DATABASE_URL="postgresql://$(whoami)@localhost:5432/macrodash" \
-  uvicorn app.main:app --reload --port 8000
+cd ~/Projects/Local-macro-dashboard-v2
 
-# --- 터미널 2: 백엔드 ---
-cd ~/Projects/Local-macro-dashboard-v2/backend
+# 가상환경을 collector/.venv 에 만듭니다. Makefile도 이 경로를 먼저 찾습니다.
+python3.11 -m venv collector/.venv
+collector/.venv/bin/pip install -r collector/requirements.txt
+
+make dev-collector      # 내부적으로 collector/.venv/bin/python -m uvicorn 실행
+```
+
+> `source .venv/bin/activate` 후 `uvicorn ...`을 직접 치지 마세요. conda나
+> pyenv가 PATH 앞에 있으면 **다른 파이썬의 uvicorn**이 잡혀
+> `ModuleNotFoundError: No module named 'apscheduler'`가 납니다.
+> `.venv/bin/python -m uvicorn` 형태는 PATH와 무관하게 항상 맞는 해석기를 씁니다.
+
+```bash
+# --- 터미널 2: 백엔드 (Java 21 필요) ---
+cd ~/Projects/Local-macro-dashboard-v2
+java -version           # 21 이상인지 먼저 확인하세요
+
 DATABASE_URL="jdbc:postgresql://localhost:5432/macrodash" \
-DATABASE_USER="$(whoami)" DATABASE_PASSWORD="" \
+DATABASE_USER="macro" DATABASE_PASSWORD="macro" \
 APP_PASSWORD="원하는_비밀번호" \
 COLLECTOR_URL="http://localhost:8000" \
-  mvn spring-boot:run
-
-# --- 터미널 3: 화면 ---
-cd ~/Projects/Local-macro-dashboard-v2/frontend
-npm install
-NEXT_PUBLIC_API_BASE=http://localhost:8080 npm run dev
+  make dev-backend
 ```
+
+> **Java 17로는 빌드되지 않습니다.** `release version 21 not supported`가 나면:
+> ```bash
+> brew install --cask temurin@21
+> export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+> java -version     # 21이 나와야 합니다
+> ```
+> 이 `export`는 터미널을 닫으면 사라집니다. 계속 쓰려면 `~/.zshrc`에 넣으세요.
+
+```bash
+# --- 터미널 3: 화면 ---
+cd ~/Projects/Local-macro-dashboard-v2
+npm --prefix frontend install
+make dev-frontend
+```
+
+> 3000번이 이미 차 있으면(`EADDRINUSE`) 컨테이너 프런트가 떠 있는 것입니다.
+> `docker compose stop frontend` 로 그것만 내린 뒤 다시 실행하세요.
 
 Redis가 없으면 백엔드가 캐시를 쓰지 못해 기동에 실패할 수 있습니다. Redis를
 띄우지 않으려면 캐시를 꺼서 실행하세요.
 
 ```bash
-CACHE_TYPE=none mvn spring-boot:run
+cd backend && CACHE_TYPE=none mvn spring-boot:run
 ```
+
+(`make infra`로 Redis를 함께 띄웠다면 이 옵션은 필요 없습니다.)
 
 ### 수집기를 백그라운드 상주로 (launchd)
 
@@ -277,19 +342,46 @@ launchctl unload -w ~/Library/LaunchAgents/com.local.macro-dashboard.collector.p
 
 ## 6. 확인 · 테스트
 
+데이터가 안 보일 때는 테스트보다 **진단**이 먼저입니다.
+
+```bash
+make doctor     # 컨테이너 → 수집기 → DB → 백엔드 → 화면 순서로 점검
+```
+
+`make doctor`는 데이터가 흐르는 순서대로 검사하고, **가장 먼저 고쳐야 할 것
+한 가지**를 알려 줍니다. 앞 단계가 막히면 뒤 단계는 반드시 비어 있으므로
+여러 곳을 동시에 건드릴 필요가 없습니다. 수집이 실패했다면 그 사유
+(예: `CSV HTTP 403 — FRED_API_KEY를 설정하면 …`)까지 함께 출력합니다.
+
+테스트는 다음과 같습니다.
+
 ```bash
 make test              # 세 언어 전부 (PostgreSQL 필요)
-make test-collector    # pytest 51건
-make test-backend      # JUnit 42건
-make test-frontend     # 린트 + 빌드
+make test-collector    # pytest 63건
+make test-backend      # JUnit 42건 (Java 21 · Maven 필요)
+make test-frontend     # 린트 + 빌드 (Node 필요)
 ```
 
 `make test`는 `localhost:5432`의 PostgreSQL을 씁니다. Docker로 띄운 상태라면
 그대로 돌아가고, 아니면 `make infra`로 DB·Redis만 먼저 올리세요.
 
+> **`No module named pytest`가 나면** conda base 같은 다른 파이썬이 잡힌
+> 것입니다. `collector/.venv`를 만들어 두면 `make test-collector`가 그것을
+> 먼저 씁니다.
+> ```bash
+> python3.11 -m venv collector/.venv
+> collector/.venv/bin/pip install -r collector/requirements.txt
+> ```
+>
+> **`mvn: command not found`가 나면** `make test-backend`는 로컬 Maven이
+> 필요합니다(`brew install maven` + Java 21). 백엔드를 **실행**만 할 거라면
+> 설치하지 않아도 됩니다 — 컨테이너가 알아서 빌드합니다.
+
 ---
 
 ## 7. 맥에서 자주 걸리는 문제
+
+**무엇부터 볼지 모르겠으면 `make doctor` 한 줄이 먼저입니다.**
 
 | 증상 | 원인 / 해결 |
 |---|---|
@@ -303,6 +395,16 @@ make test-frontend     # 린트 + 빌드
 | 백엔드 빌드가 메모리 부족으로 죽음 | Docker Desktop 메모리를 4GB 이상으로 올리세요 |
 | 수집은 성공인데 숫자가 이상함 | `🗄️ 데이터 저장소 상태 → 교차 검증`을 돌려 보세요. 비공식 소스(Daum·Naver·TradingView)의 구조 변경을 먼저 의심합니다 |
 | 포트를 바꿨는데 화면이 API를 못 찾음 | `NEXT_PUBLIC_API_BASE`는 **빌드 시점**에 번들에 들어갑니다. 바꾼 뒤 `make up`(재빌드)이 필요합니다 |
+| `make setup`이 포트 5개를 전부 "사용 중"이라고 함 | **이미 `make up`으로 이 프로젝트가 떠 있는 상태입니다.** 정상입니다. 최신 버전은 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 구분해 표시합니다 |
+| `command not found: psql` / `mvn` | Docker로 실행 중이라면 **설치할 필요가 없습니다.** DB 셸은 `make db`를 쓰세요 |
+| `No module named pytest` / `apscheduler` | conda·pyenv의 다른 파이썬이 잡혔습니다. `collector/.venv`를 만들고 `make dev-collector` / `make test-collector`를 쓰세요 (§6) |
+| `release version 21 not supported` | 로컬 Java가 17입니다. `brew install --cask temurin@21` 후 `export JAVA_HOME=$(/usr/libexec/java_home -v 21)` |
+| `EADDRINUSE :::3000` | 컨테이너 프런트가 이미 3000을 쓰고 있습니다. 네이티브로 또 띄우려면 `docker compose stop frontend` 먼저 |
+| `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 **외부 소스가 데이터를 주지 않은 것**입니다. 최신 버전은 `(사유: …)`를 함께 출력합니다. `make status` 또는 `make doctor`로 사유를 보세요 |
+| 사유가 `CSV HTTP 403` | FRED 웹 CSV가 차단됐습니다. `.env`에 `FRED_API_KEY`를 넣으면 공식 API 경로로 우회합니다(무료 발급) |
+| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 오래된 버전이면 Yahoo 응답 변경에 대응하지 못합니다. `git pull` 후 `make up`으로 **이미지를 다시 빌드**하세요 |
+| 13F만 비어 있음 | SEC가 연락처 없는 요청을 막습니다. `.env`에 `SEC_USER_AGENT=본인이메일`을 넣고 `make up` |
+| Docker Desktop이 프록시(`http.docker.internal:3128`)를 쓰는 환경 | 회사망·보안 프로그램이 외부 금융 사이트를 막으면 수집이 전부 실패합니다. Docker Desktop → Settings → Resources → Proxies에서 확인하세요 |
 
 ---
 

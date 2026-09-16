@@ -138,8 +138,13 @@ def test_move_proxy_returns_empty_when_tnx_unavailable(monkeypatch):
     ^TNX까지 실패하면 합성 사인파를 만들지 않고 빈 결과를 돌려줍니다.
     (구버전은 정보가 전혀 없는 시계열을 그려 줬습니다.)
     """
-    monkeypatch.setattr(market, "_download", lambda symbol, period: (None, False))
+    monkeypatch.setattr(
+        market, "_download",
+        lambda symbol, period: (None, False, "yfinance가 빈 응답을 받았습니다"),
+    )
 
     payload = market.collect_ticker("^MOVE", "3mo")
     assert payload["points"] == []
     assert payload["isProxy"] is True
+    # 왜 비었는지가 남아야 합니다. 없으면 화면에 "0건"만 뜹니다.
+    assert payload.get("error")

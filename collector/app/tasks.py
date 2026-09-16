@@ -60,6 +60,23 @@ class EmptyResult(Exception):
     """수집은 끝났지만 쓸 수 있는 데이터가 없음 → 실패로 집계합니다."""
 
 
+def _reason_suffix(reasons: list[str | None]) -> str:
+    """
+    실패 사유를 메시지 끝에 덧붙입니다.
+
+    "0/12 시리즈"만 남으면 운영자가 무엇을 고쳐야 할지 알 수 없습니다.
+    같은 사유가 반복되는 경우가 대부분이므로 중복을 제거하고 두 개까지만
+    싣습니다(상태 화면의 detail 길이 제한 1000자를 넘기지 않기 위함).
+    """
+    unique: list[str] = []
+    for reason in reasons:
+        if reason and reason not in unique:
+            unique.append(reason)
+    if not unique:
+        return ""
+    return " (사유: " + " / ".join(unique[:2]) + ")"
+
+
 @dataclass(frozen=True)
 class Task:
     name: str
@@ -142,11 +159,16 @@ def task_fred_series() -> str:
     series_ids = indicators.FRED_ALL_SERIES
     ok = 0
     accumulated = 0
+    reasons: list[str] = []
 
     for series_id in series_ids:
-        points = fred_service.collect_series(series_id, period_years=10)
+        points, reason = fred_service.collect_series_with_reason(
+            series_id, period_years=10
+        )
         if not points:
-            logger.info("FRED 빈 결과(저장본 유지): %s", series_id)
+            logger.info("FRED 빈 결과(저장본 유지): %s (%s)", series_id, reason)
+            if reason:
+                reasons.append(reason)
             continue
 
         store.put_snapshot(
@@ -161,7 +183,9 @@ def task_fred_series() -> str:
         ok += 1
 
     if not ok:
-        raise EmptyResult(f"0/{len(series_ids)} 시리즈 — 기존 저장본 유지")
+        raise EmptyResult(
+            f"0/{len(series_ids)} 시리즈 — 기존 저장본 유지{_reason_suffix(reasons)}"
+        )
     return f"{ok}/{len(series_ids)} 시리즈, 누적 {accumulated}행"
 
 
@@ -169,7 +193,10 @@ def task_fed_liquidity() -> str:
     payload = liquidity_service.collect_fed_liquidity(10)
     rows = payload.get("rows") or []
     if not rows:
-        raise EmptyResult("순유동성 빈 결과 — 기존 저장본 유지")
+        raise EmptyResult(
+            "순유동성 빈 결과 — 기존 저장본 유지"
+            + _reason_suffix([payload.get("error")] if payload.get("error") else [])
+        )
 
     store.put_snapshot(
         catalog.SNAP_FED_LIQUIDITY,
@@ -194,7 +221,10 @@ def task_krx_futures() -> str:
     payload = krx_service.collect_futures_history(40)
     rows = payload.get("rows") or []
     if not rows:
-        raise EmptyResult("KRX 선물 빈 결과 — 기존 저장본 유지")
+        raise EmptyResult(
+            "KRX 선물 빈 결과 — 기존 저장본 유지"
+            + _reason_suffix([payload.get("error")] if payload.get("error") else [])
+        )
 
     store.put_snapshot(
         catalog.SNAP_KRX_FUTURES,
@@ -222,7 +252,10 @@ def task_sector_history() -> str:
     collected = payload.get("tickers") or {}
 
     if not collected:
-        raise EmptyResult(f"0/{len(tickers)} 티커 — 기존 저장본 유지")
+        raise EmptyResult(
+            f"0/{len(tickers)} 티커 — 기존 저장본 유지"
+            + _reason_suffix([payload.get("error")] if payload.get("error") else [])
+        )
 
     store.put_snapshot(catalog.SNAP_SECTOR_HISTORY, payload)
     return f"{len(collected)}/{len(tickers)} 티커"
@@ -240,11 +273,16 @@ def task_volatility_history() -> str:
     """
     period = catalog.VOLATILITY_STORE_PERIOD
     ok = 0
+    reasons: list[str] = []
 
     for symbol in ("^VIX", "^MOVE"):
         payload = market_service.collect_ticker(symbol, period)
         if not payload.get("points"):
-            logger.info("변동성 빈 결과(저장본 유지): %s", symbol)
+            logger.info(
+                "변동성 빈 결과(저장본 유지): %s (%s)", symbol, payload.get("error")
+            )
+            if payload.get("error"):
+                reasons.append(f"{symbol} {payload['error']}")
             continue
         store.put_snapshot(
             catalog.snap_ticker_history(symbol, period),
@@ -254,7 +292,7 @@ def task_volatility_history() -> str:
         ok += 1
 
     if not ok:
-        raise EmptyResult("0/2 지수 — 기존 저장본 유지")
+        raise EmptyResult("0/2 지수 — 기존 저장본 유지" + _reason_suffix(reasons))
     return f"{ok}/2 지수 ({period})"
 
 

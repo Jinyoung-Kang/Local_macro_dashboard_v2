@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import yfinance as yf
 
+from ..http import brief_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,9 +32,10 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
     """
     symbols = [t for t in dict.fromkeys(tickers) if t]
     if not symbols:
-        return {"tickers": {}}
+        return {"tickers": {}, "error": "요청된 티커가 없습니다"}
 
     frames: dict[str, pd.DataFrame] = {}
+    failures: list[str] = []
 
     try:
         raw = yf.download(
@@ -47,6 +50,7 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ETF 배치 수집 실패, 개별 수집으로 폴백합니다: %s", exc)
+        failures.append(f"배치 {brief_error(exc)}")
         raw = None
 
     if raw is not None and not raw.empty:
@@ -77,6 +81,7 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
                     frame = future.result()
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("ETF 수집 실패 (%s): %s", symbol, exc)
+                    failures.append(f"{symbol} {brief_error(exc)}")
                     continue
                 if frame is not None and not frame.empty:
                     frames[symbol] = frame
@@ -91,7 +96,16 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
             "close": [float(v) for v in closes.tolist()],
         }
 
-    return {"tickers": out}
+    error = None
+    if not out:
+        # ⚠️ yfinance는 Yahoo 응답 형식이 바뀌면 예외 없이 빈 프레임을 줍니다.
+        # 사유가 없으면 "0/25 티커"만 남아 원인을 알 수 없습니다.
+        error = "; ".join(failures[:3]) if failures else (
+            f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
+            "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요"
+        )
+
+    return {"tickers": out, "error": error}
 
 
 def _fetch_single(symbol: str, period: str) -> pd.DataFrame | None:

@@ -44,16 +44,25 @@ def collect_fed_liquidity(period_years: int = 10) -> dict:
     단위: WALCL/WTREGEN은 $M, RRPONTSYD는 $B로 오는 경우가 있어 정규화합니다.
     """
     with ThreadPoolExecutor(max_workers=3) as pool:
-        walcl, wtregen, rrp = pool.map(
-            lambda sid: fred.collect_series(sid, period_years), SERIES
-        )
+        collected = list(pool.map(
+            lambda sid: fred.collect_series_with_reason(sid, period_years), SERIES
+        ))
+    walcl, wtregen, rrp = (points for points, _ in collected)
 
     if not walcl or not wtregen or not rrp:
+        # 어느 시계열이 왜 비었는지까지 남깁니다. "순유동성 빈 결과"만으로는
+        # FRED 키 문제인지 망 문제인지 구분할 수 없습니다.
         missing = [
-            sid for sid, points in zip(SERIES, (walcl, wtregen, rrp)) if not points
+            f"{sid}({reason})" if reason else sid
+            for sid, (points, reason) in zip(SERIES, collected)
+            if not points
         ]
         logger.warning("순유동성 구성 시계열 수집 실패: %s", missing)
-        return {"isEstimated": False, "rows": []}
+        return {
+            "isEstimated": False,
+            "rows": [],
+            "error": "구성 시계열 수집 실패: " + ", ".join(missing),
+        }
 
     walcl_map = _as_map(walcl)
     wtregen_map = _as_map(wtregen)

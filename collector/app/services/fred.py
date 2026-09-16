@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta
 
 from .. import settings
-from ..http import get_fred_session
+from ..http import brief_error, get_fred_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,31 +27,46 @@ def collect_series(series_id: str, period_years: int = 10) -> list[dict]:
     반환: [{"date": "YYYY-MM-DD", "value": float}, ...] (오름차순)
           실패하면 빈 리스트.
     """
+    points, _ = collect_series_with_reason(series_id, period_years)
+    return points
+
+
+def collect_series_with_reason(
+    series_id: str, period_years: int = 10
+) -> tuple[list[dict], str | None]:
+    """
+    수집 결과와 **실패 사유**를 함께 돌려줍니다.
+
+    사유가 필요한 이유: 상태 화면이 "0/12 시리즈"라고만 말하면 운영자가
+    무엇을 고쳐야 할지 알 수 없습니다. "HTTP 403", "키 없음 + CSV 차단"처럼
+    조치로 이어지는 문장이어야 합니다.
+    """
     start_date = (
         datetime.now() - timedelta(days=period_years * 365 + 90)
     ).strftime("%Y-%m-%d")
 
-    points = _from_api(series_id, start_date)
+    points, api_reason = _from_api(series_id, start_date)
     if len(points) >= 2:
-        return points
+        return points, None
 
-    points = _from_csv(series_id)
+    points, csv_reason = _from_csv(series_id)
     if len(points) >= 2:
-        return points
+        return points, None
 
+    reason = " / ".join(r for r in (api_reason, csv_reason) if r) or "알 수 없는 실패"
     logger.error(
-        "%s: FRED API와 CSV가 모두 실패했습니다. "
+        "%s: FRED API와 CSV가 모두 실패했습니다 (%s). "
         "가짜 데이터를 만들지 않고 빈 결과를 반환합니다.",
-        series_id,
+        series_id, reason,
     )
-    return []
+    return [], reason
 
 
-def _from_api(series_id: str, start_date: str) -> list[dict]:
+def _from_api(series_id: str, start_date: str) -> tuple[list[dict], str | None]:
     key = settings.fred_key()
     if not key:
         logger.info("%s: FRED API 키가 없어 웹 CSV 경로로 진행합니다.", series_id)
-        return []
+        return [], "API 키 없음"
 
     url = f"{settings.FRED_API_BASE}/series/observations"
     params = {
@@ -64,27 +79,28 @@ def _from_api(series_id: str, start_date: str) -> list[dict]:
         res = get_fred_session().get(url, params=params, timeout=15)
     except Exception as exc:  # noqa: BLE001
         logger.warning("FRED API 실패 (%s): %s", series_id, exc)
-        return []
+        return [], f"API {brief_error(exc)}"
 
     if res.status_code != 200:
         logger.warning(
             "FRED API 응답 실패 (%s): HTTP %s - %s",
             series_id, res.status_code, res.text[:200],
         )
-        return []
+        return [], f"API HTTP {res.status_code}"
 
     try:
         observations = res.json().get("observations", [])
     except ValueError as exc:
         logger.warning("FRED API JSON 해석 실패 (%s): %s", series_id, exc)
-        return []
+        return [], "API 응답을 JSON으로 읽지 못했습니다"
 
-    return _clean_points(
+    points = _clean_points(
         (row.get("date"), row.get("value")) for row in observations
     )
+    return points, (None if points else "API 응답에 관측치가 없습니다")
 
 
-def _from_csv(series_id: str) -> list[dict]:
+def _from_csv(series_id: str) -> tuple[list[dict], str | None]:
     """
     FRED 웹 CSV 폴백.
 
@@ -97,13 +113,20 @@ def _from_csv(series_id: str) -> list[dict]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("FRED CSV 다운로드 실패 (%s): %s", series_id, exc)
-        return []
+        return [], f"CSV {brief_error(exc)}"
 
-    if res.status_code != 200 or len(res.text) < 30:
+    if res.status_code != 200:
         logger.warning(
             "FRED CSV 응답 비정상 (%s): HTTP %s", series_id, res.status_code
         )
-        return []
+        # 403은 보통 차단(데이터센터 IP·User-Agent)입니다. 키를 넣으면 API
+        # 경로로 우회되므로 사유에 그 힌트를 함께 담습니다.
+        hint = " — FRED_API_KEY를 설정하면 공식 API 경로로 우회됩니다" \
+            if res.status_code in (403, 429) else ""
+        return [], f"CSV HTTP {res.status_code}{hint}"
+
+    if len(res.text) < 30:
+        return [], "CSV 응답이 비어 있습니다"
 
     reader = csv.DictReader(io.StringIO(res.text))
     fieldnames = reader.fieldnames or []
@@ -114,15 +137,16 @@ def _from_csv(series_id: str) -> list[dict]:
         logger.warning(
             "FRED CSV에서 날짜 컬럼을 찾지 못했습니다 (%s): %s", series_id, fieldnames
         )
-        return []
+        return [], f"CSV에 날짜 컬럼이 없습니다 (받은 컬럼: {fieldnames[:4]})"
 
     value_col = next((c for c in fieldnames if c != date_col), None)
     if value_col is None:
-        return []
+        return [], "CSV에 값 컬럼이 없습니다"
 
-    return _clean_points(
+    points = _clean_points(
         (row.get(date_col), row.get(value_col)) for row in reader
     )
+    return points, (None if points else "CSV에 유효한 관측치가 없습니다")
 
 
 def _clean_points(rows) -> list[dict]:

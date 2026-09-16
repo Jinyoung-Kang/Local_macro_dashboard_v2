@@ -23,8 +23,14 @@ COLLECTOR_PORT := $(if $(COLLECTOR_PORT),$(COLLECTOR_PORT),8000)
 
 .DEFAULT_GOAL := help
 .PHONY: help setup up down restart logs ps collect collect-all status verify \
-        test test-collector test-backend test-frontend \
+        doctor test test-collector test-backend test-frontend \
         dev-collector dev-backend dev-frontend db infra backup restore reset
+
+# 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
+# (conda base 같은 다른 파이썬이 PATH 앞에 있으면 pytest·uvicorn을
+#  "모듈 없음"으로 실패시킵니다. 실제로 겪은 오류입니다.)
+VENV_PY := collector/.venv/bin/python
+PY := $(shell test -x $(VENV_PY) && echo $(VENV_PY) || echo python3)
 
 help: ## 사용 가능한 명령 목록
 	@echo ""
@@ -86,12 +92,17 @@ verify: ## 교차 검증 실행 (KRX·KIS 대조)
 	@curl -fsS "http://localhost:$(COLLECTOR_PORT)/verify/readings" \
 		| python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "수집기에 연결하지 못했습니다."
 
+# ------------------------------------------------------------------ 진단
+doctor: ## 어디가 막혔는지 한 번에 진단 (데이터가 안 보일 때 먼저 실행)
+	@bash scripts/doctor.sh
+
 # ------------------------------------------------------------------ 테스트
 test: test-collector test-backend test-frontend ## 전체 테스트
 
 test-collector: ## 수집기 테스트 (PostgreSQL 필요)
+	@test -x $(VENV_PY) || echo "ℹ️  collector/.venv가 없어 $(PY)로 실행합니다. 'No module named pytest'가 나오면 docs/LOCAL_SETUP.md의 가상환경 절을 보세요."
 	cd collector && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql://macro:macro@localhost:5432/macrodash} \
-		python3 -m pytest tests -q
+		$(if $(filter $(VENV_PY),$(PY)),.venv/bin/python,python3) -m pytest tests -q
 
 test-backend: ## 백엔드 테스트 (PostgreSQL 필요)
 	cd backend && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:5432/macrodash} \
@@ -101,9 +112,11 @@ test-frontend: ## 화면 린트 + 빌드(타입 검사 포함)
 	cd frontend && npm run lint && npm run build
 
 # ------------------------------------------------------------- 네이티브 개발
-dev-collector: ## 수집기 개발 서버 (자동 리로드)
+dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
+	@test -x $(VENV_PY) || (echo "⚠️  collector/.venv가 없습니다. 먼저:" && \
+		echo "    python3 -m venv collector/.venv && collector/.venv/bin/pip install -r collector/requirements.txt" && exit 1)
 	cd collector && DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash \
-		uvicorn app.main:app --reload --port $(COLLECTOR_PORT)
+		.venv/bin/python -m uvicorn app.main:app --reload --port $(COLLECTOR_PORT)
 
 dev-backend: ## 백엔드 개발 서버
 	cd backend && mvn spring-boot:run

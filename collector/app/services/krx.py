@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 
 from .. import settings
-from ..http import get_session
+from ..http import brief_error, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -356,11 +356,13 @@ def _fallback_from_kodex(days: int) -> dict:
     교차 검증도 무의미해집니다.
     """
     frame = None
+    last_error: str | None = None
     for symbol in ("069500.KS", "^KS200"):
         try:
             candidate = yf.Ticker(symbol).history(period=f"{days + 30}d")
         except Exception as exc:  # noqa: BLE001
             logger.warning("추정치 소스 조회 실패 (%s): %s", symbol, exc)
+            last_error = f"{symbol} {brief_error(exc)}"
             continue
         if candidate is not None and not candidate.empty and len(candidate) >= 5:
             frame = candidate
@@ -368,12 +370,23 @@ def _fallback_from_kodex(days: int) -> dict:
 
     if frame is None:
         logger.error("KRX 선물 추정치 생성 실패: 대체 소스도 수집하지 못했습니다.")
-        return {"isEstimated": True, "rows": []}
+        return {
+            "isEstimated": True,
+            "rows": [],
+            "error": (
+                "KRX 응답이 부족해 KODEX 200 추정치로 대체하려 했으나 "
+                f"{last_error or '대체 소스(069500.KS/^KS200)도 비어 있습니다'}"
+            ),
+        }
 
     closes = frame["Close"].dropna()
     closes = closes[closes > 0].tail(days)
     if closes.empty:
-        return {"isEstimated": True, "rows": []}
+        return {
+            "isEstimated": True,
+            "rows": [],
+            "error": "대체 소스에 유효한 종가가 없습니다",
+        }
 
     # KODEX 200은 지수의 약 100배 가격이라 스케일을 맞춥니다.
     scale = 0.01 if float(closes.iloc[-1]) > 1000 else 1.0

@@ -27,10 +27,32 @@ BROWSER_HEADERS = {
 }
 
 # SEC는 연락처가 포함된 User-Agent를 요구합니다(미준수 시 403).
-SEC_HEADERS = {
-    "User-Agent": "LocalMacroDashboard/2.0 (contact: research@example.com)",
-    "Accept-Encoding": "gzip, deflate",
-}
+# 예시 주소(research@example.com)를 그대로 쓰면 SEC가 차단할 수 있으므로
+# SEC_USER_AGENT 환경변수(또는 secrets.toml의 [sec] user_agent)로 본인 연락처를
+# 넣을 수 있게 합니다. 구버전 .streamlit/secrets.toml의 [sec] user_agent와 같은
+# 역할입니다.
+_SEC_UA_FALLBACK = "LocalMacroDashboard/2.0 (contact: research@example.com)"
+
+
+def sec_user_agent() -> str:
+    """SEC EDGAR에 보낼 User-Agent. 설정이 없으면 예시 값으로 폴백합니다."""
+    from . import settings  # 순환 import 방지를 위해 함수 안에서 가져옵니다.
+
+    configured = settings.sec_user_agent()
+    if not configured:
+        return _SEC_UA_FALLBACK
+    if "@" in configured and "(" not in configured:
+        # 이메일만 적어 둔 경우(구버전 secrets.toml 형식) SEC가 요구하는
+        # "이름 연락처" 형태로 감싸 줍니다.
+        return f"LocalMacroDashboard/2.0 (contact: {configured})"
+    return configured
+
+
+def sec_headers() -> dict:
+    return {
+        "User-Agent": sec_user_agent(),
+        "Accept-Encoding": "gzip, deflate",
+    }
 
 _lock = threading.Lock()
 _sessions: dict[str, requests.Session] = {}
@@ -81,7 +103,7 @@ def get_fred_session() -> requests.Session:
 
 def get_sec_session() -> requests.Session:
     """SEC EDGAR 전용 세션 (연락처 포함 UA + 넉넉한 재시도)."""
-    return _get("sec", headers=SEC_HEADERS, retries=5, backoff=1.5, pool=10)
+    return _get("sec", headers=sec_headers(), retries=5, backoff=1.5, pool=10)
 
 
 def _get(
@@ -99,6 +121,46 @@ def _get(
             )
             _sessions[name] = session
         return session
+
+
+# ==============================================================================
+# 실패 사유 문자열
+# ==============================================================================
+# requests 예외를 그대로 문자열로 만들면 urllib3 스택이 통째로 들어옵니다.
+#   "HTTPSConnectionPool(host='fred.stlouisfed.org', port=443): Max retries
+#    exceeded with url: /graph/fredgraph.csv?id=DGS2 (Caused by ProxyError(…"
+# 이걸 120자로 자르면 괄호가 짝이 안 맞는 채로 끊겨 더 읽기 어려워집니다.
+# 사유는 로그가 아니라 **화면에 뜨는 한 줄**이므로, 조치로 이어지는 문장으로
+# 압축합니다.
+_ERROR_HINTS: tuple[tuple[str, str], ...] = (
+    ("proxy", "프록시가 연결을 막았습니다 (회사망·보안 프로그램·Docker 프록시 설정 확인)"),
+    ("timed out", "응답이 없어 시간이 초과됐습니다"),
+    ("timeout", "응답이 없어 시간이 초과됐습니다"),
+    ("ssl", "TLS 검증에 실패했습니다"),
+    ("name or service not known", "도메인 이름을 찾지 못했습니다 (DNS)"),
+    ("nodename nor servname", "도메인 이름을 찾지 못했습니다 (DNS)"),
+    ("connection refused", "서버가 연결을 거부했습니다"),
+    ("max retries exceeded", "재시도를 모두 소진했습니다 (연결 불가)"),
+)
+
+
+def brief_error(exc: BaseException, *, limit: int = 110) -> str:
+    """예외를 '무엇을 해야 하는지'가 보이는 한 줄로 줄입니다."""
+    text = str(exc)
+    lowered = text.lower()
+    for needle, hint in _ERROR_HINTS:
+        if needle in lowered:
+            return f"{type(exc).__name__} — {hint}"
+
+    collapsed = " ".join(text.split())
+    if len(collapsed) > limit:
+        # 자를 때 괄호가 열린 채 끝나지 않도록 마지막 '(' 이후를 버립니다.
+        collapsed = collapsed[:limit]
+        opened = collapsed.rfind("(")
+        if opened > limit // 2 and collapsed.count("(") > collapsed.count(")"):
+            collapsed = collapsed[:opened]
+        collapsed = collapsed.rstrip(" ,;:(") + "…"
+    return f"{type(exc).__name__}: {collapsed}" if collapsed else type(exc).__name__
 
 
 def close_all() -> None:

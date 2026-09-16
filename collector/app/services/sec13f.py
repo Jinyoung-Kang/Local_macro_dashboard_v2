@@ -19,7 +19,7 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup
 
-from ..http import get_sec_session, sec_rate_limit
+from ..http import brief_error, get_sec_session, sec_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,12 @@ def collect_13f(cik: str, max_quarters: int = 8) -> dict:
         res = session.get(EDGAR_BROWSE, params=params, timeout=30)
         res.raise_for_status()
     except Exception as exc:  # noqa: BLE001
-        return _fail(cik, f"SEC EDGAR 연결 실패 (서버 점검 또는 통신 지연): {exc}")
+        # 403은 대개 "연락처 없는 User-Agent"입니다. SEC가 정책으로 막습니다.
+        hint = (
+            " — SEC_USER_AGENT에 본인 이메일을 넣으세요"
+            if "403" in str(exc) else ""
+        )
+        return _fail(cik, f"SEC EDGAR 연결 실패: {brief_error(exc)}{hint}")
 
     links = _parse_filing_links(res.text, max_quarters)
     if not links:

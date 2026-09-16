@@ -30,6 +30,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
+from ..http import brief_error
+
 logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
@@ -66,10 +68,10 @@ def collect_ticker(symbol: str, period: str = "1mo") -> dict:
     if symbol in MOVE_SYMBOLS:
         return _collect_move_proxy(symbol, period)
 
-    frame, is_intraday = _download(symbol, period)
+    frame, is_intraday, reason = _download(symbol, period)
     if frame is None or frame.empty:
-        logger.warning("yfinance 수집 실패 (%s)", symbol)
-        return _empty(symbol, period)
+        logger.warning("yfinance 수집 실패 (%s): %s", symbol, reason)
+        return _empty(symbol, period, reason)
 
     return {
         "symbol": symbol,
@@ -78,14 +80,19 @@ def collect_ticker(symbol: str, period: str = "1mo") -> dict:
         "isProxy": False,
         "isSynthetic": False,
         "sourceLabel": None,
+        "error": None,
         "points": _frame_to_points(frame),
     }
 
 
-def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool]:
+def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str | None]:
     """
     분봉 우선 수집. ^TNX/^TYX 같은 심볼은 분봉이 없어 일봉으로 폴백됩니다.
-    폴백 여부를 호출부가 알아야 하므로 (프레임, 분봉여부)를 함께 돌려줍니다.
+    폴백 여부와 실패 사유를 호출부가 알아야 하므로 함께 돌려줍니다.
+
+    ⚠️ yfinance는 Yahoo가 응답 형식을 바꿀 때마다 깨집니다. 그때 증상은
+    "예외 없이 빈 DataFrame"이라 조용한 실패로 보입니다. 사유 문자열에
+    그 가능성을 명시해 운영자가 버전 업그레이드를 떠올릴 수 있게 합니다.
     """
     try:
         ticker = yf.Ticker(symbol)
@@ -94,15 +101,24 @@ def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool]:
             for interval in ("1m", "5m"):
                 frame = ticker.history(period=period, interval=interval)
                 if frame is not None and not frame.empty:
-                    return _sanitize(frame), True
+                    return _sanitize(frame), True, None
             frame = ticker.history(period=period)
-            return _sanitize(frame), False
+            sanitized = _sanitize(frame)
+            return sanitized, False, (None if sanitized is not None else _empty_reason())
 
         frame = ticker.history(period=period)
-        return _sanitize(frame), False
+        sanitized = _sanitize(frame)
+        return sanitized, False, (None if sanitized is not None else _empty_reason())
     except Exception as exc:  # noqa: BLE001
         logger.warning("yfinance 수집 예외 (%s): %s", symbol, exc)
-        return None, False
+        return None, False, brief_error(exc)
+
+
+def _empty_reason() -> str:
+    return (
+        f"yfinance({getattr(yf, '__version__', '?')})가 빈 응답을 받았습니다 "
+        "— Yahoo 차단 또는 라이브러리 버전 불일치를 의심하세요"
+    )
 
 
 def _sanitize(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -122,7 +138,7 @@ def _collect_move_proxy(symbol: str, period: str) -> dict:
     유료 피드를 연결하고 이 분기를 교체해야 합니다.
     """
     base_period = period if period not in ("1d", "5d") else "1mo"
-    frame, _ = _download("^TNX", base_period)
+    frame, _, reason = _download("^TNX", base_period)
 
     if frame is not None and len(frame) >= 2:
         closes = frame["Close"]
@@ -142,6 +158,7 @@ def _collect_move_proxy(symbol: str, period: str) -> dict:
             "isProxy": True,
             "isSynthetic": False,
             "sourceLabel": "^TNX 변동성 기반 추정치 (실제 ICE BofA MOVE 아님)",
+            "error": None,
             "points": _frame_to_points(proxy),
         }
 
@@ -149,8 +166,8 @@ def _collect_move_proxy(symbol: str, period: str) -> dict:
     # 구버전은 여기서 사인파 합성 시계열을 만들어 채웠습니다. 값에 정보가
     # 전혀 없는데 차트는 그럴듯하게 그려지므로, 이 버전에서는 만들지 않고
     # 빈 결과를 돌려줍니다. 화면은 "수집 실패"를 그대로 표시합니다.
-    logger.error("MOVE 대용 추정치 계산 실패: ^TNX 수집 불가")
-    return _empty(symbol, period)
+    logger.error("MOVE 대용 추정치 계산 실패: ^TNX 수집 불가 (%s)", reason)
+    return _empty(symbol, period, f"^TNX 수집 불가 — {reason}")
 
 
 def _frame_to_points(frame: pd.DataFrame) -> list[dict]:
@@ -168,7 +185,7 @@ def _frame_to_points(frame: pd.DataFrame) -> list[dict]:
     return points
 
 
-def _empty(symbol: str, period: str) -> dict:
+def _empty(symbol: str, period: str, error: str | None = None) -> dict:
     return {
         "symbol": symbol,
         "period": period,
@@ -176,6 +193,7 @@ def _empty(symbol: str, period: str) -> dict:
         "isProxy": symbol in MOVE_SYMBOLS,
         "isSynthetic": False,
         "sourceLabel": None,
+        "error": error,
         "points": [],
     }
 
