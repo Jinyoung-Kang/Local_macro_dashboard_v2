@@ -495,7 +495,7 @@ def read_task_summary() -> list[dict]:
         rows = conn.execute(
             """
             SELECT DISTINCT ON (task)
-                   task, speed, status, started_at, duration_ms, detail
+                   task, speed, status, started_at, duration_ms, detail, run_id
             FROM collector_task_runs
             ORDER BY task, id DESC
             """

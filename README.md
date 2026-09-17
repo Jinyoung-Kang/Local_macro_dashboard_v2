@@ -452,15 +452,26 @@ make test-backend      # 백엔드만
 make test-frontend     # 화면만
 ```
 
+> ⚠️ **테스트는 전용 DB(`macrodash_test`)에서 돕니다.**
+> 백엔드 통합 테스트는 시작할 때마다 `snapshots`를 비웁니다. 접속 대상이
+> 평소 쓰는 `macrodash`였을 때는 `make test-backend` 한 번으로 수집해 둔
+> 데이터가 전부 사라졌습니다(복구하려면 `make collect-all` — 10분 이상).
+> `make test-*`가 테스트 DB를 알아서 만들어 쓰고, 테스트 자체도 이름이
+> `_test`로 끝나지 않는 DB에서는 **지우기 전에 실행을 거부**합니다.
+
 직접 부르려면 — 각 블록은 **최상위에서 새로 시작**한다고 보고 경로를 적었습니다.
+DB 주소를 손으로 적을 때도 `macrodash_test`를 쓰세요.
 
 ```bash
+# 테스트 DB 준비 (한 번만 — make test-* 는 이걸 자동으로 합니다)
+make db-test
+
 # 수집기 (PostgreSQL 필요 — 없으면 저장 계층 테스트만 자동 건너뜀)
-(cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash \
+(cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash_test \
   python -m pytest tests -q)
 
 # 백엔드 (통합 테스트가 실제 DB를 사용 · Java 21 필요)
-(cd backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash mvn verify)
+(cd backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash_test mvn verify)
 
 # 화면 (타입 검사 포함)
 (cd frontend && npm run lint && npm run build)
@@ -543,6 +554,8 @@ make test-frontend     # 화면만
 | 수집기 로그 첫 줄이 `KRX 로그인 실패: KRX_ID …` | pykrx가 import할 때 찍는 문구입니다. **우리 앱의 오류가 아닙니다** (최신 버전은 우리 로거로 옮겨 뜻이 통하게 적습니다) |
 | 스크래핑 비교표에서 WTI·브렌트·상해종합만 `429 Too Many Requests` | Yahoo 데이터 API에 생 requests로 붙던 경로였습니다. 최신 버전은 앱 전체가 쓰는 yfinance 경로 하나로 모읍니다 |
 | 로그에 API 키가 보임 | 최신 버전은 로깅 계층에서 가립니다(`api_key=***redacted***`). 예전 로그에 남았다면 **해당 키를 재발급**하세요 |
+| 다른 기기(휴대폰)에서 화면이 안 열림 | `.env`의 `WEB_BIND_HOST`가 `127.0.0.1`이면 이 맥에서만 열립니다. `0.0.0.0`으로 바꾸고 `make up`. 이때 `APP_PASSWORD`는 반드시 기본값이 아니어야 합니다 |
+| 다른 기기에서 DB·수집기에 붙으려는데 안 됨 | 의도된 제한입니다. DB(`5432`)·Redis(`6379`)·수집기(`8000`)는 로그인이 없어 이 맥에서만 열립니다. 예전에는 같은 와이파이의 누구나 `macro/macro`로 DB에 붙을 수 있었습니다 |
 | 수급 레이더 진단의 `NAVER 빈 결과` | 최신 버전은 원인을 구분해 말합니다 — "표가 없습니다"(차단·JS 요구)와 "종목 행이 없습니다"(휴장·구조 변경) |
 | 같은 태스크가 로그에 여러 번 시작됨 | 최신 버전은 이미 도는 수집이 있으면 새로 시작하지 않고 그 결과를 함께 씁니다 |
 | `.env` 첫 줄이 `# .env.example …`이라 잘못 저장한 것 같음 | **정상입니다.** `make setup`이 `.env.example`을 복사해 만들기 때문입니다(최신 버전은 머리말을 `.env`로 바꿔 줍니다). `KEY=VALUE` 줄만 맞으면 됩니다 |

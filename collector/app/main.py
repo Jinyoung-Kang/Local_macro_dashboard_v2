@@ -122,6 +122,24 @@ def _check_token(token: str | None) -> None:
         raise HTTPException(status_code=401, detail="유효하지 않은 서비스 토큰입니다.")
 
 
+def _parse_date(value: str | None) -> date | None:
+    """
+    'YYYY-MM-DD'를 날짜로 바꿉니다.
+
+    형식이 틀리면 ValueError가 그대로 올라가 500(서버 오류)이 됐습니다.
+    잘못 보낸 쪽이 무엇을 고쳐야 하는지 알 수 있게 400으로 답합니다.
+    """
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"날짜 형식이 올바르지 않습니다: {value} (예: 2026-09-18)",
+        ) from None
+
+
 # ==============================================================================
 # 상태
 # ==============================================================================
@@ -251,6 +269,7 @@ def live_radar(
     topN: int = Query(30, ge=5, le=100),
     intervalType: str = Query("TODAY", pattern="^(TODAY|DAYS_5|DAYS_20)$"),
     targetDate: str | None = None,
+    x_service_token: str | None = Header(default=None),
 ) -> dict:
     """
     수급 랭킹을 지금 수집합니다 (폴백 체인 전체를 탑니다).
@@ -258,7 +277,8 @@ def live_radar(
     저장도 함께 합니다. 화면이 기다린 수집 결과를 버리면 다음 사용자가 또
     기다리게 되기 때문입니다.
     """
-    day = date.fromisoformat(targetDate) if targetDate else datetime.now(KST).date()
+    _check_token(x_service_token)
+    day = _parse_date(targetDate) or datetime.now(KST).date()
     result = radar_service.collect_radar_ranking(
         day, market, investor, tradeType, topN, intervalType
     )
@@ -276,19 +296,31 @@ def live_radar(
 
 
 @app.get("/live/ticker/{symbol:path}")
-def live_ticker(symbol: str, period: str = "1mo") -> dict:
+def live_ticker(
+    symbol: str,
+    period: str = "1mo",
+    x_service_token: str | None = Header(default=None),
+) -> dict:
     """저장 대상이 아닌 개별 티커 차트(단일 지표 조회 화면)용."""
+    _check_token(x_service_token)
     return market_service.collect_ticker(symbol, period)
 
 
 @app.get("/live/daum-intraday")
-def live_daum_intraday(minutes: int = Query(30, ge=5, le=180)) -> dict:
+def live_daum_intraday(
+    minutes: int = Query(30, ge=5, le=180),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
     """장중 선물 수급 가속도. 1분 단위로 변하므로 저장하지 않습니다."""
+    _check_token(x_service_token)
     return krx_service.collect_daum_intraday_acceleration(minutes)
 
 
 @app.get("/live/radar-history-dates")
-def radar_history_dates() -> dict:
+def radar_history_dates(
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_service_token)
     return {"dates": store.list_observation_dates(catalog.OBS_RADAR)}
 
 
@@ -299,7 +331,9 @@ def radar_history(
     tradeType: str | None = None,
     obsDate: str | None = None,
     startDate: str | None = None,
+    x_service_token: str | None = Header(default=None),
 ) -> dict:
+    _check_token(x_service_token)
     filters: dict[str, str] = {}
     if market:
         filters["market"] = market
@@ -326,6 +360,7 @@ def verification_readings(
     market: str = "KOSPI",
     investor: str = "외국인",
     tradeType: str = "순매수",
+    x_service_token: str | None = Header(default=None),
 ) -> dict:
     """
     같은 수치를 서로 다른 출처에서 읽어 **원자료 그대로** 돌려줍니다.
@@ -334,6 +369,7 @@ def verification_readings(
     규칙(허용 오차, 장 시간 게이트, "확인 못 함"과 "일치"를 섞지 않기)을 한
     곳에 모아 두기 위해서입니다.
     """
+    _check_token(x_service_token)
     now = datetime.now(KST)
     top_row = _top_ranking_row(market, investor, tradeType, now)
 
@@ -439,13 +475,16 @@ def _top_ranking_row(market: str, investor: str, trade_type: str, now: datetime)
 # 연결 진단
 # ==============================================================================
 @app.get("/diagnostics/connections")
-def diagnostics() -> dict:
+def diagnostics(
+    x_service_token: str | None = Header(default=None),
+) -> dict:
     """
     5개 데이터 소스 + 토스의 연결 상태.
 
     진단은 **화면이 실제로 쓰는 경로**를 그대로 호출합니다. 진단이 다른
     경로를 보면 "진단은 정상인데 화면은 빈" 상황을 설명할 수 없습니다.
     """
+    _check_token(x_service_token)
     return {
         "checkedAt": datetime.now(KST).isoformat(),
         "sources": {
@@ -459,17 +498,29 @@ def diagnostics() -> dict:
 
 
 @app.get("/diagnostics/toss")
-def toss_diagnostics() -> dict:
+def toss_diagnostics(
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_service_token)
     return toss_service.test_connection()
 
 
 @app.get("/toss/exchange-rate")
-def toss_exchange_rate(base: str = "USD", quote: str = "KRW") -> dict:
+def toss_exchange_rate(
+    base: str = "USD",
+    quote: str = "KRW",
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_service_token)
     return toss_service.get_exchange_rate(base, quote)
 
 
 @app.get("/toss/indices")
-def toss_indices(symbols: str = Query(..., description="쉼표로 구분")) -> dict:
+def toss_indices(
+    symbols: str = Query(..., description="쉼표로 구분"),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    _check_token(x_service_token)
     return toss_service.get_index_prices([s.strip() for s in symbols.split(",") if s.strip()])
 
 

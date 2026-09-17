@@ -182,7 +182,8 @@ public class StoreRepository {
 
     public List<Map<String, Object>> readTaskSummary() {
         return jdbc.queryForList(
-                "SELECT DISTINCT ON (task) task, speed, status, started_at, duration_ms, detail "
+                "SELECT DISTINCT ON (task) task, speed, status, started_at, duration_ms, "
+                        + "detail, run_id "
                         + "FROM collector_task_runs ORDER BY task, id DESC");
     }
 
