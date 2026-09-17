@@ -45,7 +45,12 @@ OPEN = ["/health", "/status"]
 def client(monkeypatch):
     monkeypatch.setattr(main, "API_TOKEN", "test-token")
     # lifespan(스케줄러·DB 연결)을 띄우지 않고 라우팅만 확인합니다.
-    return TestClient(main.app)
+    #
+    # raise_server_exceptions=False — 이 테스트가 보는 것은 '인증에서 막히는가'
+    # 하나입니다. DB가 없는 환경(CI의 수집기 잡은 앱용 DB를 띄우지 않습니다)에서
+    # /status가 DB 연결 실패로 터지는 것은 여기서 판단할 문제가 아닙니다.
+    # 예외를 그대로 올리면 그 환경 차이가 인증 테스트의 실패로 둔갑합니다.
+    return TestClient(main.app, raise_server_exceptions=False)
 
 
 @pytest.mark.parametrize("method,path", PROTECTED)
