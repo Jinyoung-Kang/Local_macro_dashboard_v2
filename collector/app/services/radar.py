@@ -24,6 +24,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+
+import contextlib
+import io
 import logging
 import os
 import re
@@ -544,9 +547,15 @@ def fetch_pykrx_ranking(
     investor_name = PYKRX_INVESTORS.get(investor, "외국인")
 
     try:
-        frame = pykrx_stock.get_market_net_purchases_of_equities_by_ticker(
-            target_date, target_date, market_code, investor_name
-        )
+        # pykrx는 실패를 print로 찍습니다("Error occurred in ...").
+        # 로깅이 아니라 표준출력이라 필터로는 못 거릅니다. 우리가 바로 아래에서
+        # 같은 내용을 더 분명하게 남기므로(사유·날짜 포함) 그 출력만 삼킵니다.
+        # 폴백은 날짜를 최대 7번 거슬러 올라가기 때문에, 놔두면 조회 한 번에
+        # 같은 줄이 일곱 번 쌓입니다.
+        with contextlib.redirect_stdout(io.StringIO()):
+            frame = pykrx_stock.get_market_net_purchases_of_equities_by_ticker(
+                target_date, target_date, market_code, investor_name
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("PyKrx 조회 실패 (%s): %s", target_date, exc)
         return []

@@ -209,7 +209,13 @@ export function Select({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  /**
+   * disabled를 준 항목은 목록에 보이지만 고를 수 없습니다.
+   *
+   * 아예 빼지 않는 이유 — 원래 있던 선택지가 소리 없이 사라지면 "내 화면이
+   * 이상한가?"가 됩니다. 남겨 두고 왜 못 고르는지 라벨에 적는 편이 낫습니다.
+   */
+  options: { value: string; label: string; disabled?: boolean }[];
 }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-muted">
@@ -220,7 +226,7 @@ export function Select({
         className="rounded-md border border-border bg-surface-hover px-2 py-1.5 text-sm text-body outline-none focus:border-accent"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}

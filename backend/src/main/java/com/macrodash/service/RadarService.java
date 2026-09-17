@@ -33,6 +33,25 @@ public class RadarService {
     public static final List<String> MARKETS = List.of("KOSPI", "KOSDAQ");
     public static final List<String> INVESTORS =
             List.of("외국인", "기관", "개인", "연기금", "금융투자", "투신");
+
+    /**
+     * 지금 실제로 받을 수 있는 투자주체.
+     *
+     * <p>Daum API는 {@code investorType=FOREIGN|INSTITUTION} 두 가지만 받습니다.
+     * 나머지 넷(개인·연기금·금융투자·투신)은 Naver가 담당했는데, Naver가 그
+     * 페이지를 폐지했습니다(HTTP 410 — stock.naver.com으로 이전). 남은 경로인
+     * LS는 인증이 거절되고 KRX(pykrx)는 차단 응답을 줍니다.
+     *
+     * <p>목록에서 아예 빼지 않는 이유 — 원래 있던 기능이고 소스가 복구되면
+     * 다시 됩니다. 고를 수만 없게 하고 <b>왜 안 되는지</b>를 함께 보여 줍니다.
+     * 고르게 두면 "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
+     */
+    public static final List<String> SUPPORTED_INVESTORS = List.of("외국인", "기관");
+
+    /** 지원하지 않는 투자주체를 고르려 할 때 화면에 적을 이유. */
+    public static final String UNSUPPORTED_INVESTOR_NOTE =
+            "Daum이 제공하지 않는 투자주체입니다. 이 넷을 담당하던 Naver가 페이지를 "
+                    + "폐지해(HTTP 410) 현재 받을 수 있는 소스가 없습니다.";
     public static final List<String> TRADE_TYPES = List.of("순매수", "순매도");
     public static final List<String> INTERVALS = List.of("TODAY", "DAYS_5", "DAYS_20");
 

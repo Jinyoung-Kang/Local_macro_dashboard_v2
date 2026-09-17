@@ -28,6 +28,9 @@ export default function RadarPage() {
   const options = useApi<{
     markets: string[];
     investors: string[];
+    /** 지금 실제로 받을 수 있는 투자주체. 나머지는 고를 수 없게 막습니다. */
+    supportedInvestors?: string[];
+    unsupportedInvestorNote?: string;
     tradeTypes: string[];
     intervals: string[];
   }>("/api/radar/options");
@@ -44,6 +47,10 @@ export default function RadarPage() {
     `&tradeType=${encodeURIComponent(tradeType)}&intervalType=${interval}&topN=${topN}`;
 
   const { data, loading, error, reload } = useApi<RadarResponse>(query, 60_000);
+
+  const unsupportedInvestors = (options.data?.investors ?? []).filter(
+    (value) => options.data?.supportedInvestors && !options.data.supportedInvestors.includes(value),
+  );
 
   const chartData = (data?.rows ?? [])
     .slice(0, 15)
@@ -85,10 +92,19 @@ export default function RadarPage() {
             label="투자 주체"
             value={investor}
             onChange={setInvestor}
-            options={(options.data?.investors ?? ["외국인"]).map((value) => ({
-              value,
-              label: value,
-            }))}
+            options={(options.data?.investors ?? ["외국인"]).map((value) => {
+              // 목록에는 남기고 고를 수만 없게 합니다. 조용히 사라지면
+              // "원래 있던 항목이 왜 없지?"가 되고, 고를 수 있게 두면
+              // "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
+              const supported =
+                !options.data?.supportedInvestors ||
+                options.data.supportedInvestors.includes(value);
+              return {
+                value,
+                label: supported ? value : `${value} (지원 안 함)`,
+                disabled: !supported,
+              };
+            })}
           />
           <Select
             label="매매 구분"
@@ -115,6 +131,13 @@ export default function RadarPage() {
             options={["10", "20", "30", "50"].map((value) => ({ value, label: `상위 ${value}개` }))}
           />
         </div>
+
+        {unsupportedInvestors.length > 0 && (
+          <p className="mt-3 text-[11px] text-muted">
+            ⓘ {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
+            {options.data?.unsupportedInvestorNote}
+          </p>
+        )}
       </Card>
 
       {loading && !data && <Loading label="수급 데이터를 불러오는 중…" />}
