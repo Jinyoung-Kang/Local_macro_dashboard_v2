@@ -146,6 +146,12 @@ git push origin --delete claude/<브랜치>     # 합친 브랜치는 지웁니�
 git remote prune origin
 ```
 
+> **`git push`에서 `Permission ... denied to <본인 아이디>` (403)가 나면**
+> 저장소 설정이 아니라 **맥에 저장된 GitHub 자격 증명** 문제입니다. 공개
+> 저장소는 **받기(pull)에 로그인이 필요 없어서**, 토큰이 만료돼도 평소에는
+> 아무 증상이 없다가 push할 때만 막힙니다. 해결은 9장 표의
+> `git push가 403` 행을 보세요.
+
 ### 2-2. 개발 모드 (Docker 없이 / 코드 고치며 실행)
 
 ```bash
@@ -543,6 +549,8 @@ make test-frontend     # 화면만
 | `.env` 값에 따옴표를 둘렀는데 인식이 이상함 | docker compose는 `KEY=VALUE`를 그대로 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다. `export`나 들여쓰기도 안 됩니다 |
 | 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `make update && make up` |
 | **고쳤다는 기능이 화면에 없음** | 그 코드로 빌드되지 않았습니다. 화면 **왼쪽 아래 버전**(`main@1e4d3be`)과 `make version`을 보세요. 새 작업이 다른 브랜치에 있으면 `git pull`은 아무것도 받지 않습니다 — `make update`를 쓰세요 |
+| **`git push`가 `Permission to …denied to <본인 아이디>` (403)** | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다(공개 저장소는 pull에 로그인이 필요 없어 push할 때만 드러납니다). ① `gh auth login` 후 `gh auth setup-git` — GitHub CLI가 있으면 이게 가장 간단합니다. ② 없으면 키체인의 낡은 값을 지우고 새 토큰으로: `printf "protocol=https\nhost=github.com\n\n" \| git credential-osxkeychain erase` 실행 → GitHub Settings → Developer settings → Personal access tokens에서 **classic + `repo` 권한**(또는 fine-grained + 이 저장소의 **Contents: Read and write**) 발급 → 다시 `git push` 할 때 비밀번호 칸에 **토큰**을 붙여넣기. ③ SSH를 쓰려면 `git remote set-url origin git@github.com:Jinyoung-Kang/Local_macro_dashboard_v2.git` |
+| `git push`는 안 되는데 코드는 최신 | 정상입니다. **받기와 올리기는 별개**입니다. `make version`의 `올릴 것 : 로컬에만 있는 커밋 N개`가 아직 원격에 없다는 뜻이고, 화면 왼쪽 아래 버전이 최신이면 **지금 돌고 있는 코드는 최신이 맞습니다** |
 | `make update`가 `수정 중인 파일이 있어 당기지 않았습니다` | 고쳐 둔 파일이 있어 덮어쓰지 않은 것입니다. `git status`로 확인 후 `git restore <파일>`(버리기) 또는 `git stash`(보관) |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |
 | 로그인 후 401이 반복됨 | `FRONTEND_ORIGIN`과 실제 접속 주소가 달라 쿠키가 막힌 경우입니다(`localhost`와 `127.0.0.1`은 다른 오리진입니다) |

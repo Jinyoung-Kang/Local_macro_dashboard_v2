@@ -60,6 +60,14 @@ if git rev-parse --abbrev-ref "@{u}" >/dev/null 2>&1; then
       echo "받은 커밋:"
       git --no-pager log --oneline "$before..$after" | sed 's/^/      /'
     fi
+    # 아직 올리지 않은 커밋. 이 상태에서는 다른 기기·원격이 이 코드를 못 받습니다.
+    ahead="$(git rev-list --count "@{u}..HEAD" 2>/dev/null || echo 0)"
+    if [ "$ahead" != "0" ]; then
+      echo ""
+      echo "ℹ️  로컬에만 있는 커밋 ${ahead}개 — 아직 원격에 올리지 않았습니다."
+      echo "    올리려면:  git push origin $branch"
+      echo "    403(denied)이 나면 맥의 GitHub 자격 증명 문제입니다 — README 9장을 보세요."
+    fi
   else
     echo ""
     echo "⚠️  자동으로 합칠 수 없습니다(로컬 커밋이 갈라져 있습니다)."
