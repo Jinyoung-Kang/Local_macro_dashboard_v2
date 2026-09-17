@@ -128,9 +128,12 @@ public class MacroService {
         out.put("shortKey", shortKey);
         out.put("longValue", longValue);
         out.put("shortValue", shortValue);
-        // 기존 화면이 쓰던 이름도 유지합니다(10Y−2Y 카드).
-        out.put("us02y", shortValue);
-        out.put("us10y", longValue);
+        // 만기를 키 이름에 박아 두지 않습니다(예: us10y).
+        //
+        // 이 메서드는 10Y−2Y와 30Y−2Y 양쪽에 쓰입니다. 편의를 위해 us10y를
+        // 함께 내려보내면 30Y−2Y 블록에서는 그 칸에 **30년물** 값이 들어가고,
+        // 받는 쪽(화면·AI 요약)은 이름만 보고 10년물이라고 읽습니다.
+        // 만기는 longKey/shortKey로만 알립니다.
         out.put("spread", spread);
         out.put("previousSpread", previousSpread);
         out.put("delta", SeriesMath.difference(spread, previousSpread));

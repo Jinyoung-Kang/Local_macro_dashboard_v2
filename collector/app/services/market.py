@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-from .. import yfcache
+from .. import indicators, yfcache
 
 from ..http import brief_error
 
@@ -274,7 +274,7 @@ def collect_macro_cards(categories: list[dict]) -> dict:
         {"id","title","note","items":[{key,name,note,ticker,status,price,delta,pct,
                                        priceStr,deltaStr,prevStr,lastTs,prevSource?}]}
       ],
-      "rates": {"us02y": {...}, "us10y": {...}}   # 스프레드 계산용 원시값
+      "rates": {"us02y": {...}, "us10y": {...}, "us30y": {...}}  # 스프레드 계산용
     }
     status: ok(전일 대비 있음) | single(현재가만) | fail(수집 실패)
     """
@@ -300,7 +300,10 @@ def collect_macro_cards(categories: list[dict]) -> dict:
         for spec in category["items"]:
             card = _build_card(spec, frames.get(spec["ticker"]))
             items.append(card)
-            if spec["key"] in ("us02y", "us10y"):
+            # 30년물을 빠뜨리면 화면의 30Y−2Y 스크래핑 패널이 통째로
+            # "수집 실패"로 뜹니다. 수집은 됐는데 여기서 버린 것이므로
+            # 사실이 아닌 실패 표시가 됩니다. 목록은 indicators에 한 곳만 둡니다.
+            if spec["key"] in indicators.BOND_SCANNER_KEYS:
                 rates[spec["key"]] = {
                     "current": card.get("price"),
                     "previous": card.get("prevValue"),

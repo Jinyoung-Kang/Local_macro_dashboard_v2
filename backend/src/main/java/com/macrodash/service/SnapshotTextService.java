@@ -109,9 +109,15 @@ public class SnapshotTextService {
             lines.add("### 장단기 금리차");
             Object realtime = map.get("realtime");
             if (realtime instanceof Map<?, ?> rt) {
-                lines.add("- 미국채 10년물: " + format(rt.get("us10y"), "%"));
-                lines.add("- 미국채 2년물: " + format(rt.get("us02y"), "%"));
-                lines.add("- 10Y-2Y 스프레드: " + format(rt.get("spread"), "%p"));
+                // 만기를 문장에 박아 두지 않고 longKey/shortKey를 따라갑니다.
+                // 같은 구조를 30Y-2Y에도 쓰기 때문에, 라벨을 고정해 두면 30년물
+                // 수익률이 "10년물"로 적혀 AI 요약에 그대로 실려 나갑니다.
+                String longYears = bondYears(rt.get("longKey"), "10");
+                String shortYears = bondYears(rt.get("shortKey"), "2");
+                lines.add("- 미국채 " + longYears + "년물: " + format(rt.get("longValue"), "%"));
+                lines.add("- 미국채 " + shortYears + "년물: " + format(rt.get("shortValue"), "%"));
+                lines.add("- " + longYears + "Y-" + shortYears + "Y 스프레드: "
+                        + format(rt.get("spread"), "%p"));
                 lines.add("- 스프레드 직전 대비: " + format(rt.get("delta"), "%p"));
             }
             Object official = map.get("official10y2y");
@@ -379,6 +385,23 @@ public class SnapshotTextService {
 
     private String orNa(String value) {
         return value == null ? "N/A" : value;
+    }
+
+    /**
+     * "us10y" → "10". 만기 키에서 연수만 뽑습니다.
+     *
+     * <p>키가 없거나 형식이 다르면 기본값을 씁니다. 여기서 예외를 던지면
+     * 스냅샷 텍스트 전체가 사라지는데, 라벨 한 줄 때문에 그럴 이유는 없습니다.
+     */
+    private String bondYears(Object key, String fallback) {
+        if (key instanceof String text && text.length() > 3
+                && text.startsWith("us") && text.endsWith("y")) {
+            String digits = text.substring(2, text.length() - 1).replaceFirst("^0+", "");
+            if (!digits.isEmpty() && digits.chars().allMatch(Character::isDigit)) {
+                return digits;
+            }
+        }
+        return fallback;
     }
 
     private String format(Object value, String unit) {

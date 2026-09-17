@@ -148,3 +148,36 @@ def test_move_proxy_returns_empty_when_tnx_unavailable(monkeypatch):
     assert payload["isProxy"] is True
     # 왜 비었는지가 남아야 합니다. 없으면 화면에 "0건"만 뜹니다.
     assert payload.get("error")
+
+
+def test_rates_include_every_bond_key(monkeypatch):
+    """
+    스프레드 계산용 rates에 30년물이 빠지면 안 됩니다.
+
+    화면의 30Y−2Y 카드는 rates["us30y"]가 있어야 스크래핑 패널을 그립니다.
+    예전에는 여기서 2년·10년만 담아서, 30년물은 **수집에 성공하고도**
+    화면에 "수집 실패"로 떴습니다(사실이 아닌 실패 표시).
+    """
+    from app import indicators
+
+    categories = [{
+        "id": "rates",
+        "title": "금리",
+        "items": [
+            {"key": "us02y", "name": "미국채 2년물", "ticker": "ZT=F"},
+            {"key": "us10y", "name": "미국채 10년물", "ticker": "^TNX"},
+            {"key": "us30y", "name": "미국채 30년물", "ticker": "^TYX"},
+        ],
+    }]
+
+    prices = {"ZT=F": (3.5, 3.6), "^TNX": (4.0, 4.1), "^TYX": (4.6, 4.7)}
+    monkeypatch.setattr(
+        market, "collect_ticker",
+        lambda symbol, period: _payload(_points(*prices[symbol])),
+    )
+
+    result = market.collect_macro_cards(categories)
+
+    assert set(result["rates"]) == set(indicators.BOND_SCANNER_KEYS)
+    assert result["rates"]["us30y"]["current"] == pytest.approx(4.7)
+    assert result["rates"]["us30y"]["previous"] == pytest.approx(4.6)

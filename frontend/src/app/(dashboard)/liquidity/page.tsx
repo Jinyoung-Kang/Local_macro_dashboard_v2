@@ -54,10 +54,17 @@ export default function LiquidityPage() {
     date: row.date,
     value: row.netLiquidityT,
   }));
+  //
+  // 단위는 위 KPI 타일과 **같게** 맞춥니다.
+  //   총자산 = 조 달러(T) / TGA·RRP = 십억 달러(B)
+  // 예전에는 차트만 셋 다 조 달러로 그렸습니다. 그러면 (a) 같은 화면에서
+  // 타일은 "5.2 십억 달러", 차트는 "0.01T"로 서로 다른 단위를 쓰고,
+  // (b) ON RRP 실제 수준(약 0.005조)에서는 눈금이 전부 "0.00T"가 됩니다.
+  // 패널을 나눈 목적(각자 제 범위를 갖게 하는 것)이 그대로 사라집니다.
   const componentSeries = {
     walcl: rows.map((row) => ({ date: row.date, value: row.walclT ?? null })),
-    tga: rows.map((row) => ({ date: row.date, value: row.wtregenB / 1000 })),
-    rrp: rows.map((row) => ({ date: row.date, value: row.rrpB / 1000 })),
+    tga: rows.map((row) => ({ date: row.date, value: row.wtregenB })),
+    rrp: rows.map((row) => ({ date: row.date, value: row.rrpB })),
   };
 
   return (
@@ -182,7 +189,7 @@ export default function LiquidityPage() {
       */}
       <Card
         title="🧩 구성 항목 분해"
-        subtitle="총자산이 늘어도 TGA·RRP가 더 늘면 시장 유동성은 줄어듭니다. 자릿수가 달라 패널을 나눠 그립니다."
+        subtitle="총자산이 늘어도 TGA·RRP가 더 늘면 시장 유동성은 줄어듭니다. 자릿수가 달라 패널과 단위를 나눕니다 (단위는 각 패널 제목 옆)."
       >
         <div className="grid gap-4 lg:grid-cols-3">
           {COMPONENTS.map((component) => (
@@ -202,6 +209,7 @@ export default function LiquidityPage() {
               <LineSeries
                 data={componentSeries[component.key]}
                 unit={component.suffix}
+                precision={component.precision}
                 color={component.color}
                 height={200}
               />
@@ -226,22 +234,25 @@ const COMPONENTS = [
     name: "연준 총자산 (WALCL)",
     unit: "조 달러",
     suffix: "T",
+    precision: 2,
     color: SERIES_COLORS.blue,
     note: "자산 매입은 유동성을 늘리고, 축소(QT)는 줄입니다.",
   },
   {
     key: "tga" as const,
     name: "재무부 일반계정 (TGA)",
-    unit: "조 달러",
-    suffix: "T",
+    unit: "십억 달러",
+    suffix: "B",
+    precision: 0,
     color: SERIES_COLORS.orange,
     note: "TGA 증가 = 시장에서 자금 흡수.",
   },
   {
     key: "rrp" as const,
     name: "역레포 (ON RRP)",
-    unit: "조 달러",
-    suffix: "T",
+    unit: "십억 달러",
+    suffix: "B",
+    precision: 0,
     color: SERIES_COLORS.green,
     note: "RRP 감소 = 시장으로 유동성 환류.",
   },

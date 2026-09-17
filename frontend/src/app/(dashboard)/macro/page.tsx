@@ -199,10 +199,17 @@ function SpreadSection({
   const inverted = (block?.latest ?? 0) < 0;
   const pair = `${block?.longId?.replace("DGS", "")}Y−${block?.shortId?.replace("DGS", "")}Y`;
 
+  // 카드가 공식·스크래핑 둘을 함께 담으므로 부제도 둘을 다 적습니다.
+  // 예전 부제는 카드 전체를 "미 재무부 공식 일별 확정치"라고 선언해서,
+  // 오른쪽 스크래핑 패널까지 확정치로 읽히게 했습니다.
+  const subtitle =
+    `공식: FRED ${block?.longId} − ${block?.shortId} (일별 확정치)` +
+    " · 스크래핑: TradingView 참고 시세 (지금 시점)";
+
   return (
     <Card
       title={title}
-      subtitle={`FRED ${block?.longId} − ${block?.shortId} (미 재무부 공식 일별 확정치)`}
+      subtitle={subtitle}
       actions={<RangeTabs value={range} onChange={setRange} />}
     >
       {/*
@@ -411,6 +418,13 @@ function AdvancedSection({
   const [selected, setSelected] = useState("T10Y3M");
   const [range, setRange] = useState<RangeValue>("10y");
 
+  // 0선을 긋는 지표와, 0을 넘었을 때 무슨 뜻인지.
+  //
+  // 차트에는 0선만 그립니다. 선 하나로는 "지금 역전 상태"라는 판정까지
+  // 전달되지 않으므로(색·선만으로 의미를 나르지 않습니다) 판정 문구는
+  // 차트 위 배너가 맡습니다. 위 금리차 카드와 같은 방식입니다.
+  const zeroLineNote = ZERO_LINE_NOTES[selected];
+
   // 10년치를 한 번 받아 두고 기간은 화면에서 자릅니다. 기간을 바꿀 때마다
   // 다시 부르면 FRED 호출만 늘고 반응도 느립니다.
   const series = useApi<{ available: boolean; points: { date: string; value: number }[] }>(
@@ -487,6 +501,11 @@ function AdvancedSection({
             {data?.latest[selected]?.why} · 출처: {data?.latest[selected]?.source}
           </p>
         </div>
+        {zeroLineNote && crossedZero(zeroLineNote, data?.latest[selected]?.value) && (
+          <div className="mb-3">
+            <Banner tone={zeroLineNote.tone}>{zeroLineNote.message}</Banner>
+          </div>
+        )}
         <LineSeries
           data={sliceByRange(
             (series.data?.points ?? []).map((point) => ({
@@ -496,13 +515,51 @@ function AdvancedSection({
             range,
           )}
           unit={data?.latest[selected]?.unit ?? ""}
-          zeroLine={selected === "T10Y3M" || selected === "NFCI"}
+          zeroLine={Boolean(zeroLineNote)}
+          precision={data?.latest[selected]?.digits ?? 2}
           color={SERIES_COLORS.blue}
           height={280}
         />
       </div>
     </Card>
   );
+}
+
+/**
+ * 0선이 의미를 갖는 심화 지표와, 선을 넘었을 때의 판정 문구.
+ *
+ * `side`는 "어느 쪽으로 넘어갔을 때 경고인가"입니다.
+ *   T10Y3M — 음수면 장단기 금리 역전
+ *   NFCI   — 양수면 금융상황이 평균보다 긴축적
+ * 여기 없는 지표는 0선도, 배너도 그리지 않습니다.
+ */
+const ZERO_LINE_NOTES: Record<
+  string,
+  { side: "below" | "above"; tone: "danger" | "warn"; message: string }
+> = {
+  T10Y3M: {
+    side: "below",
+    tone: "danger",
+    message:
+      "10년−3개월 스프레드가 역전(음수) 상태입니다. 역사적으로 1~2년 내 침체가 뒤따른 구간입니다.",
+  },
+  NFCI: {
+    side: "above",
+    tone: "warn",
+    message:
+      "금융상황지수가 0을 넘었습니다. 0이 장기 평균이므로, 지금은 평균보다 긴축적인 상태입니다.",
+  },
+};
+
+/** 최신값이 경고 방향으로 0선을 넘었는지. 값이 없으면 판정하지 않습니다. */
+function crossedZero(
+  note: (typeof ZERO_LINE_NOTES)[string],
+  value: number | null | undefined,
+): boolean {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return false;
+  }
+  return note.side === "below" ? value < 0 : value > 0;
 }
 
 const SINGLE_TICKERS = [

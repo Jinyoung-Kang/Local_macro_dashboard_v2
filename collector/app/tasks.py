@@ -482,11 +482,14 @@ def _apply_bond_override(payload: dict) -> dict:
                     "prevStr": "N/A", "prevValue": None, "deltaStr": "N/A",
                 })
 
-            if key in ("us02y", "us10y"):
-                payload.setdefault("rates", {})[key] = {
-                    "current": item["price"],
-                    "previous": item.get("prevValue"),
-                }
+            # 보정된 값을 스프레드 계산용 rates에도 그대로 반영합니다.
+            # 위 루프가 이미 BOND_SCANNER_KEYS만 통과시키므로, 여기서 키를
+            # 다시 추리면 목록이 두 곳으로 갈라져 한쪽만 30년물을 빠뜨리게
+            # 됩니다(그러면 30Y−2Y 스크래핑 패널이 "수집 실패"로 뜹니다).
+            payload.setdefault("rates", {})[key] = {
+                "current": item["price"],
+                "previous": item.get("prevValue"),
+            }
 
     return payload
 

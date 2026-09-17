@@ -7,7 +7,7 @@ app/logredact.py
 
     WARNING urllib3.connectionpool: Retrying (...) after connection broken by
     'ReadTimeoutError(...)': /fred/series/observations?series_id=WALCL
-    &api_key=6a60c4dbe7774f0130eb4ed6a9aa26a4&file_type=json&...
+    &api_key=deadbeefdeadbeefdeadbeefdeadbeef&file_type=json&...
 
 API 키가 그대로 노출됩니다. `make logs`를 뜨는 사람, 로그를 붙여 넣는 곳,
 로그 수집기 어디에나 남습니다.

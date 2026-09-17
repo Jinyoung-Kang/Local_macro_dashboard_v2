@@ -18,7 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * "화면은 수집을 기다리지 않는다"(README §4-5)를 코드로 고정합니다.
+ * "화면은 수집을 기다리지 않는다"(README §4-6)를 코드로 고정합니다.
  *
  * <p>예전에는 저장본이 조금 오래되기만 해도 수집이 끝날 때까지 붙잡고
  * 있었습니다. 실제 로그에서 페이지 한 번 여는 데 이만큼 멈췄습니다.

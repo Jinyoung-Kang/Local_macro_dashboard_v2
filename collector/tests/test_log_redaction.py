@@ -7,7 +7,7 @@ tests/test_log_redaction.py
 
     WARNING urllib3.connectionpool: Retrying (...) after connection broken by
     'ReadTimeoutError(...)': /fred/series/observations?series_id=WALCL
-    &api_key=6a60c4dbe7774f0130eb4ed6a9aa26a4&file_type=json&...
+    &api_key=deadbeefdeadbeefdeadbeefdeadbeef&file_type=json&...
 
 URL을 찍는 쪽이 서드파티 라이브러리라 우리 코드만 조심해서는 막을 수
 없습니다. 로깅 계층에서 한 번에 걸러야 합니다.
@@ -34,11 +34,11 @@ def test_URL의_api_key가_가려진다(captured):
     logging.getLogger("urllib3.connectionpool").warning(
         "Retrying after connection broken: %s",
         "/fred/series/observations?series_id=WALCL"
-        "&api_key=6a60c4dbe7774f0130eb4ed6a9aa26a4&file_type=json",
+        "&api_key=deadbeefdeadbeefdeadbeefdeadbeef&file_type=json",
     )
 
     text = captured.text
-    assert "6a60c4dbe7774f0130eb4ed6a9aa26a4" not in text
+    assert "deadbeefdeadbeefdeadbeefdeadbeef" not in text
     assert "***redacted***" in text
     # 진단에 필요한 부분은 남아야 합니다.
     assert "series_id=WALCL" in text

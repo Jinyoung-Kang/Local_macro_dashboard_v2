@@ -163,20 +163,29 @@ export function LineSeries({
   height = 260,
   unit = "",
   zeroLine = false,
-  negativeShade = false,
+  precision = 2,
 }: {
   data: Point[];
   color?: string;
   height?: number;
   unit?: string;
-  /** 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값). */
+  /**
+   * 0선을 그립니다 (스프레드·지수처럼 부호가 의미 있는 값).
+   *
+   * 선 색(#8B949E)은 격자(#30363D)보다 밝아 구분은 되지만, 선만으로는
+   * "역전"이라는 뜻까지 전달되지 않습니다. 부호가 판정으로 이어지는
+   * 차트는 카드 쪽에서 배너 한 줄을 함께 띄웁니다(색·선만으로 의미를
+   * 나르지 않기 위해서입니다). 예: 심화 매크로의 T10Y3M·NFCI.
+   */
   zeroLine?: boolean;
   /**
-   * 예전에는 음수 구간을 붉게 칠했습니다. 지금은 0선을 실선으로 그려
-   * 역전 여부를 보여 주고, 판정 문구는 카드 상단 배너가 맡습니다
-   * (색만으로 의미를 전달하지 않기 위해서입니다).
+   * 세로축 눈금 소수 자릿수.
+   *
+   * 기본 2는 %·%p처럼 소수가 의미 있는 값 기준입니다. 십억 달러처럼
+   * 정수 자릿수가 큰 계열에 2를 쓰면 "880.00B"처럼 의미 없는 0만
+   * 늘어나므로 0을 넘겨 주세요.
    */
-  negativeShade?: boolean;
+  precision?: number;
 }) {
   // ⚠️ 그라디언트 id는 문서 전체에서 유일해야 합니다. 예전에는 "fill"로
   // 고정돼 있어서, 한 페이지에 차트가 여러 개면(매크로 화면은 3개) 전부
@@ -207,12 +216,16 @@ export function LineSeries({
           tickLine={false}
           width={64}
           domain={valueDomain(data, zeroLine)}
-          tickFormatter={(value: number) => `${formatNumber(value, 2)}${unit}`}
+          tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
         />
         <Tooltip
           {...tooltipStyle()}
           cursor={{ stroke: "#8B949E", strokeWidth: 1 }}
-          formatter={(value: number) => [`${formatNumber(value, 3)}${unit}`, "값"]}
+          formatter={(value: number) => [
+            // 툴팁은 눈금보다 한 자리 더 보여 줍니다(정확한 값을 확인하는 곳).
+            `${formatNumber(value, precision + 1)}${unit}`,
+            "값",
+          ]}
         />
         {zeroLine && <ReferenceLine y={0} stroke="#8B949E" strokeWidth={1} />}
         <Area
