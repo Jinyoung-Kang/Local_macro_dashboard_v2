@@ -31,6 +31,12 @@ PY=python3
 
 printf '%s\n' "${BOLD}Local Macro Dashboard v2 — 진단${RESET}"
 
+# 어느 코드로 돌고 있는지 먼저 밝힙니다. "고쳤다는 기능이 없다"의 절반은
+# 그 코드가 아예 안 받아진 경우였습니다(다른 브랜치에 있는데 git pull만 함).
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  printf '%s\n' "${DIM}코드: $(git rev-parse --abbrev-ref HEAD)@$(git rev-parse --short HEAD) — 자세히 보려면 make version${RESET}"
+fi
+
 FIRST_PROBLEM=""
 problem() { [ -z "$FIRST_PROBLEM" ] && FIRST_PROBLEM="$1"; }
 

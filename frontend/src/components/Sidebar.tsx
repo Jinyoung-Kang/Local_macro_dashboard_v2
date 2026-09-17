@@ -7,6 +7,14 @@ import { Button } from "@/components/ui";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 
 /**
+ * 실행 중인 코드의 버전(브랜치@커밋).
+ *
+ * 빌드 시점에 번들에 들어갑니다. NEXT_PUBLIC_ 값은 런타임에 바뀌지 않으므로
+ * 여기 적힌 값이 곧 "이 화면을 만든 코드"입니다.
+ */
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
+
+/**
  * 좌측 메뉴 — 구버전 사이드바의 12개 메뉴를 그대로 옮겼습니다.
  * 순서도 같습니다: 분석 메뉴 → 데이터 상태 → AI → 연결 진단.
  */
@@ -88,7 +96,20 @@ export function Sidebar({ readMode }: { readMode?: string }) {
         {message && <p className="text-[11px] leading-relaxed text-muted">{message}</p>}
 
         <Button onClick={logout}>로그아웃</Button>
-        <p className="text-[11px] text-muted">© 2026 Local Macro Dashboard v2</p>
+        {/*
+          지금 화면이 "어느 코드"인지 항상 보이게 둡니다.
+          git pull 뒤에도 화면이 그대로일 때, 코드를 못 받은 것인지 화면이
+          안 바뀐 것인지 여기 한 줄로 구분됩니다. 'make up'이 넣어 주며,
+          값이 없으면(직접 docker compose로 띄운 경우) 표시하지 않습니다.
+        */}
+        <p className="text-[11px] text-muted">
+          © 2026 Local Macro Dashboard v2
+          {APP_VERSION && (
+            <span className="ml-1 tabular-nums" title="실행 중인 코드의 브랜치@커밋">
+              · {APP_VERSION}
+            </span>
+          )}
+        </p>
       </div>
     </aside>
   );

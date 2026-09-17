@@ -85,9 +85,10 @@ open http://localhost:3000
 **자주 쓰는 명령** (`make help`로 전체 목록)
 
 ```bash
-git pull && make up
+make update && make up   # 최신 코드 받기 → 다시 빌드·기동  (git pull 대신)
 open http://localhost:3000
 
+make version           # 지금 돌고 있는 코드가 어느 브랜치·커밋인지
 make status            # 수집 현황 (구버전 collector.py --status)
 make doctor            # 데이터가 안 보일 때 — 어디가 막혔는지 한 번에 진단
 make logs S=collector  # 특정 서비스 로그
@@ -104,6 +105,46 @@ Desktop이 뜨면 자동으로 복구**됩니다.
 
 > 📘 맥 기준 상세 절차(Docker 설치, 포트 변경, launchd 상주, 문제 해결)는
 > **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)** 에 있습니다.
+
+### 2-1-1. 브랜치와 업데이트 — `git pull` 대신 `make update`
+
+**기본 브랜치는 `main`이고, 실행도 `main`에서 합니다.** 새 작업은 작업용
+브랜치(`claude/…`)에 먼저 올라가고, 확인이 끝나면 `main`에 합칩니다. 합친
+브랜치는 지웁니다.
+
+```bash
+make update    # 모든 브랜치 정보를 받고 → 지금 브랜치를 당기고
+               # → "다른 브랜치에 더 새로운 작업이 있는지"까지 알려 줍니다
+make up        # 받은 코드로 다시 빌드·기동
+```
+
+> **`git pull`을 쓰지 마세요.** `git pull`은 *지금 체크아웃된 브랜치*만
+> 당깁니다. 새 작업이 다른 브랜치에 있으면 **아무것도 받지 않고 조용히
+> 끝나고**, 이어서 `make up`을 해도 예전 코드가 그대로 다시 뜹니다. 화면은
+> 멀쩡한데 고친 것이 하나도 없는 상태가 됩니다. `make update`는 그 경우를
+> 이렇게 알려 줍니다.
+>
+> ```
+> ❗ 다른 브랜치에 이 브랜치가 갖고 있지 않은 작업이 있습니다.
+>       origin/claude/relaxed-wright-97hxa8 — 이 브랜치에 없는 커밋 2개 (마지막 작업 2026-09-17 12:03)
+>
+>     최신 작업으로 옮기려면:  git checkout <위 브랜치 이름>  &&  make up
+> ```
+
+**지금 화면이 어느 코드인지**는 두 곳에서 확인합니다 — 화면 **왼쪽 아래**
+(`© 2026 Local Macro Dashboard v2 · main@1e4d3be`)와 터미널의 `make version`.
+`make up`도 마지막에 빌드한 브랜치·커밋을 찍고, 받을 것이 남아 있으면
+경고합니다. 고친 기능이 화면에 안 보이면 **이 값부터** 보세요.
+
+작업 브랜치를 `main`에 합치고 정리하는 순서(저장소 주인이 하는 일):
+
+```bash
+git checkout main
+git merge --ff-only origin/claude/<브랜치>   # 확인이 끝난 작업만
+git push origin main
+git push origin --delete claude/<브랜치>     # 합친 브랜치는 지웁니다
+git remote prune origin
+```
 
 ### 2-2. 개발 모드 (Docker 없이 / 코드 고치며 실행)
 
@@ -486,7 +527,7 @@ make test-frontend     # 화면만
 | 증상 | 원인 / 해결 |
 |---|---|
 | `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 외부 소스가 데이터를 주지 않았습니다. `(사유: …)` 문구를 함께 출력하니 그것부터 보세요 |
-| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 낡으면 Yahoo 응답 변경에 대응하지 못합니다. `git pull && make up`(재빌드) |
+| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 낡으면 Yahoo 응답 변경에 대응하지 못합니다. `make update && make up`(재빌드) |
 | 사유가 `CSV HTTP 403` | FRED 웹 CSV 차단입니다. `.env`에 무료 `FRED_API_KEY`를 넣으면 공식 API로 우회합니다 |
 | 13F가 `SEC_USER_AGENT가 설정되지 않았습니다` | `open -e .env` → `SEC_USER_AGENT=본인이메일` → `make up`. 키가 아니라 연락처입니다 |
 | 13F가 `영문/숫자가 아닌 문자가 있습니다` | `SEC_USER_AGENT`에 한글이 들어갔습니다. HTTP 헤더는 한글을 담을 수 없습니다 |
@@ -500,7 +541,9 @@ make test-frontend     # 화면만
 | 같은 태스크가 로그에 여러 번 시작됨 | 최신 버전은 이미 도는 수집이 있으면 새로 시작하지 않고 그 결과를 함께 씁니다 |
 | `.env` 첫 줄이 `# .env.example …`이라 잘못 저장한 것 같음 | **정상입니다.** `make setup`이 `.env.example`을 복사해 만들기 때문입니다(최신 버전은 머리말을 `.env`로 바꿔 줍니다). `KEY=VALUE` 줄만 맞으면 됩니다 |
 | `.env` 값에 따옴표를 둘렀는데 인식이 이상함 | docker compose는 `KEY=VALUE`를 그대로 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다. `export`나 들여쓰기도 안 됩니다 |
-| 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `git pull && make up` |
+| 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `make update && make up` |
+| **고쳤다는 기능이 화면에 없음** | 그 코드로 빌드되지 않았습니다. 화면 **왼쪽 아래 버전**(`main@1e4d3be`)과 `make version`을 보세요. 새 작업이 다른 브랜치에 있으면 `git pull`은 아무것도 받지 않습니다 — `make update`를 쓰세요 |
+| `make update`가 `수정 중인 파일이 있어 당기지 않았습니다` | 고쳐 둔 파일이 있어 덮어쓰지 않은 것입니다. `git status`로 확인 후 `git restore <파일>`(버리기) 또는 `git stash`(보관) |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |
 | 로그인 후 401이 반복됨 | `FRONTEND_ORIGIN`과 실제 접속 주소가 달라 쿠키가 막힌 경우입니다(`localhost`와 `127.0.0.1`은 다른 오리진입니다) |
 | `수집기에 연결하지 못했습니다` | 백엔드의 `COLLECTOR_URL` 확인. 수집기가 죽어 있어도 저장본으로 화면은 뜹니다 |

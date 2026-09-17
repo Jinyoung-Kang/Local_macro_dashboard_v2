@@ -85,8 +85,23 @@ ls          # README.md · docker-compose.yml · Makefile · backend · collecto
 
 ```bash
 cd ~/Projects/Local-macro-dashboard-v2
-git pull origin main
+make update      # git pull 대신 — 아래 이유를 꼭 읽어 주세요
+make up          # 받은 코드로 다시 빌드·기동
 ```
+
+> **왜 `git pull`이 아닌가.** `git pull`은 *지금 체크아웃된 브랜치*만
+> 당깁니다. 이 저장소는 새 작업을 작업용 브랜치(`claude/…`)에 먼저 올리고
+> 확인이 끝나면 `main`에 합치므로, `main`에서 `git pull`을 하면 **아무것도
+> 받지 않고 조용히 끝나는** 경우가 생깁니다. 그 뒤 `make up`을 해도 예전
+> 코드가 그대로 다시 뜨고, 화면은 멀쩡해 보이는데 고친 것이 하나도 없습니다.
+>
+> `make update`는 모든 브랜치 정보를 받아 온 뒤, 다른 브랜치에 더 새로운
+> 작업이 있으면 이름과 커밋 수를 찍어 줍니다. 그 브랜치로 옮기려면
+> `git checkout <브랜치 이름> && make up`입니다.
+
+**지금 돌고 있는 코드가 무엇인지**는 `make version`으로 봅니다. 화면
+**왼쪽 아래**에도 같은 값(`© 2026 Local Macro Dashboard v2 · main@1e4d3be`)이
+적혀 있으니, 고친 기능이 안 보이면 이 값부터 확인하세요.
 
 ---
 
@@ -213,6 +228,8 @@ make logs               # 전체 로그
 make logs S=collector   # 수집기 로그만
 make down               # 정지 (데이터 보존)
 make up                 # 다시 시작
+make update             # 최신 코드 받기 (git pull 대신 — §2 참고)
+make version            # 지금 돌고 있는 코드의 브랜치·커밋
 make backup             # DB 백업 → backups/
 ```
 
@@ -427,7 +444,8 @@ make test-frontend     # 린트 + 빌드 (Node 필요)
 | `EADDRINUSE :::3000` | 컨테이너 프런트가 이미 3000을 쓰고 있습니다. 네이티브로 또 띄우려면 `docker compose stop frontend` 먼저 |
 | `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 **외부 소스가 데이터를 주지 않은 것**입니다. 최신 버전은 `(사유: …)`를 함께 출력합니다. `make status` 또는 `make doctor`로 사유를 보세요 |
 | 사유가 `CSV HTTP 403` | FRED 웹 CSV가 차단됐습니다. `.env`에 `FRED_API_KEY`를 넣으면 공식 API 경로로 우회합니다(무료 발급) |
-| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 오래된 버전이면 Yahoo 응답 변경에 대응하지 못합니다. `git pull` 후 `make up`으로 **이미지를 다시 빌드**하세요 |
+| 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 오래된 버전이면 Yahoo 응답 변경에 대응하지 못합니다. `make update` 후 `make up`으로 **이미지를 다시 빌드**하세요 |
+| **고쳤다는 기능이 화면에 없음** | 그 코드로 빌드되지 않았습니다. 화면 왼쪽 아래 버전과 `make version`을 확인하세요. 새 작업이 다른 브랜치에 있으면 `git pull`은 아무것도 받지 않습니다 — `make update`를 쓰세요 |
 | 13F만 비어 있음 | SEC가 연락처 없는 요청을 막습니다. `.env`에 `SEC_USER_AGENT=본인이메일`을 넣고 `make up` |
 | Docker Desktop이 프록시(`http.docker.internal:3128`)를 쓰는 환경 | 회사망·보안 프로그램이 외부 금융 사이트를 막으면 수집이 전부 실패합니다. Docker Desktop → Settings → Resources → Proxies에서 확인하세요 |
 

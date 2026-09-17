@@ -125,6 +125,9 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8080}"
+        # 'make up'이 현재 브랜치@커밋을 넣어 줍니다. 직접 docker compose로
+        # 띄우면 비어 있고, 그때는 화면에 버전이 표시되지 않습니다.
+        NEXT_PUBLIC_APP_VERSION: "${APP_VERSION:-}"
     depends_on:
       - backend
     environment:

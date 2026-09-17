@@ -2,6 +2,7 @@
 # Makefile — 자주 쓰는 명령 모음
 #
 #   make setup    최초 1회 준비 (.env 생성 · 키 확인 · 포트 확인)
+#   make update   최신 코드 받기 (git pull 대신 이걸 쓰세요)
 #   make up       전체 스택 기동
 #   make collect  지금 데이터 수집 (첫 실행 후 반드시 한 번)
 #   make status   수집 현황 확인
@@ -22,7 +23,7 @@ COLLECTOR_PORT ?= $(shell grep -s '^COLLECTOR_PORT=' .env | cut -d= -f2)
 COLLECTOR_PORT := $(if $(COLLECTOR_PORT),$(COLLECTOR_PORT),8000)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup up down restart logs ps collect collect-all status verify \
+.PHONY: help setup update version up down restart logs ps collect collect-all status verify \
         doctor test test-collector test-backend test-frontend \
         dev-collector dev-backend dev-frontend db infra backup restore reset
 
@@ -31,6 +32,12 @@ COLLECTOR_PORT := $(if $(COLLECTOR_PORT),$(COLLECTOR_PORT),8000)
 #  "모듈 없음"으로 실패시킵니다. 실제로 겪은 오류입니다.)
 VENV_PY := collector/.venv/bin/python
 PY := $(shell test -x $(VENV_PY) && echo $(VENV_PY) || echo python3)
+
+# 지금 체크아웃된 코드의 브랜치와 커밋. 빌드할 때 화면 왼쪽 아래에 새겨 두므로,
+# "받은 줄 알았는데 예전 코드였다"를 화면만 보고 알 수 있습니다.
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
+export APP_VERSION := $(if $(GIT_BRANCH),$(GIT_BRANCH)@$(GIT_COMMIT),)
 
 help: ## 사용 가능한 명령 목록
 	@echo ""
@@ -44,6 +51,12 @@ help: ## 사용 가능한 명령 목록
 setup: ## 최초 1회 준비 (.env 생성 · 키/포트 확인)
 	@bash scripts/setup.sh
 
+update: ## 최신 코드 받기 (git pull 대신 — 다른 브랜치의 새 작업까지 알려 줍니다)
+	@bash scripts/update.sh
+
+version: ## 지금 체크아웃된 코드의 브랜치·커밋과 원격 대비 상태
+	@bash scripts/version.sh
+
 up: ## 전체 스택 기동 (최초 빌드는 5~10분)
 	@test -f .env || (echo "⚠️  .env가 없습니다. 먼저 'make setup'을 실행하세요." && exit 1)
 	$(COMPOSE) up -d --build
@@ -52,6 +65,10 @@ up: ## 전체 스택 기동 (최초 빌드는 5~10분)
 	@echo "  API     : http://localhost:$(BACKEND_PORT)/api/health"
 	@echo "  수집기  : http://localhost:$(COLLECTOR_PORT)/status"
 	@echo ""
+	@echo "  빌드한 코드 : $(if $(APP_VERSION),$(APP_VERSION),알 수 없음 (git 저장소가 아님))"
+	@echo "                (화면 왼쪽 아래에도 같은 값이 표시됩니다)"
+	@echo ""
+	@bash scripts/version.sh --brief
 	@echo "  첫 실행이라면 'make collect'로 데이터를 한 번 받아 오세요."
 	@echo ""
 
