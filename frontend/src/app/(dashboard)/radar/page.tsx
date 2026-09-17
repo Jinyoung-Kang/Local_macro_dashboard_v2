@@ -124,7 +124,17 @@ export default function RadarPage() {
 
       {data && !data.available && !data.warning && (
         <Banner tone="warn">
-          {data.message ?? "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."}
+          <div>{data.message ?? "수급 데이터를 얻지 못했습니다."}</div>
+          {/* 소스별 사유를 함께 보여 줍니다.
+              "수집기 상태를 확인하세요" 한 줄만 있으면, 수집기가 멀쩡한
+              경우(다른 조합은 잘 나오는 경우) 엉뚱한 곳을 보게 됩니다. */}
+          {data.reasons && data.reasons.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+              {data.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          )}
         </Banner>
       )}
 

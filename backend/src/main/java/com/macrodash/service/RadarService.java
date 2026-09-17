@@ -11,6 +11,7 @@ import com.macrodash.store.StoreRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,8 +87,10 @@ public class RadarService {
         Optional<JsonNode> live = collector.liveRadar(
                 market, investor, tradeType, topN, intervalType, targetDate);
 
+        List<String> liveReasons = List.of();
         if (live.isPresent()) {
             JsonNode payload = live.get();
+            liveReasons = reasonsOf(payload);
             out.put("available", !Json.array(payload, "rows").isEmpty());
             out.put("source", Json.asText(payload, "source"));
             out.put("sourceKind", Json.asText(payload, "sourceKind"));
@@ -111,8 +114,27 @@ public class RadarService {
 
         out.put("available", false);
         out.put("rows", List.of());
-        out.put("message", "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요.");
+        // 이유를 아는 만큼 적습니다.
+        //
+        // 예전 문구는 "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."
+        // 하나였습니다. 수집기는 멀쩡한데(다른 조합은 잘 나옵니다) 그쪽을 보게
+        // 만들어, 정작 원인인 소스별 제약에서 멀어졌습니다.
+        out.put("message", liveReasons.isEmpty()
+                ? "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."
+                : "이 조건으로는 수급을 받을 수 있는 소스가 없습니다.");
+        out.put("reasons", liveReasons);
         return out;
+    }
+
+    /** 수집기가 알려 준 소스별 실패 사유. */
+    private List<String> reasonsOf(JsonNode payload) {
+        List<String> reasons = new ArrayList<>();
+        for (JsonNode reason : Json.array(payload, "reasons")) {
+            if (reason.isTextual()) {
+                reasons.add(reason.asText());
+            }
+        }
+        return reasons;
     }
 
     private Map<String, Object> fillFromSnapshot(Map<String, Object> out, Snapshot snapshot) {

@@ -321,6 +321,8 @@ export interface RadarRow {
 export interface RadarResponse {
   available: boolean;
   message?: string;
+  /** 폴백 체인이 모두 실패했을 때, 소스별로 왜 못 줬는지. */
+  reasons?: string[];
   warning?: string;
   market: string;
   investor: string;
