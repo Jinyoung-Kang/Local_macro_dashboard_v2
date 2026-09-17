@@ -77,9 +77,15 @@ public class DashboardController {
     }
 
     // ------------------------------------------------------- 📊 매크로
+    /**
+     * @param live 매크로 화면의 자동 갱신이 켜져 있으면 true.
+     *             저장본을 다시 받을 기준이 15분 → 60초로 내려갑니다.
+     *             (더 짧게 두지 않는 이유는 Datasets.MAX_AGE_LIVE 주석에)
+     */
     @GetMapping("/macro/overview")
-    public Map<String, Object> macroOverview() {
-        return macro.overview();
+    public Map<String, Object> macroOverview(
+            @RequestParam(name = "live", defaultValue = "false") boolean live) {
+        return macro.overview(live);
     }
 
     @GetMapping("/macro/risk")
