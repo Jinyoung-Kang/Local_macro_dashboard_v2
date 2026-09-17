@@ -91,16 +91,25 @@ public class RadarService {
         if (live.isPresent()) {
             JsonNode payload = live.get();
             liveReasons = reasonsOf(payload);
-            out.put("available", !Json.array(payload, "rows").isEmpty());
-            out.put("source", Json.asText(payload, "source"));
-            out.put("sourceKind", Json.asText(payload, "sourceKind"));
-            out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
-            out.put("historyDate", Json.asText(payload, "historyDate"));
-            out.put("rows", payload.get("rows"));
-            if (Json.asBoolean(payload, "isHistorical")) {
-                out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
+
+            // 빈 결과로 여기서 끝내지 않습니다.
+            //
+            // 수집기가 200으로 답해도 rows가 비어 있을 수 있습니다(폴백 체인이
+            // 전부 실패한 경우). 그때 그대로 돌려주면 화면에는 아무 설명 없이
+            // "데이터 없음"만 남습니다. 아래로 내려가 저장본을 찾아보고,
+            // 그것도 없으면 소스별 사유를 담아 돌려줍니다.
+            if (!Json.array(payload, "rows").isEmpty()) {
+                out.put("available", true);
+                out.put("source", Json.asText(payload, "source"));
+                out.put("sourceKind", Json.asText(payload, "sourceKind"));
+                out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
+                out.put("historyDate", Json.asText(payload, "historyDate"));
+                out.put("rows", payload.get("rows"));
+                if (Json.asBoolean(payload, "isHistorical")) {
+                    out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
+                }
+                return out;
             }
-            return out;
         }
 
         if (snapshot.isPresent() && snapshot.get().payload() != null) {
