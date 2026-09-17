@@ -76,7 +76,10 @@ open http://localhost:3000
 |---|---|
 | <http://localhost:3000> | 화면 (비밀번호는 `.env`의 `APP_PASSWORD`) |
 | <http://localhost:8080/api/health> | 백엔드 상태 |
-| <http://localhost:8000/docs> | 수집기 API 문서 |
+| <http://localhost:8000/docs> | 수집기 API 문서 (이 맥에서만 열립니다) |
+
+DB·Redis·수집기는 **이 맥에서만** 접근할 수 있습니다. 화면·API는 같은 와이파이의
+다른 기기에서도 열 수 있고, `.env`의 `WEB_BIND_HOST`로 바꿉니다 ([4-11](#4-11-로그인이-없는-경로는-이-맥-밖으로-열지-않습니다)).
 
 `make setup`은 `.env`를 만들고 **세션 서명 키를 무작위로 생성**합니다. 그다음
 `.env`에서 `APP_PASSWORD`부터 바꾸세요 — 이 값 하나가 대시보드 전체의 접근
@@ -94,7 +97,7 @@ make doctor            # 데이터가 안 보일 때 — 어디가 막혔는지 
 make logs S=collector  # 특정 서비스 로그
 make down / make up    # 정지 / 재기동
 make backup            # DB 백업 → backups/
-make test              # 세 언어 테스트 전부
+make test              # 세 언어 테스트 전부 (테스트 전용 DB에서 — 7장)
 ```
 
 **Docker로 실행하면 맥에 Java·Maven·Node·psql을 설치할 필요가 없습니다.**
@@ -108,9 +111,18 @@ Desktop이 뜨면 자동으로 복구**됩니다.
 
 ### 2-1-1. 브랜치와 업데이트 — `git pull` 대신 `make update`
 
-**기본 브랜치는 `main`이고, 실행도 `main`에서 합니다.** 새 작업은 작업용
-브랜치(`claude/…`)에 먼저 올라가고, 확인이 끝나면 `main`에 합칩니다. 합친
-브랜치는 지웁니다.
+**기본 브랜치는 `main` 하나입니다. 실행도 `main`에서 합니다.** 새 작업은
+`main`에 바로 올라가므로, 평소에는 아래 두 줄이면 끝입니다.
+
+```bash
+cd ~/Projects/Local-macro-dashboard-v2
+make update && make up
+```
+
+작업용 브랜치(`claude/…`)를 따로 쓰던 시기가 있었고, 그때는 "고친 기능이 화면에
+없는" 일이 잦았습니다. `git pull`이 다른 브랜치의 작업을 받아오지 않기
+때문입니다. 지금은 브랜치를 남기지 않지만, 그 함정을 다시 밟지 않도록
+`make update`가 **다른 브랜치에 새 작업이 있는지까지 확인해** 알려 줍니다.
 
 ```bash
 make update    # 모든 브랜치 정보를 받고 → 지금 브랜치를 당기고
@@ -136,7 +148,7 @@ make up        # 받은 코드로 다시 빌드·기동
 `make up`도 마지막에 빌드한 브랜치·커밋을 찍고, 받을 것이 남아 있으면
 경고합니다. 고친 기능이 화면에 안 보이면 **이 값부터** 보세요.
 
-작업 브랜치를 `main`에 합치고 정리하는 순서(저장소 주인이 하는 일):
+작업 브랜치가 생겼을 때 `main`에 합치고 정리하는 순서:
 
 ```bash
 git checkout main
@@ -145,6 +157,11 @@ git push origin main
 git push origin --delete claude/<브랜치>     # 합친 브랜치는 지웁니다
 git remote prune origin
 ```
+
+> **워크플로 파일(`.github/workflows/`)을 고쳤다면** 토큰에 `workflow` 권한이
+> 있어야 push됩니다. 없으면 `refusing to allow a Personal Access Token to
+> create or update workflow ... without 'workflow' scope`가 나옵니다. 토큰을
+> 새로 만들 필요는 없고, 기존 토큰 설정에서 `workflow`를 체크하면 됩니다.
 
 > **`git push`에서 `Permission ... denied to <본인 아이디>` (403)가 나면**
 > 저장소 설정이 아니라 **맥에 저장된 GitHub 자격 증명** 문제입니다. 공개
@@ -398,6 +415,33 @@ Naver·Daum·KIS는 "가장 최근에 끝난 거래일"만 줍니다. 수집기�
 > **수집기를 꾸준히 돌리는 것이 곧 백업입니다.** PostgreSQL 볼륨은 백업할
 > 가치가 있습니다.
 
+### 4-11. 로그인이 없는 경로는 이 맥 밖으로 열지 않습니다
+
+컨테이너 다섯 개 중 **로그인을 요구하는 것은 화면과 API 둘뿐**입니다.
+PostgreSQL·Redis·수집기는 비밀번호가 없거나(`macro/macro`) 토큰이 선택 사항이라,
+포트를 밖으로 열면 같은 와이파이에 있는 누구나 DB에 붙거나 수집기 API로 데이터를
+받아갈 수 있습니다. 카페·공용 와이파이에서는 그대로 노출입니다.
+
+| 서비스 | 포트 | 어디까지 열리나 | 이유 |
+|---|---|---|---|
+| frontend | 3000 | 기본 `0.0.0.0` (`WEB_BIND_HOST`로 변경) | 비밀번호로 막혀 있고, 휴대폰에서 보는 용도가 있습니다 |
+| backend | 8080 | 기본 `0.0.0.0` (`WEB_BIND_HOST`로 변경) | 세션 쿠키 없이는 데이터 API에 접근할 수 없습니다 |
+| collector | 8000 | **127.0.0.1 고정** | 호출 한 번이 외부 수집·저장을 일으킵니다 |
+| postgres | 5432 | **127.0.0.1 고정** | 기본 계정이 `macro/macro`입니다 |
+| redis | 6379 | **127.0.0.1 고정** | 인증이 없습니다 |
+
+컨테이너끼리는 Docker 내부 네트워크로 통신하므로 **기능 손실이 없습니다.**
+`make db`·`make status`·`make doctor`도 `127.0.0.1`로 붙으므로 그대로 동작합니다.
+
+이 맥에서만 쓰신다면 `.env`에 `WEB_BIND_HOST=127.0.0.1`을 넣어 전부 닫을 수
+있습니다. 반대로 휴대폰에서 보실 거라면 **`APP_PASSWORD`를 기본값에서 반드시
+바꾸세요** — 그 값 하나가 대시보드 전체의 접근 통제입니다.
+
+수집기 API에 토큰(`COLLECTOR_API_TOKEN`)을 설정하면 수집을 유발하는 경로가 전부
+막힙니다. `/health`와 `/status`만 열어 둡니다 — 컨테이너 헬스체크와
+`make status`·`make doctor`가 쓰고, 비밀값은 담지 않습니다(키는 설정 여부만
+`true/false`로 알립니다).
+
 ---
 
 ## 5. 수집 작업 (11개 — 구버전과 동일)
@@ -499,6 +543,9 @@ make db-test
 - `collector/tests/test_log_redaction.py` — 로그에서 API 키·Bearer 토큰이
   가려지는지, 라이브러리가 인자로 넘긴 URL까지 걸리는지, 비밀이 아닌 값은
   건드리지 않는지
+- `collector/tests/test_api_token.py` — 수집을 유발하는 경로(`/live` · `/verify` ·
+  `/toss` · `/diagnostics` · `/collect`)가 토큰 없이 열리지 않는지, 반대로
+  토큰을 설정하지 않은 로컬에서는 아무것도 막지 않는지
 - `backend/.../StoreReaderNonBlockingTest.java` — **화면이 수집을 기다리지
   않는지**, 저장본이 없을 때만 기다리는지, 같은 태스크 재요청을 억제하는지,
   수동 새로고침이 방금 받은 분기 공시를 다시 받지 않는지
@@ -514,7 +561,8 @@ make db-test
 - `backend/.../DatasetsParityTest.java` — **Python과 Java가 같은 데이터셋 이름을
   쓰는지** (실제 `catalog.py`를 읽어 대조)
 - `backend/.../ApiIntegrationTest.java` — 인증 강제, 저장본이 없을 때 500이 아니라
-  `available=false`, 수집기가 죽어도 화면이 뜨는지
+  `available=false`, 수집기가 죽어도 화면이 뜨는지. 이 테스트는 `snapshots`를
+  비우므로 **DB 이름이 `_test`로 끝나지 않으면 지우기 전에 실행을 거부**합니다
 
 ---
 
@@ -562,7 +610,9 @@ make db-test
 | `.env` 값에 따옴표를 둘렀는데 인식이 이상함 | docker compose는 `KEY=VALUE`를 그대로 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다. `export`나 들여쓰기도 안 됩니다 |
 | 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `make update && make up` |
 | **고쳤다는 기능이 화면에 없음** | 그 코드로 빌드되지 않았습니다. 화면 **왼쪽 아래 버전**(`main@1e4d3be`)과 `make version`을 보세요. 새 작업이 다른 브랜치에 있으면 `git pull`은 아무것도 받지 않습니다 — `make update`를 쓰세요 |
-| **`git push`가 `Permission to …denied to <본인 아이디>` (403)** | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다(공개 저장소는 pull에 로그인이 필요 없어 push할 때만 드러납니다). ① `gh auth login` 후 `gh auth setup-git` — GitHub CLI가 있으면 이게 가장 간단합니다. ② 없으면 키체인의 낡은 값을 지우고 새 토큰으로: `printf "protocol=https\nhost=github.com\n\n" \| git credential-osxkeychain erase` 실행 → GitHub Settings → Developer settings → Personal access tokens에서 **classic + `repo` 권한**(또는 fine-grained + 이 저장소의 **Contents: Read and write**) 발급 → 다시 `git push` 할 때 비밀번호 칸에 **토큰**을 붙여넣기. ③ SSH를 쓰려면 `git remote set-url origin git@github.com:Jinyoung-Kang/Local_macro_dashboard_v2.git` |
+| **`git push`가 `Permission to …denied to <본인 아이디>` (403)** | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다(공개 저장소는 pull에 로그인이 필요 없어 push할 때만 드러납니다). 키체인의 낡은 값을 지우고 `printf "protocol=https\nhost=github.com\n\n" \| git credential-osxkeychain erase`, GitHub Settings → Developer settings → Personal access tokens에서 **classic + `repo` 권한**(또는 fine-grained + 이 저장소의 **Contents: Read and write**)을 발급한 뒤 다시 `git push`, 비밀번호 칸에 **토큰**을 붙여넣습니다. 사용자 이름을 매번 치지 않으려면 `git config credential.https://github.com.username <아이디>` |
+| `git push`가 `refusing to allow a Personal Access Token to … workflow` | `.github/workflows/`를 고친 경우입니다. 토큰 설정에서 **`workflow` 권한**을 체크하면 됩니다(토큰을 새로 만들 필요 없음) |
+| `git pull`·`git fetch`까지 `Permission denied (publickey)` | 원격 주소가 SSH(`git@github.com:…`)인데 이 맥에 SSH 키가 없는 경우입니다. `git remote -v`로 확인하고 HTTPS로 되돌리세요: `git remote set-url origin https://github.com/Jinyoung-Kang/Local_macro_dashboard_v2.git` |
 | `git push`는 안 되는데 코드는 최신 | 정상입니다. **받기와 올리기는 별개**입니다. `make version`의 `올릴 것 : 로컬에만 있는 커밋 N개`가 아직 원격에 없다는 뜻이고, 화면 왼쪽 아래 버전이 최신이면 **지금 돌고 있는 코드는 최신이 맞습니다** |
 | `make update`가 `수정 중인 파일이 있어 당기지 않았습니다` | 고쳐 둔 파일이 있어 덮어쓰지 않은 것입니다. `git status`로 확인 후 `git restore <파일>`(버리기) 또는 `git stash`(보관) |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |

@@ -81,8 +81,17 @@
 
 ## 2. 수집기 (내부용)
 
-`COLLECTOR_API_TOKEN`을 설정하면 쓰기 계열 요청에 `X-Service-Token` 헤더가
-필요합니다.
+`COLLECTOR_API_TOKEN`을 설정하면 아래 표에서 🔒 표시된 경로에 `X-Service-Token`
+헤더가 필요합니다. "쓰기"만이 아니라 **외부 수집을 일으키거나 시장 데이터를
+돌려주는 경로 전부**입니다 — 조회처럼 보이는 `/live`·`/verify`·`/toss`도 호출
+한 번이 외부 API 호출과 저장을 부릅니다.
+
+`/health`와 `/status`는 토큰 없이 열어 둡니다. 컨테이너 헬스체크와
+`make status`·`scripts/doctor.sh`가 헤더 없이 부르고, 비밀값을 담지 않기
+때문입니다(키는 설정 여부만 `true/false`로 알립니다).
+
+토큰을 설정하지 않으면(로컬 기본값) 아무것도 막지 않습니다. 대신 수집기 포트는
+`127.0.0.1`에만 열립니다(README 4-11).
 
 | 경로 | 설명 |
 |---|---|
@@ -90,17 +99,17 @@
 | `GET /status` | 저장 현황 + 키 보유 + 수집 주기 |
 | `GET /tasks` | 태스크 목록 |
 | `GET /task-history?task=&limit=` | 실행 이력 |
-| `POST /collect?group=fast\|slow\|weekly\|all&wait=true` | 작업군 실행 |
-| `POST /collect/task/{taskName}` | 태스크 1건 실행 |
-| `POST /refresh?scope=global` | 새로고침 기준 시각 갱신 |
-| `POST /maintenance/purge?days=400` | 오래된 누적 이력 정리 |
-| `GET /live/radar?...` | 수급 랭킹 즉시 수집 (폴백 체인 전체) |
-| `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
-| `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
-| `GET /live/radar-history`, `/live/radar-history-dates` | 누적 이력 |
-| `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드) |
-| `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
-| `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
+| 🔒 `POST /collect?group=fast\|slow\|weekly\|all&wait=true` | 작업군 실행 |
+| 🔒 `POST /collect/task/{taskName}` | 태스크 1건 실행 |
+| 🔒 `POST /refresh?scope=global` | 새로고침 기준 시각 갱신 |
+| 🔒 `POST /maintenance/purge?days=400` | 오래된 누적 이력 정리 |
+| 🔒 `GET /live/radar?...` | 수급 랭킹 즉시 수집 (폴백 체인 전체) |
+| 🔒 `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
+| 🔒 `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
+| 🔒 `GET /live/radar-history`, `/live/radar-history-dates` | 누적 이력 |
+| 🔒 `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드) |
+| 🔒 `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
+| 🔒 `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
 | `GET /catalog` | 지표·기관·ETF·COT 정의 |
 
 FastAPI 자동 문서: <http://localhost:8000/docs>
