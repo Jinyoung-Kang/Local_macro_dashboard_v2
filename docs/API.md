@@ -22,7 +22,7 @@
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/macro/overview` | 카드 + 스프레드 + 신선도 |
+| `GET /api/macro/overview?live=` | 카드 + 스프레드 + 신선도. `live=true`면 저장본을 다시 받을 기준이 15분 → **60초**로 내려갑니다(화면의 자동 갱신이 1분 이하일 때). 60초보다 낮추지 않는 이유는 README 4-12 |
 | `GET /api/macro/risk` | VIX·MOVE·HY OAS·CP 스프레드·STLFSI4 |
 | `GET /api/macro/advanced` | 심화 지표 5종 (해석·백분위 포함) |
 | `GET /api/macro/scraped` | 비공식 참고 시세 |
