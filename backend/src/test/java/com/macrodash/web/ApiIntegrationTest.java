@@ -234,6 +234,52 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("원본 데이터 텍스트는 저장본이 없어도 모든 영역을 표기한다")
+    void snapshotTextAlwaysCoversEverySection() {
+        // 📋 "전체 대시보드 원본 데이터 보기/복사"가 읽는 경로입니다.
+        // 수집본이 하나도 없어도 500이 아니라, 어느 영역이 비었는지 보여 줘야
+        // 합니다 — 빈 화면은 "이 메뉴가 고장났다"로 읽힙니다.
+        JsonNode body = authorizedGet("/api/snapshot/text");
+
+        String text = body.path("text").asText();
+        assertThat(body.path("generatedAtKst").asText()).endsWith("KST");
+        assertThat(body.path("chars").asInt()).isEqualTo(text.length());
+
+        for (String section : List.of(
+                "거시경제 매크로 지표", "심화 매크로 지표", "금융 리스크",
+                "연준 순유동성", "섹터 & 자산군", "글로벌 투기세력",
+                "국내 파생", "국내 수급 레이더", "기관 13F 스마트머니 교집합")) {
+            assertThat(text).as("%s 영역이 텍스트에 있어야 합니다", section).contains(section);
+        }
+        // 값의 성격(확정치/스크래핑/추정치)을 텍스트 자체가 들고 다녀야 합니다.
+        assertThat(text).contains("데이터 성격:");
+    }
+
+    @Test
+    @DisplayName("원본 데이터 텍스트에는 수집 시각과 값의 성격이 함께 붙는다")
+    void snapshotTextCarriesCollectionTimeAndNature() {
+        insertSnapshot(Datasets.SNAP_MACRO_COLLECTED, """
+                {
+                  "categories": [{
+                    "id": "fx", "title": "💵 통화 및 환율", "note": "실시간",
+                    "items": [{
+                      "key": "usdkrw", "name": "원/달러 (USD/KRW)", "status": "ok",
+                      "price": 1389.5, "priceStr": "1,389.50",
+                      "delta": -3.2, "pct": -0.23, "deltaStr": "-3.20 (-0.23%)",
+                      "prevStr": "1,392.70", "prevValue": 1392.7,
+                      "lastTs": "15:30:00 KST"
+                    }]
+                  }]
+                }
+                """);
+
+        String text = authorizedGet("/api/snapshot/text").path("text").asText();
+
+        assertThat(text).contains("- 수집 시각: ");
+        assertThat(text).contains("원/달러 (USD/KRW): 1,389.50");
+    }
+
+    @Test
     @DisplayName("AI 대기 한도 설정이 실제로 적용된다")
     void aiTimeoutPropertyIsInjected() {
         // 생성자가 둘인데 아무 표시가 없으면 Spring이 무인자 쪽을 골라

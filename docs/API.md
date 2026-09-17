@@ -60,13 +60,19 @@
 | `POST /api/status/run/{taskName}` | 특정 태스크 실행 |
 | `POST /api/verification` | 교차 검증 (판정 포함) |
 
+### 📋 전체 원본 데이터
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/snapshot/text` | 수집한 전체 대시보드 원본 텍스트 + 생성 시각·분량 (AI 분석 없음). 매크로 화면 상단의 "원본 데이터 보기/복사"가 씁니다 |
+
 ### 🤖 AI · 🔌 토스
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/ai/engines` | 엔진 목록 + 키 보유 여부 |
+| `GET /api/ai/engines` | 엔진 목록 + 키 보유 여부 + 예상 속도(`speedHint`)·대기 한도 |
 | `GET /api/ai/report-types` | 리포트 종류 |
-| `GET /api/ai/snapshot-text` | AI에 전달되는 원본 텍스트 |
+| `GET /api/ai/snapshot-text` | AI에 전달되는 원본 텍스트 (본문은 `/api/snapshot/text`와 같습니다) |
 | `POST /api/ai/report` | `{engineId, reportType, extraInstruction}` |
 | `POST /api/ai/test?engineId=&prompt=` | 연결 테스트 |
 | `GET /api/ai/toss/diagnostics` | 토스 연결 진단 |

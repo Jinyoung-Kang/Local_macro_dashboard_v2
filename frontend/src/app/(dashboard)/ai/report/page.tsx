@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
 import { Banner, Button, Card, Loading, Select, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { apiPost } from "@/lib/api";
-import type { AiEngine, AiResponse } from "@/lib/types";
+import type { AiEngines, AiResponse, SnapshotText } from "@/lib/types";
 
 /**
  * 🤖 AI 종합 데이터 분석 &amp; 결론 리포트.
@@ -14,17 +15,39 @@ import type { AiEngine, AiResponse } from "@/lib/types";
  * 추정치에 적용하는 것을 막습니다.
  */
 export default function AiReportPage() {
-  const engines = useApi<{ engines: AiEngine[]; enabled: boolean }>("/api/ai/engines");
+  const engines = useApi<AiEngines>("/api/ai/engines");
   const reportTypes = useApi<{ types: string[] }>("/api/ai/report-types");
-  const snapshot = useApi<{ text: string }>("/api/ai/snapshot-text");
+  const snapshot = useApi<SnapshotText>("/api/snapshot/text");
 
   const [engineId, setEngineId] = useState("auto");
   const [reportType, setReportType] = useState("");
   const [extra, setExtra] = useState("");
   const [result, setResult] = useState<AiResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showData, setShowData] = useState(false);
+
+  // 생성 중에는 경과 시간을 보여 줍니다. 버튼이 "생성 중…"으로만 멈춰 있으면
+  // 진행 중인지 멈춘 건지 알 수 없어, 사용자가 새로고침으로 날려 버립니다.
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsed(0);
+    const timer = setInterval(
+      () => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [busy]);
+
+  const selectedEngine = (engines.data?.engines ?? []).find(
+    (engine) => engine.id === engineId,
+  );
+  const autoBudget = engines.data?.autoBudgetSeconds;
+  const engineTimeout = engines.data?.timeoutSeconds;
 
   const generate = async () => {
     setBusy(true);
@@ -41,12 +64,6 @@ export default function AiReportPage() {
       setError(err instanceof Error ? err.message : "리포트 생성에 실패했습니다.");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const copyData = async () => {
-    if (snapshot.data?.text) {
-      await navigator.clipboard.writeText(snapshot.data.text);
     }
   };
 
@@ -74,7 +91,11 @@ export default function AiReportPage() {
             onChange={setEngineId}
             options={(engines.data?.engines ?? []).map((engine) => ({
               value: engine.id,
-              label: `${engine.label}${engine.available ? "" : " (키 없음)"}`,
+              // 고르기 전에 속도를 보여 줍니다. 추론형 모델이 느린 것은 고장이
+              // 아니라 그 모델의 성질인데, 목록만 보면 알 수 없었습니다.
+              label: `${engine.label}${engine.speedHint ? ` · ${engine.speedHint}` : ""}${
+                engine.available ? "" : " (키 없음)"
+              }`,
             }))}
           />
           <Select
@@ -88,6 +109,16 @@ export default function AiReportPage() {
           />
         </div>
 
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          {engineId === "auto"
+            ? `⚡ 자동 탐색은 빠른 엔진부터 부릅니다${
+                autoBudget ? ` (전체 ${autoBudget}초를 넘기면 중단하고 실패 경로를 보여 줍니다)` : ""
+              }.`
+            : `고른 엔진만 부릅니다${
+                engineTimeout ? ` (최대 ${engineTimeout}초 대기)` : ""
+              }.${selectedEngine?.description ? ` ${selectedEngine.description}.` : ""}`}
+        </p>
+
         <label className="mt-4 block text-xs text-muted">
           추가 지시 (선택)
           <textarea
@@ -99,25 +130,37 @@ export default function AiReportPage() {
           />
         </label>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
             onClick={generate}
             disabled={busy || !engines.data?.enabled}
           >
-            {busy ? "생성 중… (최대 2분)" : "🚀 리포트 생성"}
+            {busy ? `생성 중… ${elapsed}초 경과` : "🚀 리포트 생성"}
           </Button>
           <Button onClick={() => setShowData((value) => !value)}>
             {showData ? "원본 데이터 닫기" : "AI에 전달되는 원본 데이터 보기"}
           </Button>
-          <Button onClick={copyData} disabled={!snapshot.data?.text}>
-            원본 데이터 복사
-          </Button>
+          <CopyButton
+            text={snapshot.data?.text}
+            label="원본 데이터 복사"
+            disabled={!snapshot.data?.text}
+          />
         </div>
       </Card>
 
       {showData && (
-        <Card title="📋 수집 데이터 원본 (AI 입력)">
+        <Card
+          title="📋 수집 데이터 원본 (AI 입력)"
+          subtitle={
+            snapshot.data
+              ? `${snapshot.data.generatedAtKst} · ${snapshot.data.chars.toLocaleString("ko-KR")}자`
+              : undefined
+          }
+          actions={
+            <CopyButton text={snapshot.data?.text} label="복사" disabled={!snapshot.data?.text} />
+          }
+        >
           {snapshot.loading && !snapshot.data && <Loading />}
           <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded border border-border bg-canvas p-3 text-[11px] leading-relaxed text-muted">
             {snapshot.data?.text ?? ""}
@@ -132,12 +175,27 @@ export default function AiReportPage() {
           title={`📄 ${result.reportType ?? "AI 리포트"}`}
           subtitle={
             result.status
-              ? `${result.provider} · ${result.latencyMs}ms${
+              ? `${result.provider} · ${formatLatency(result.latencyMs)}${
                   result.translationInfo ? ` · ${result.translationInfo}` : ""
                 }`
               : undefined
           }
-          actions={result.model ? <SourceBadge>{result.model}</SourceBadge> : undefined}
+          actions={
+            <span className="flex flex-wrap items-center gap-2">
+              {result.model && <SourceBadge>{result.model}</SourceBadge>}
+              {result.status && (
+                <CopyButton
+                  text={result.response}
+                  label="리포트 복사"
+                  variant="primary"
+                  disabled={!result.response}
+                />
+              )}
+              {result.originalResponse && (
+                <CopyButton text={result.originalResponse} label="번역 전 원문 복사" />
+              )}
+            </span>
+          }
         >
           {!result.status ? (
             <Banner tone="danger">
@@ -166,4 +224,16 @@ export default function AiReportPage() {
       )}
     </div>
   );
+}
+
+/** 밀리초를 사람이 읽는 시간으로. 3분 42초가 "222134ms"로 보이면 감이 안 옵니다. */
+function formatLatency(latencyMs?: number): string {
+  if (latencyMs === undefined || latencyMs === null) {
+    return "소요 시간 미상";
+  }
+  const seconds = latencyMs / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}초`;
+  }
+  return `${Math.floor(seconds / 60)}분 ${Math.round(seconds % 60)}초`;
 }

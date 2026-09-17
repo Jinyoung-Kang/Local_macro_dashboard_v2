@@ -28,30 +28,69 @@ public class SnapshotTextService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
+    /** 원본 텍스트가 담는 영역 (화면 안내 문구가 실제 내용과 어긋나지 않도록 여기서 정의합니다). */
+    static final List<String> SECTIONS = List.of(
+            "거시경제 매크로 지표", "심화 매크로 지표", "금융 리스크·변동성", "연준 순유동성",
+            "섹터 & 자산군 모멘텀", "글로벌 투기세력 (COT)", "국내 파생 (KRX)",
+            "국내 수급 레이더", "기관 13F 스마트머니 교집합");
+
     private final MacroService macro;
     private final LiquidityService liquidity;
     private final SectorService sector;
     private final CotService cot;
     private final KrxService krx;
     private final RadarService radar;
+    private final Sec13FService sec13f;
 
     public SnapshotTextService(MacroService macro, LiquidityService liquidity,
                                SectorService sector, CotService cot,
-                               KrxService krx, RadarService radar) {
+                               KrxService krx, RadarService radar,
+                               Sec13FService sec13f) {
         this.macro = macro;
         this.liquidity = liquidity;
         this.sector = sector;
         this.cot = cot;
         this.krx = krx;
         this.radar = radar;
+        this.sec13f = sec13f;
     }
 
     /** 전체 대시보드 원본 텍스트. */
     public String fullText() {
+        return fullText(ZonedDateTime.now(KST));
+    }
+
+    /**
+     * 화면의 "📋 전체 대시보드 원본 데이터"와 AI 입력이 <b>같은 텍스트</b>를 쓰도록
+     * 본문과 메타(생성 시각·분량)를 함께 돌려줍니다.
+     *
+     * <p>텍스트 하나를 두 경로가 따로 만들면, 사람이 복사해 둔 원본과 AI가 읽은
+     * 원본이 달라질 수 있습니다. 여기서 한 번 만들어 둘 다에게 넘깁니다.
+     */
+    public Map<String, Object> payload() {
+        ZonedDateTime now = ZonedDateTime.now(KST);
+        String text = fullText(now);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("text", text);
+        out.put("generatedAtKst", KST_FORMAT.format(now) + " KST");
+        out.put("chars", text.length());
+        out.put("lineCount", text.lines().count());
+        out.put("sections", SECTIONS);
+        return out;
+    }
+
+    private String fullText(ZonedDateTime generatedAt) {
         List<String> lines = new ArrayList<>();
         lines.add("📋 [Local Macro Dashboard — 수집 데이터 원본 스냅샷]");
-        lines.add("생성 시각: " + KST_FORMAT.format(ZonedDateTime.now(KST)) + " KST");
+        lines.add("생성 시각: " + KST_FORMAT.format(generatedAt) + " KST");
         lines.add("표기: 최신값 | 전일/직전 대비 | 직전값");
+        // 값의 성격을 머리말에서 먼저 정의합니다. 같은 화면에 "어제 확정치"와
+        // "지금 스크래핑 시세"가 함께 있는데, 복사해서 다른 곳에 붙이면 그 구분이
+        // 사라집니다. 텍스트 자체가 구분을 들고 다니게 합니다.
+        lines.add("성격 표기: [공식 확정치] 발표 기관의 확정값(하루 이상 지연) · "
+                + "[실시간 참고] 공개 시세 스크래핑(비공식) · "
+                + "[추정치] 확정치가 아닌 대용값 · [분기 공시] 45일 지연된 분기말 스냅샷");
         lines.add("=".repeat(72));
         lines.add("");
 
@@ -63,6 +102,7 @@ public class SnapshotTextService {
         appendCot(lines);
         appendKrx(lines);
         appendRadar(lines);
+        appendSec13F(lines);
 
         lines.add("=".repeat(72));
         lines.add("※ 수집 실패 항목은 숫자를 만들어내지 않고 '수집 실패'로 표기했습니다.");
@@ -71,16 +111,33 @@ public class SnapshotTextService {
         return String.join("\n", lines);
     }
 
+    /**
+     * 섹션 머리말 — 제목과 함께 <b>언제 받은 값인지</b>와 <b>어떤 성격의 값인지</b>를 답니다.
+     *
+     * <p>수집 시각이 없는 섹션(저장본이 없거나, 13F처럼 분기 기준값)에는
+     * 그 줄을 쓰지 않습니다. "알 수 없음"을 시각처럼 적어 두면 읽는 쪽이
+     * 오해합니다.
+     */
+    private void sectionHeader(List<String> lines, String title, String nature, Object collectedAtKst) {
+        lines.add("## " + title);
+        if (collectedAtKst != null && !String.valueOf(collectedAtKst).isBlank()) {
+            lines.add("- 수집 시각: " + collectedAtKst);
+        }
+        lines.add("- 데이터 성격: " + nature);
+    }
+
     private void appendMacro(List<String> lines) {
         Map<String, Object> overview = macro.overview();
-        lines.add("## 거시경제 매크로 지표");
+        sectionHeader(lines, "거시경제 매크로 지표",
+                "[실시간 참고] 환율·지수·원자재는 공개 시세 스크래핑 · "
+                        + "[공식 확정치] 미국채 금리는 FRED 일별 확정치",
+                overview.get("collectedAtKst"));
 
         if (!Boolean.TRUE.equals(overview.get("available"))) {
             lines.add("- 매크로 데이터 수집 실패");
             lines.add("");
             return;
         }
-        lines.add("(수집 시각: " + overview.get("collectedAtKst") + ")");
 
         Object categories = overview.get("categories");
         if (categories instanceof JsonNode node && node.isArray()) {
@@ -129,8 +186,11 @@ public class SnapshotTextService {
     }
 
     private void appendAdvanced(List<String> lines) {
-        lines.add("## 심화 매크로 지표 (FRED 공식)");
         Map<String, Object> advanced = macro.advancedIndicators();
+        sectionHeader(lines, "심화 매크로 지표 (FRED 공식)",
+                "[공식 확정치] FRED 시계열 — 발표 주기에 따라 하루~한 주 지연",
+                // 시리즈마다 발표 주기가 달라, 기준일은 항목마다 붙입니다.
+                null);
         Object latest = advanced.get("latest");
 
         if (latest instanceof Map<?, ?> map) {
@@ -155,6 +215,9 @@ public class SnapshotTextService {
                 if (entry.get("percentile") instanceof Double percentile) {
                     text.append(" | 표본 백분위 %.1f%%".formatted(percentile));
                 }
+                if (entry.get("asOf") != null) {
+                    text.append(" | 기준일 ").append(entry.get("asOf"));
+                }
                 lines.add(text.toString());
             }
         }
@@ -167,8 +230,12 @@ public class SnapshotTextService {
     }
 
     private void appendRisk(List<String> lines) {
-        lines.add("## 금융 리스크·은행권·시장 변동성");
         Map<String, Object> risk = macro.riskIndicators();
+        sectionHeader(lines, "금융 리스크·은행권·시장 변동성",
+                "[공식 확정치] FRED 신용 스프레드·금융스트레스 · "
+                        + "[추정치] MOVE는 대용값일 수 있음(항목별 경고 참조)",
+                // 지표마다 기준일이 달라 섹션 하나로 묶을 수 없습니다. 항목마다 붙입니다.
+                null);
 
         appendRiskEntry(lines, risk.get("vix"), "CBOE VIX (주식 변동성)");
         appendRiskEntry(lines, risk.get("move"), "MOVE (채권 변동성)");
@@ -188,6 +255,12 @@ public class SnapshotTextService {
         if (entry.get("delta") instanceof Double delta) {
             text.append(" (직전 대비 %+.2f)".formatted(delta));
         }
+        // 지표마다 기준일이 다릅니다(VIX는 전일 마감, STLFSI4는 주간). 값 옆에
+        // 같이 적지 않으면 서로 다른 날짜의 숫자가 한 문단에서 비교됩니다.
+        Object asOf = entry.get("asOf") != null ? entry.get("asOf") : entry.get("collectedAtKst");
+        if (asOf != null) {
+            text.append(" | 기준일 ").append(asOf);
+        }
         if (Boolean.TRUE.equals(entry.get("isProxy"))) {
             // AI가 공식 지표로 오인하지 않도록 요약 문장 자체에 경고를 답니다.
             text.append(" ⚠️ 주의: 공식 지표가 아닌 추정치입니다 — ")
@@ -197,8 +270,12 @@ public class SnapshotTextService {
     }
 
     private void appendLiquidity(List<String> lines) {
-        lines.add("## 연준 순유동성 (WALCL − TGA − ON RRP)");
         Map<String, Object> result = liquidity.netLiquidity(3);
+        sectionHeader(lines, "연준 순유동성 (WALCL − TGA − ON RRP)",
+                Boolean.TRUE.equals(result.get("isEstimated"))
+                        ? "[추정치] FRED 확정치가 아닙니다"
+                        : "[공식 확정치] FRED 주간(WALCL)·일별(TGA·RRP) 확정치",
+                result.get("collectedAtKst"));
 
         if (!Boolean.TRUE.equals(result.get("available"))) {
             lines.add("- 순유동성 데이터 수집 실패");
@@ -222,8 +299,10 @@ public class SnapshotTextService {
     }
 
     private void appendRotation(List<String> lines) {
-        lines.add("## 섹터 & 자산군 모멘텀 (3개월 기준 상위)");
         Map<String, Object> rotation = sector.rotation("3M");
+        sectionHeader(lines, "섹터 & 자산군 모멘텀 (3개월 기준 상위)",
+                "[실시간 참고] ETF 종가 기반 수익률 — 직전 거래일 마감 기준",
+                rotation.get("collectedAtKst"));
 
         if (!Boolean.TRUE.equals(rotation.get("available"))) {
             lines.add("- 섹터 데이터 수집 실패");
@@ -268,8 +347,10 @@ public class SnapshotTextService {
     }
 
     private void appendCot(List<String> lines) {
-        lines.add("## 글로벌 투기세력 (CFTC COT · 주 1회 공시)");
         Map<String, Object> overview = cot.overview();
+        sectionHeader(lines, "글로벌 투기세력 (CFTC COT · 주 1회 공시)",
+                "[공식 확정치] CFTC 주간 공시 — 화요일 기준값이 금요일에 나옵니다(수일 지연)",
+                overview.get("collectedAtKst"));
 
         if (!Boolean.TRUE.equals(overview.get("available"))) {
             lines.add("- COT 데이터 수집 실패");
@@ -302,8 +383,12 @@ public class SnapshotTextService {
     }
 
     private void appendKrx(List<String> lines) {
-        lines.add("## 국내 파생 (KOSPI200 선물)");
         Map<String, Object> futures = krx.futures(40);
+        sectionHeader(lines, "국내 파생 (KOSPI200 선물)",
+                Boolean.TRUE.equals(futures.get("isEstimated"))
+                        ? "[추정치] KODEX 200 기반 — KRX 확정치가 아닙니다"
+                        : "[공식 확정치] KRX 일별 마감값",
+                futures.get("collectedAtKst"));
 
         if (!Boolean.TRUE.equals(futures.get("available"))) {
             lines.add("- KRX 선물 데이터 수집 실패");
@@ -348,7 +433,9 @@ public class SnapshotTextService {
     }
 
     private void appendRadar(List<String> lines) {
-        lines.add("## 국내 수급 레이더 (코스피)");
+        sectionHeader(lines, "국내 수급 레이더 (코스피)",
+                "[실시간 참고] 공개 수급 순위 스크래핑 — 당일 잠정치이며 마감 후 정정될 수 있습니다",
+                null);
 
         for (String[] combination : new String[][]{
                 {"외국인", "순매수"}, {"기관", "순매수"}, {"외국인", "순매도"}}) {
@@ -381,6 +468,83 @@ public class SnapshotTextService {
             }
         }
         lines.add("");
+    }
+
+    /**
+     * 📑 기관 13F — 여러 기관이 함께 담은 종목(교집합)만 옮깁니다.
+     *
+     * <p>기관 12곳의 보유 종목을 전부 실으면 텍스트가 수천 줄이 되고, AI 프롬프트도
+     * 그만큼 길어져 응답이 느려집니다. 화면의 "🎯 13F Money 교집합"과 <b>같은 집계</b>를
+     * 상위 15종목까지만 싣습니다.
+     *
+     * <p>⚠️ 13F는 분기 공시이고 45일 지연입니다. 지금 포지션이 아니라 지난 분기말
+     * 스냅샷이라는 점을 텍스트 자체가 들고 다녀야 합니다 — 복사해서 다른 곳에
+     * 붙이면 화면의 경고 문구가 따라가지 않기 때문입니다.
+     */
+    private void appendSec13F(List<String> lines) {
+        List<String> ciks = Sec13FService.INSTITUTIONS.stream()
+                .map(entry -> entry.get("cik"))
+                .toList();
+        Map<String, Object> consensus = sec13f.consensus(ciks, null, 2, 15);
+
+        sectionHeader(lines, "기관 13F 스마트머니 교집합 (SEC 13F)",
+                "[분기 공시] SEC 13F — 45일 지연된 분기말 스냅샷이며 현재 포지션이 아닙니다",
+                // 분기 공시라 "수집 시각"이 값의 시점을 말해 주지 못합니다.
+                // 대신 아래에 기준 분기를 적습니다.
+                null);
+
+        if (!Boolean.TRUE.equals(consensus.get("available"))) {
+            lines.add("- 13F 데이터 없음 (수집기의 weekly 작업을 실행하세요)");
+            lines.add("");
+            return;
+        }
+
+        Object dates = consensus.get("availableDates");
+        if (dates instanceof List<?> list && !list.isEmpty()) {
+            List<String> stored = list.stream().map(String::valueOf).limit(8).toList();
+            lines.add("- 기준 분기: " + stored.get(0)
+                    + " (저장된 분기: " + String.join(", ", stored) + ")");
+        }
+        lines.add("- 집계 기관 수: " + consensus.get("participantCount")
+                + "곳 (2곳 이상 보유한 종목만)");
+
+        Object rows = consensus.get("rows");
+        if (rows instanceof List<?> list) {
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> row)) {
+                    continue;
+                }
+                lines.add("- %s: 보유 %s곳 · 합산 평가액 %s · 평균 비중 %s · 신규/확대 %s곳 · 축소/청산 %s곳"
+                        .formatted(
+                                row.get("name"),
+                                String.valueOf(row.get("holderCount")),
+                                formatUsd(row.get("totalValue")),
+                                format(row.get("avgWeight"), "%"),
+                                String.valueOf(row.get("buyCount")),
+                                String.valueOf(row.get("sellCount"))));
+            }
+        }
+        lines.add("");
+    }
+
+    /**
+     * 달러 금액을 화면(formatCurrency)과 <b>같은 규칙</b>으로 줄여 씁니다.
+     *
+     * <p>13F 합산 평가액은 조 단위까지 갑니다. 원시 숫자를 그대로 두면 한 줄이
+     * 길어지고, 화면에서 "$12.34B"로 본 값과 텍스트가 달라 보입니다.
+     */
+    private String formatUsd(Object value) {
+        if (!(value instanceof Number number)) {
+            return "데이터 없음";
+        }
+        double amount = number.doubleValue();
+        if (Math.abs(amount) >= 1e9) {
+            return "$%.2fB".formatted(amount / 1e9);
+        }
+        if (Math.abs(amount) >= 1e6) {
+            return "$%.2fM".formatted(amount / 1e6);
+        }
+        return "$%,.0f".formatted(amount);
     }
 
     private String orNa(String value) {

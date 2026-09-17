@@ -8,6 +8,7 @@ import com.macrodash.service.MacroService;
 import com.macrodash.service.RadarService;
 import com.macrodash.service.Sec13FService;
 import com.macrodash.service.SectorService;
+import com.macrodash.service.SnapshotTextService;
 import com.macrodash.service.VerificationService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,7 @@ import java.util.Map;
  *  🇰🇷 국내 파생 & 투기세력      GET /api/krx/*
  *  📡 외국인/기관 수급 레이더    GET /api/radar/*
  *  🗄️ 데이터 저장소 상태         GET /api/status, /api/verification
+ *  📋 전체 원본 데이터            GET /api/snapshot/text
  *  🤖 AI 리포트 · 연결 테스트    → AiController
  *  🔌 토스증권 API 테스트        → AiController(진단 묶음)
  * </pre>
@@ -50,11 +52,13 @@ public class DashboardController {
     private final RadarService radar;
     private final DataStatusService status;
     private final VerificationService verification;
+    private final SnapshotTextService snapshotText;
 
     public DashboardController(MacroService macro, LiquidityService liquidity,
                                SectorService sector, Sec13FService sec13f, CotService cot,
                                KrxService krx, RadarService radar, DataStatusService status,
-                               VerificationService verification) {
+                               VerificationService verification,
+                               SnapshotTextService snapshotText) {
         this.macro = macro;
         this.liquidity = liquidity;
         this.sector = sector;
@@ -64,6 +68,7 @@ public class DashboardController {
         this.radar = radar;
         this.status = status;
         this.verification = verification;
+        this.snapshotText = snapshotText;
     }
 
     @GetMapping("/health")
@@ -258,5 +263,18 @@ public class DashboardController {
     @PostMapping("/verification")
     public Map<String, Object> verification() {
         return verification.run();
+    }
+
+    // -------------------------------------------- 📋 전체 원본 데이터
+    /**
+     * 수집한 전체 대시보드 원본 텍스트 (AI 분석 없음 · 화면 표시/복사용).
+     *
+     * <p>AI 메뉴의 {@code /api/ai/snapshot-text}와 같은 텍스트지만 경로를 나눠
+     * 둡니다. 원본 데이터를 보는 일은 AI 키가 없어도 되는 기능인데, AI 경로
+     * 아래에 두면 "AI 기능"으로 읽히기 때문입니다.
+     */
+    @GetMapping("/snapshot/text")
+    public Map<String, Object> snapshotText() {
+        return snapshotText.payload();
     }
 }

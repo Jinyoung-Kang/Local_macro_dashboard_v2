@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { LineSeries, SERIES_COLORS } from "@/components/charts";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
+import { RawSnapshotCard } from "@/components/RawSnapshotCard";
 import {
   Banner,
   Card,
@@ -107,6 +108,10 @@ export default function MacroPage() {
           stale={data?.stale}
         />
       </header>
+
+      {/* 상단에 둡니다 — 화면을 스크롤하며 눈으로 옮겨 적지 않아도 되도록,
+          "지금 이 대시보드가 들고 있는 값 전부"를 먼저 꺼낼 수 있게 합니다. */}
+      <RawSnapshotCard />
 
       {!data?.available && (
         <Banner tone="warn">

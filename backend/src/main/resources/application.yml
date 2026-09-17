@@ -67,7 +67,13 @@ dashboard:
     cloudflare-account-id: ${CLOUDFLARE_ACCOUNT_ID:}
     cloudflare-api-token: ${CLOUDFLARE_API_TOKEN:}
     # 추론형 모델(gpt-oss, DeepSeek-R1 등)은 응답까지 몇 분이 걸릴 수 있습니다.
+    # 아래 한도는 "엔진을 직접 고른 경우"에 적용됩니다.
     timeout-seconds: ${AI_TIMEOUT_SECONDS:240}
+    # '⚡ 자동 탐색'은 되는 엔진을 빨리 찾는 것이 목적이라 한도가 따로입니다.
+    #   auto-attempt-seconds  엔진 하나를 기다리는 한도 (넘으면 다음 엔진)
+    #   auto-budget-seconds   폴오버 전체에 주는 시간 예산 (넘으면 중단)
+    auto-attempt-seconds: ${AI_AUTO_ATTEMPT_SECONDS:60}
+    auto-budget-seconds: ${AI_AUTO_BUDGET_SECONDS:180}
 
 logging:
   level:
