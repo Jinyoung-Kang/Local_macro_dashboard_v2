@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
-import { deltaColor, EMPTY, formatAge } from "@/lib/format";
+import { deltaColor, EMPTY, formatAge, formatCollectedAtKst } from "@/lib/format";
 
 /** 섹션 카드 컨테이너. */
 export function Card({
@@ -70,12 +70,21 @@ export function Metric({
   );
 }
 
-/** 데이터 신선도 배지 — "언제 수집한 값인지"를 항상 함께 보여 줍니다. */
+/**
+ * 데이터 신선도 배지 — "언제 수집한 값인지"를 항상 함께 보여 줍니다.
+ *
+ * <p>경과 시간("1초 전")이 아니라 <b>수집한 시각</b>을 적습니다. 경과 시간은
+ * 화면을 연 순간을 기준으로 계산되므로, 대시보드를 띄워 둔 채 한참 뒤에 보면
+ * "1초 전"이라고 적혀 있어도 실제로는 한 시간 전 값일 수 있습니다. 시각은
+ * 화면이 멈춰 있어도 틀리지 않습니다. 경과 시간은 배지에 마우스를 올리면
+ * 보이도록 남겨 둡니다.
+ */
 export function Freshness({
   collectedAt,
   ageSeconds,
   stale,
 }: {
+  /** 백엔드가 KST로 찍어 준 수집 시각 문자열 (collectedAtKst). */
   collectedAt?: string | null;
   ageSeconds?: number | null;
   stale?: boolean;
@@ -83,6 +92,8 @@ export function Freshness({
   if (!collectedAt && ageSeconds === undefined) {
     return null;
   }
+  const age = formatAge(ageSeconds);
+
   return (
     <span
       className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] ${
@@ -90,10 +101,13 @@ export function Freshness({
           ? "border-warn/40 bg-warn/10 text-warn"
           : "border-border bg-surface-hover text-muted"
       }`}
-      title={collectedAt ?? undefined}
+      title={collectedAt ? `${collectedAt} · 조회 시점 기준 ${age}` : undefined}
     >
       {stale ? "⚠️ 오래된 저장본" : "🕒 수집"}
-      <span className="tabular-nums">{formatAge(ageSeconds)}</span>
+      {/* 시각을 모르면 그때만 경과 시간으로 대신합니다 — 아무것도 안 적는 것보다 낫습니다. */}
+      <span className="tabular-nums">
+        {collectedAt ? formatCollectedAtKst(collectedAt) : age}
+      </span>
     </span>
   );
 }

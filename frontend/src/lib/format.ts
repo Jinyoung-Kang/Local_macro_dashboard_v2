@@ -111,6 +111,47 @@ export function formatAge(seconds: number | null | undefined): string {
   return `${Math.round(seconds / 86400)}일 전`;
 }
 
+/**
+ * 수집 시각 배지에 넣을 문구.
+ *
+ * 백엔드가 이미 KST로 찍어 준 문자열("2026-09-17 20:55:59 KST")을 받습니다.
+ * 오늘 받은 값이면 시:분:초만, 어제 이전이면 날짜까지 함께 보여 줍니다.
+ *
+ * 예전에는 "1초 전"처럼 경과 시간만 보여 줬습니다. 그런데 화면을 열어 두고
+ * 한참 뒤에 보면 그 문구는 열었을 때 기준이라, 몇 시 값인지 알 수 없었습니다.
+ * 절대 시각은 화면이 멈춰 있어도 틀리지 않습니다.
+ */
+export function formatCollectedAtKst(value: string | null | undefined): string {
+  if (!value) {
+    return EMPTY;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}:\d{2})/.exec(value);
+  if (!match) {
+    // 형식이 다르면 받은 값을 그대로 보여 줍니다 — 시각을 지어내지 않습니다.
+    return value;
+  }
+  const [, year, month, day, time] = match;
+  return isTodayInKst(`${year}-${month}-${day}`)
+    ? `${time} KST`
+    : `${month}-${day} ${time} KST`;
+}
+
+/** 그 날짜가 (해외에서 열어도) 한국 기준 오늘인지. */
+function isTodayInKst(date: string): boolean {
+  try {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    return today === date;
+  } catch {
+    // 판단이 안 되면 날짜까지 보여 줍니다. 정보가 적은 쪽보다 낫습니다.
+    return false;
+  }
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) {
     return EMPTY;
