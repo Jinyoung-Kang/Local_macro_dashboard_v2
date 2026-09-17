@@ -222,6 +222,23 @@ def collect_radar_ranking(
     }
 
 
+def _object_particle(word: str) -> str:
+    """
+    '을/를'을 고릅니다.
+
+    화면에 그대로 나가는 문장입니다. "'개인'를 제공하지 않습니다"처럼 조사가
+    틀리면, 읽는 사람은 문장이 아니라 그 어색함을 먼저 봅니다.
+    한글 음절은 (코드포인트 - 0xAC00) % 28 로 받침 유무를 알 수 있습니다.
+    """
+    if not word:
+        return "를"
+    last = word[-1]
+    if not ("가" <= last <= "힣"):
+        return "를"
+    has_final_consonant = (ord(last) - 0xAC00) % 28 != 0
+    return "을" if has_final_consonant else "를"
+
+
 def diagnose_sources(investor: str) -> list[str]:
     """
     폴백 체인이 전부 실패했을 때, 소스별로 '왜 못 줬는지'를 사람 말로 적습니다.
@@ -234,7 +251,8 @@ def diagnose_sources(investor: str) -> list[str]:
 
     if investor not in DAUM_INVESTOR_TYPES:
         reasons.append(
-            f"Daum은 '{investor}'를 제공하지 않습니다 (외국인·기관만)"
+            f"Daum은 '{investor}'{_object_particle(investor)} 제공하지 않습니다 "
+            "(외국인·기관만)"
         )
 
     naver_reason = _NAVER_LAST_REASON["value"]
