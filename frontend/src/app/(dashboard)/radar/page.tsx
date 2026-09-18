@@ -28,6 +28,9 @@ export default function RadarPage() {
   const options = useApi<{
     markets: string[];
     investors: string[];
+    /** 지금 실제로 받을 수 있는 투자주체. 나머지는 고를 수 없게 막습니다. */
+    supportedInvestors?: string[];
+    unsupportedInvestorNote?: string;
     tradeTypes: string[];
     intervals: string[];
   }>("/api/radar/options");
@@ -44,6 +47,10 @@ export default function RadarPage() {
     `&tradeType=${encodeURIComponent(tradeType)}&intervalType=${interval}&topN=${topN}`;
 
   const { data, loading, error, reload } = useApi<RadarResponse>(query, 60_000);
+
+  const unsupportedInvestors = (options.data?.investors ?? []).filter(
+    (value) => options.data?.supportedInvestors && !options.data.supportedInvestors.includes(value),
+  );
 
   // 사용자가 "상위 30개"를 골랐는데 차트만 15개를 그리면, 표와 개수가 어긋나
   // 무엇이 빠졌는지 알 수 없습니다. 고른 만큼 그립니다(차트 높이가 늘어납니다).
@@ -88,10 +95,19 @@ export default function RadarPage() {
             label="투자 주체"
             value={investor}
             onChange={setInvestor}
-            options={(options.data?.investors ?? ["외국인"]).map((value) => ({
-              value,
-              label: value,
-            }))}
+            options={(options.data?.investors ?? ["외국인"]).map((value) => {
+              // 목록에는 남기고 고를 수만 없게 합니다. 조용히 사라지면
+              // "원래 있던 항목이 왜 없지?"가 되고, 고를 수 있게 두면
+              // "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
+              const supported =
+                !options.data?.supportedInvestors ||
+                options.data.supportedInvestors.includes(value);
+              return {
+                value,
+                label: supported ? value : `${value} (지원 안 함)`,
+                disabled: !supported,
+              };
+            })}
           />
           <Select
             label="매매 구분"
@@ -118,6 +134,13 @@ export default function RadarPage() {
             options={["10", "20", "30", "50"].map((value) => ({ value, label: `상위 ${value}개` }))}
           />
         </div>
+
+        {unsupportedInvestors.length > 0 && (
+          <p className="mt-3 text-[11px] text-muted">
+            ⓘ {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
+            {options.data?.unsupportedInvestorNote}
+          </p>
+        )}
       </Card>
 
       {loading && !data && <Loading label="수급 데이터를 불러오는 중…" />}
@@ -127,7 +150,17 @@ export default function RadarPage() {
 
       {data && !data.available && !data.warning && (
         <Banner tone="warn">
-          {data.message ?? "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."}
+          <div>{data.message ?? "수급 데이터를 얻지 못했습니다."}</div>
+          {/* 소스별 사유를 함께 보여 줍니다.
+              "수집기 상태를 확인하세요" 한 줄만 있으면, 수집기가 멀쩡한
+              경우(다른 조합은 잘 나오는 경우) 엉뚱한 곳을 보게 됩니다. */}
+          {data.reasons && data.reasons.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+              {data.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          )}
         </Banner>
       )}
 

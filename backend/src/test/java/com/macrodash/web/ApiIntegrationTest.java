@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
-        "spring.datasource.url=${TEST_DATABASE_URL:jdbc:postgresql://localhost:5432/macrodash}",
+        "spring.datasource.url=${TEST_DATABASE_URL:jdbc:postgresql://localhost:5432/macrodash_test}",
         "spring.cache.type=none",
         "spring.autoconfigure.exclude="
                 + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
@@ -68,8 +68,28 @@ class ApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        guardAgainstRealDatabase();
         jdbc.execute("DELETE FROM snapshots");
         sessionCookie = login("test-password");
+    }
+
+    /**
+     * 운영 DB에 붙었으면 <b>지우기 전에</b> 멈춥니다.
+     *
+     * <p>이 테스트는 시작할 때마다 snapshots를 비웁니다. 접속 대상이 실제로
+     * 쓰는 DB(macrodash)였을 때는 테스트 한 번에 수집해 둔 데이터가 전부
+     * 사라졌습니다 — 되살리려면 전체 재수집(10분 이상)이 필요합니다.
+     * 이름이 {@code _test}로 끝나는 DB에서만 돌게 막아 둡니다.
+     */
+    private void guardAgainstRealDatabase() {
+        String database = jdbc.queryForObject("SELECT current_database()", String.class);
+        if (database == null || !database.endsWith("_test")) {
+            throw new IllegalStateException(
+                    "이 테스트는 데이터를 지우므로 테스트 전용 DB에서만 돌릴 수 있습니다. "
+                            + "지금 접속한 DB: '" + database + "'. "
+                            + "'make test-backend'를 쓰거나 TEST_DATABASE_URL을 "
+                            + "…/macrodash_test 로 지정하세요.");
+        }
     }
 
     @Test

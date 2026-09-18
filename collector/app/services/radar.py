@@ -24,6 +24,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+
+import contextlib
+import io
 import logging
 import os
 import re
@@ -201,12 +204,81 @@ def collect_radar_ranking(
         )
         return history
 
+    reasons = diagnose_sources(investor)
     logger.error(
         "수급 레이더 완전 실패: 날짜=%s, 시장=%s, 투자주체=%s, 방향=%s "
-        "(pykrx=%s, 누적 이력에도 없음)",
+        "(pykrx=%s, 누적 이력에도 없음) — %s",
         target_day, market, investor, trade_type, PYKRX_AVAILABLE,
+        " / ".join(reasons) or "사유 불명",
     )
-    return {"source": None, "sourceKind": "none", "isHistorical": False, "rows": []}
+    return {
+        "source": None,
+        "sourceKind": "none",
+        "isHistorical": False,
+        "rows": [],
+        # 왜 실패했는지 화면까지 전달합니다.
+        #
+        # 예전에는 화면에 "수급 데이터를 얻지 못했습니다. 수집기 상태를
+        # 확인하세요."만 떴습니다. 수집기는 멀쩡한데(다른 조합은 잘 나옴)
+        # 그쪽을 보게 만들어, 실제 원인(소스별 제약·차단)에서 멀어졌습니다.
+        "reasons": reasons,
+    }
+
+
+def _object_particle(word: str) -> str:
+    """
+    '을/를'을 고릅니다.
+
+    화면에 그대로 나가는 문장입니다. "'개인'를 제공하지 않습니다"처럼 조사가
+    틀리면, 읽는 사람은 문장이 아니라 그 어색함을 먼저 봅니다.
+    한글 음절은 (코드포인트 - 0xAC00) % 28 로 받침 유무를 알 수 있습니다.
+    """
+    if not word:
+        return "를"
+    last = word[-1]
+    if not ("가" <= last <= "힣"):
+        return "를"
+    has_final_consonant = (ord(last) - 0xAC00) % 28 != 0
+    return "을" if has_final_consonant else "를"
+
+
+def diagnose_sources(investor: str) -> list[str]:
+    """
+    폴백 체인이 전부 실패했을 때, 소스별로 '왜 못 줬는지'를 사람 말로 적습니다.
+
+    호출 하나하나를 추적하는 대신 지금 상태를 보고 판정합니다. 실패 원인이
+    대개 '이 소스는 이 투자주체를 원래 안 준다', '키가 없다', '서비스가
+    없어졌다'처럼 **호출해 보지 않아도 아는 것**이기 때문입니다.
+    """
+    reasons: list[str] = []
+
+    if investor not in DAUM_INVESTOR_TYPES:
+        reasons.append(
+            f"Daum은 '{investor}'{_object_particle(investor)} 제공하지 않습니다 "
+            "(외국인·기관만)"
+        )
+
+    naver_reason = _NAVER_LAST_REASON["value"]
+    if naver_reason and "410" in naver_reason:
+        reasons.append(
+            "Naver는 이 페이지를 폐지했습니다 (HTTP 410 — stock.naver.com으로 이전)"
+        )
+    elif naver_reason:
+        reasons.append(f"Naver: {naver_reason}")
+
+    if not ls.has_credentials():
+        reasons.append("LS는 키가 없어 건너뜁니다 (.env의 LS_APP_KEY/SECRET)")
+    else:
+        reasons.append(
+            "LS는 인증이 거절됐습니다 — Open API 사용등록이 필요할 수 있습니다"
+        )
+
+    if not PYKRX_AVAILABLE:
+        reasons.append("PyKrx가 설치돼 있지 않습니다")
+    else:
+        reasons.append("KRX(pykrx)가 데이터 대신 차단 응답을 주고 있습니다")
+
+    return reasons
 
 
 def _result(rows: list[dict], kind: str) -> dict:
@@ -475,9 +547,15 @@ def fetch_pykrx_ranking(
     investor_name = PYKRX_INVESTORS.get(investor, "외국인")
 
     try:
-        frame = pykrx_stock.get_market_net_purchases_of_equities_by_ticker(
-            target_date, target_date, market_code, investor_name
-        )
+        # pykrx는 실패를 print로 찍습니다("Error occurred in ...").
+        # 로깅이 아니라 표준출력이라 필터로는 못 거릅니다. 우리가 바로 아래에서
+        # 같은 내용을 더 분명하게 남기므로(사유·날짜 포함) 그 출력만 삼킵니다.
+        # 폴백은 날짜를 최대 7번 거슬러 올라가기 때문에, 놔두면 조회 한 번에
+        # 같은 줄이 일곱 번 쌓입니다.
+        with contextlib.redirect_stdout(io.StringIO()):
+            frame = pykrx_stock.get_market_net_purchases_of_equities_by_ticker(
+                target_date, target_date, market_code, investor_name
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("PyKrx 조회 실패 (%s): %s", target_date, exc)
         return []

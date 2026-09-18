@@ -21,10 +21,18 @@ BACKEND_PORT ?= $(shell grep -s '^BACKEND_PORT=' .env | cut -d= -f2)
 BACKEND_PORT := $(if $(BACKEND_PORT),$(BACKEND_PORT),8080)
 COLLECTOR_PORT ?= $(shell grep -s '^COLLECTOR_PORT=' .env | cut -d= -f2)
 COLLECTOR_PORT := $(if $(COLLECTOR_PORT),$(COLLECTOR_PORT),8000)
+DATABASE_PORT ?= $(shell grep -s '^DATABASE_PORT=' .env | cut -d= -f2)
+DATABASE_PORT := $(if $(DATABASE_PORT),$(DATABASE_PORT),5432)
+
+# 수집기 API 토큰(.env). 설정돼 있으면 curl에 헤더로 실어 보냅니다.
+# 예전에는 make collect·status·verify가 토큰을 보내지 않아, 토큰을 켜는 순간
+# 이 명령들이 401로 죽었습니다.
+COLLECTOR_API_TOKEN ?= $(shell grep -s '^COLLECTOR_API_TOKEN=' .env | cut -d= -f2-)
+TOKEN_HEADER := $(if $(COLLECTOR_API_TOKEN),-H "X-Service-Token: $(COLLECTOR_API_TOKEN)",)
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up down restart logs ps collect collect-all status verify \
-        doctor test test-collector test-backend test-frontend \
+        doctor test db-test test-collector test-backend test-frontend \
         dev-collector dev-backend dev-frontend db infra backup restore reset
 
 # 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
@@ -89,16 +97,16 @@ infra: ## PostgreSQL·Redis만 기동 (네이티브 개발용)
 
 # ------------------------------------------------------------------ 데이터
 collect: ## 시세·수급 수집 (fast — 약 1분)
-	@curl -fsS -X POST "http://localhost:$(COLLECTOR_PORT)/collect?group=fast" \
+	@curl -fsS $(TOKEN_HEADER) -X POST "http://localhost:$(COLLECTOR_PORT)/collect?group=fast" \
 		| python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "수집기에 연결하지 못했습니다."
 
 collect-all: ## 전체 수집 (13F 포함 — 10분 이상)
-	@curl -fsS -X POST "http://localhost:$(COLLECTOR_PORT)/collect?group=all&wait=false" \
+	@curl -fsS $(TOKEN_HEADER) -X POST "http://localhost:$(COLLECTOR_PORT)/collect?group=all&wait=false" \
 		| python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "수집기에 연결하지 못했습니다."
 	@echo "백그라운드로 실행 중입니다. 'make status'로 진행 상황을 확인하세요."
 
 status: ## 수집 현황 (구버전 collector.py --status)
-	@curl -fsS "http://localhost:$(COLLECTOR_PORT)/status" \
+	@curl -fsS $(TOKEN_HEADER) "http://localhost:$(COLLECTOR_PORT)/status" \
 		| python3 -c "import json,sys; d=json.load(sys.stdin); \
 print('마지막 실행:', d.get('lastRunStatus')); \
 print('누락 데이터셋:', len(d.get('missingDatasets') or [])); \
@@ -106,7 +114,7 @@ print('누락 데이터셋:', len(d.get('missingDatasets') or [])); \
 		2>/dev/null || echo "수집기에 연결하지 못했습니다."
 
 verify: ## 교차 검증 실행 (KRX·KIS 대조)
-	@curl -fsS "http://localhost:$(COLLECTOR_PORT)/verify/readings" \
+	@curl -fsS $(TOKEN_HEADER) "http://localhost:$(COLLECTOR_PORT)/verify/readings" \
 		| python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "수집기에 연결하지 못했습니다."
 
 # ------------------------------------------------------------------ 진단
@@ -116,13 +124,31 @@ doctor: ## 어디가 막혔는지 한 번에 진단 (데이터가 안 보일 때
 # ------------------------------------------------------------------ 테스트
 test: test-collector test-backend test-frontend ## 전체 테스트
 
-test-collector: ## 수집기 테스트 (PostgreSQL 필요)
+# ⚠️ 테스트는 운영 DB(macrodash)를 쓰지 않습니다.
+#
+# 백엔드 통합 테스트는 매 테스트 시작 시 snapshots를 비웁니다. 접속 기본값이
+# 운영 DB였을 때는 `make test-backend` 한 번으로 수집해 둔 데이터가 전부
+# 사라졌습니다(되살리려면 make collect-all — 10분 이상). 그래서 테스트 전용
+# DB를 따로 만들어 씁니다. 테스트 쪽에도 "이름이 _test로 끝나지 않으면 실행을
+# 거부"하는 안전장치를 두었습니다(ApiIntegrationTest).
+TEST_DB_NAME := macrodash_test
+
+db-test: ## 테스트 전용 DB 준비 (없으면 만들고 스키마 적용)
+	@$(COMPOSE) exec -T postgres psql -U $${DATABASE_USER:-macro} -d postgres -tAc \
+		"SELECT 1 FROM pg_database WHERE datname='$(TEST_DB_NAME)'" | grep -q 1 || \
+		$(COMPOSE) exec -T postgres psql -U $${DATABASE_USER:-macro} -d postgres \
+			-c "CREATE DATABASE $(TEST_DB_NAME) OWNER $${DATABASE_USER:-macro}" >/dev/null
+	@$(COMPOSE) exec -T postgres psql -q -U $${DATABASE_USER:-macro} -d $(TEST_DB_NAME) \
+		-f /dev/stdin < db/migrations/V1__init.sql >/dev/null
+	@echo "✅ 테스트 DB 준비: $(TEST_DB_NAME) (운영 DB는 건드리지 않습니다)"
+
+test-collector: db-test ## 수집기 테스트 (PostgreSQL 필요)
 	@test -x $(VENV_PY) || echo "ℹ️  collector/.venv가 없어 $(PY)로 실행합니다. 'No module named pytest'가 나오면 docs/LOCAL_SETUP.md의 가상환경 절을 보세요."
-	cd collector && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql://macro:macro@localhost:5432/macrodash} \
+	cd collector && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql://macro:macro@localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
 		$(if $(filter $(VENV_PY),$(PY)),.venv/bin/python,python3) -m pytest tests -q
 
-test-backend: ## 백엔드 테스트 (PostgreSQL 필요)
-	cd backend && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:5432/macrodash} \
+test-backend: db-test ## 백엔드 테스트 (PostgreSQL 필요)
+	cd backend && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
 		mvn -B verify
 
 test-frontend: ## 화면 린트 + 빌드(타입 검사 포함)
@@ -145,12 +171,31 @@ db: ## PostgreSQL 셸
 	$(COMPOSE) exec postgres psql -U macro -d macrodash
 
 # ------------------------------------------------------------------ 백업·정리
-backup: ## 데이터베이스 백업 (backups/ 폴더에 저장)
+backup: ## 데이터베이스 백업 (backups/ 폴더에 저장 · 내용 요약 표시)
 	@mkdir -p backups
-	@$(COMPOSE) exec -T postgres pg_dump -U macro -d macrodash \
-		> "backups/macrodash-$$(date +%Y%m%d-%H%M%S).sql"
-	@ls -lh backups | tail -1
-	@echo "누적 수급 이력은 외부에서 다시 받을 수 없습니다. 주기적으로 백업하세요."
+	@f="backups/macrodash-$$(date +%Y%m%d-%H%M%S).sql"; \
+	$(COMPOSE) exec -T postgres pg_dump -U macro -d $${DATABASE_NAME:-macrodash} > "$$f"; \
+	echo ""; \
+	ls -lh "$$f" | awk '{printf "  파일     : %s (%s)\n", $$NF, $$5}'; \
+	if tail -c 200 "$$f" | grep -q 'PostgreSQL database dump complete\|unrestrict'; then \
+		echo "  상태     : 정상 종료 표시 확인"; \
+	else \
+		echo "  ⚠️ 상태  : 덤프가 중간에 끊겼을 수 있습니다. 다시 실행하세요"; \
+	fi; \
+	echo "  테이블   : $$(grep -c '^COPY public' "$$f")개"; \
+	echo ""; \
+	$(COMPOSE) exec -T postgres psql -U macro -d $${DATABASE_NAME:-macrodash} -tAc \
+		"SELECT '  누적 수급 : ' || count(*) || '행 · ' || \
+		        coalesce(min(obs_date)::text,'없음') || ' ~ ' || coalesce(max(obs_date)::text,'없음') \
+		 FROM observations" ; \
+	$(COMPOSE) exec -T postgres psql -U macro -d $${DATABASE_NAME:-macrodash} -tAc \
+		"SELECT '  시계열    : ' || count(*) || '행' FROM timeseries"; \
+	$(COMPOSE) exec -T postgres psql -U macro -d $${DATABASE_NAME:-macrodash} -tAc \
+		"SELECT '  스냅샷    : ' || count(*) || '건' FROM snapshots"
+	@echo ""
+	@echo "  누적 수급 이력은 외부에서 다시 받을 수 없습니다(Naver·Daum·KRX는 과거 조회를"
+	@echo "  지원하지 않습니다). 위 날짜 범위가 기대와 다르면 알려 주세요."
+	@echo ""
 
 restore: ## 백업 복원 (make restore F=backups/xxx.sql)
 	@test -n "$(F)" || (echo "사용법: make restore F=backups/파일.sql" && exit 1)

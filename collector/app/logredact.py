@@ -79,14 +79,67 @@ class RedactingFilter(logging.Filter):
         return True
 
 
+class SafeFormatFilter(logging.Filter):
+    """
+    형식이 깨진 로그 한 줄이 traceback 40줄로 번지지 않게 합니다.
+
+    <b>실제로 겪은 일</b> — pykrx가 내부에서 이렇게 찍습니다.
+
+        logging.info(args, kwargs)      # pykrx/website/comm/util.py
+
+    메시지 자리에 튜플, 인자 자리에 dict가 들어갑니다. 로깅이 출력 직전에
+    ``str(msg) % args``를 하다 TypeError를 내고, 파이썬은 그 실패를 다시
+    "--- Logging error ---" + 전체 traceback으로 찍습니다. 수급 레이더가
+    폴백 날짜를 훑으면 이 덩어리가 날짜마다 반복돼, `make logs`가 실제
+    오류를 찾을 수 없는 상태가 됐습니다.
+
+    라이브러리 호출을 우리가 고칠 수는 없으니 출력 직전에 안전한 한 줄로
+    바꿉니다. 내용은 버리지 않습니다 — 무엇을 찍으려 했는지는 남깁니다.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not record.args:
+            return True
+        try:
+            record.getMessage()
+        except (TypeError, ValueError):
+            record.msg = f"{record.msg!r} (인자: {record.args!r})"
+            record.args = ()
+        return True
+
+
+class LibraryChatterFilter(logging.Filter):
+    """
+    pykrx가 루트 로거에 직접 찍는 INFO 잡음을 걷어냅니다.
+
+    pykrx는 자기 로거를 쓰지 않고 ``logging.info(...)``로 루트에 찍기 때문에
+    로거 이름으로는 수위를 조절할 수 없습니다. 그래서 레코드가 어느 파일에서
+    왔는지로 거릅니다.
+
+    버려도 되는 이유 — 우리 코드가 같은 상황을 더 분명하게 남깁니다
+    ("PyKrx 빈 결과 (20260917): 휴장일이거나 데이터 미제공"). 경고·오류는
+    그대로 통과시킵니다.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return "/pykrx/" not in (record.pathname or "")
+
+
 def install() -> None:
     """
     루트 핸들러 전부에 필터를 답니다.
 
     로거가 아니라 **핸들러**에 다는 이유: 필터는 로거 계층을 따라 전파되지
     않습니다. 핸들러에 달면 어느 로거에서 온 레코드든 출력 직전에 걸립니다.
+
+    순서가 있습니다. 형식을 먼저 안전하게 만들고(SafeFormat), 그다음 비밀값을
+    가립니다(Redacting). 반대로 달면 깨진 레코드를 가리려다 같은 자리에서
+    다시 터집니다.
     """
-    log_filter = RedactingFilter()
+    filters = [SafeFormatFilter(), LibraryChatterFilter(), RedactingFilter()]
     root = logging.getLogger()
     for handler in root.handlers:
-        handler.addFilter(log_filter)
+        for log_filter in filters:
+            handler.addFilter(log_filter)

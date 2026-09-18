@@ -179,3 +179,27 @@ def test_rank_orders_by_amount_and_renumbers():
     ]
     ranked_sells = radar._rank(list(sells), "순매도", 2)
     assert [r["code"] for r in ranked_sells] == ["B", "A"]
+
+
+# ==============================================================================
+# 실패 사유 안내
+# ==============================================================================
+def test_소스가_모두_없는_조합은_이유를_돌려준다():
+    """
+    화면에 "수집기 상태를 확인하세요"만 뜨면, 수집기가 멀쩡한 경우에도
+    그쪽을 보게 됩니다. 실제 원인은 대개 '이 소스는 이 투자주체를 원래
+    안 준다'입니다.
+    """
+    reasons = radar.diagnose_sources("개인")
+
+    assert any("Daum" in r and "개인" in r for r in reasons)
+    assert any("LS" in r for r in reasons)
+    assert any("pykrx" in r.lower() or "KRX" in r for r in reasons)
+
+
+def test_조사가_받침에_맞게_붙는다():
+    """'개인'를 → '개인'은 …처럼 읽히는 문장을 막습니다."""
+    assert radar._object_particle("개인") == "을"      # 받침 ㄴ
+    assert radar._object_particle("금융투자") == "를"   # 받침 없음
+    assert radar._object_particle("연기금") == "을"     # 받침 ㅁ
+    assert radar._object_particle("") == "를"

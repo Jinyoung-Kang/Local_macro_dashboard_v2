@@ -11,6 +11,7 @@ import com.macrodash.store.StoreRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,25 @@ public class RadarService {
     public static final List<String> MARKETS = List.of("KOSPI", "KOSDAQ");
     public static final List<String> INVESTORS =
             List.of("외국인", "기관", "개인", "연기금", "금융투자", "투신");
+
+    /**
+     * 지금 실제로 받을 수 있는 투자주체.
+     *
+     * <p>Daum API는 {@code investorType=FOREIGN|INSTITUTION} 두 가지만 받습니다.
+     * 나머지 넷(개인·연기금·금융투자·투신)은 Naver가 담당했는데, Naver가 그
+     * 페이지를 폐지했습니다(HTTP 410 — stock.naver.com으로 이전). 남은 경로인
+     * LS는 인증이 거절되고 KRX(pykrx)는 차단 응답을 줍니다.
+     *
+     * <p>목록에서 아예 빼지 않는 이유 — 원래 있던 기능이고 소스가 복구되면
+     * 다시 됩니다. 고를 수만 없게 하고 <b>왜 안 되는지</b>를 함께 보여 줍니다.
+     * 고르게 두면 "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
+     */
+    public static final List<String> SUPPORTED_INVESTORS = List.of("외국인", "기관");
+
+    /** 지원하지 않는 투자주체를 고르려 할 때 화면에 적을 이유. */
+    public static final String UNSUPPORTED_INVESTOR_NOTE =
+            "Daum이 제공하지 않는 투자주체입니다. 이 넷을 담당하던 Naver가 페이지를 "
+                    + "폐지해(HTTP 410) 현재 받을 수 있는 소스가 없습니다.";
     public static final List<String> TRADE_TYPES = List.of("순매수", "순매도");
     public static final List<String> INTERVALS = List.of("TODAY", "DAYS_5", "DAYS_20");
 
@@ -86,18 +106,29 @@ public class RadarService {
         Optional<JsonNode> live = collector.liveRadar(
                 market, investor, tradeType, topN, intervalType, targetDate);
 
+        List<String> liveReasons = List.of();
         if (live.isPresent()) {
             JsonNode payload = live.get();
-            out.put("available", !Json.array(payload, "rows").isEmpty());
-            out.put("source", Json.asText(payload, "source"));
-            out.put("sourceKind", Json.asText(payload, "sourceKind"));
-            out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
-            out.put("historyDate", Json.asText(payload, "historyDate"));
-            out.put("rows", payload.get("rows"));
-            if (Json.asBoolean(payload, "isHistorical")) {
-                out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
+            liveReasons = reasonsOf(payload);
+
+            // 빈 결과로 여기서 끝내지 않습니다.
+            //
+            // 수집기가 200으로 답해도 rows가 비어 있을 수 있습니다(폴백 체인이
+            // 전부 실패한 경우). 그때 그대로 돌려주면 화면에는 아무 설명 없이
+            // "데이터 없음"만 남습니다. 아래로 내려가 저장본을 찾아보고,
+            // 그것도 없으면 소스별 사유를 담아 돌려줍니다.
+            if (!Json.array(payload, "rows").isEmpty()) {
+                out.put("available", true);
+                out.put("source", Json.asText(payload, "source"));
+                out.put("sourceKind", Json.asText(payload, "sourceKind"));
+                out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
+                out.put("historyDate", Json.asText(payload, "historyDate"));
+                out.put("rows", payload.get("rows"));
+                if (Json.asBoolean(payload, "isHistorical")) {
+                    out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
+                }
+                return out;
             }
-            return out;
         }
 
         if (snapshot.isPresent() && snapshot.get().payload() != null) {
@@ -111,8 +142,27 @@ public class RadarService {
 
         out.put("available", false);
         out.put("rows", List.of());
-        out.put("message", "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요.");
+        // 이유를 아는 만큼 적습니다.
+        //
+        // 예전 문구는 "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."
+        // 하나였습니다. 수집기는 멀쩡한데(다른 조합은 잘 나옵니다) 그쪽을 보게
+        // 만들어, 정작 원인인 소스별 제약에서 멀어졌습니다.
+        out.put("message", liveReasons.isEmpty()
+                ? "수급 데이터를 얻지 못했습니다. 수집기 상태를 확인하세요."
+                : "이 조건으로는 수급을 받을 수 있는 소스가 없습니다.");
+        out.put("reasons", liveReasons);
         return out;
+    }
+
+    /** 수집기가 알려 준 소스별 실패 사유. */
+    private List<String> reasonsOf(JsonNode payload) {
+        List<String> reasons = new ArrayList<>();
+        for (JsonNode reason : Json.array(payload, "reasons")) {
+            if (reason.isTextual()) {
+                reasons.add(reason.asText());
+            }
+        }
+        return reasons;
     }
 
     private Map<String, Object> fillFromSnapshot(Map<String, Object> out, Snapshot snapshot) {

@@ -39,8 +39,23 @@ public class MacroService {
 
     /** 매크로 카드 + 스프레드 + 신선도. */
     public Map<String, Object> overview() {
+        return overview(false);
+    }
+
+    /**
+     * 매크로 카드 + 스프레드 + 신선도.
+     *
+     * @param live 화면이 자동 갱신을 켠 상태면 true. 저장본을 "오래됐다"고 볼
+     *             기준이 15분에서 60초로 내려가, 백엔드가 그만큼 자주 수집을
+     *             요청합니다. 60초보다 더 줄이지 않는 이유는
+     *             {@link Datasets#MAX_AGE_LIVE}에 적어 두었습니다.
+     *             <p>이때도 <b>화면은 수집을 기다리지 않습니다</b>(규칙 4-6).
+     *             저장본을 곧바로 돌려주고 수집은 뒤에서 돕니다.
+     */
+    public Map<String, Object> overview(boolean live) {
+        long maxAge = live ? Datasets.MAX_AGE_LIVE : Datasets.MAX_AGE_REALTIME;
         Optional<Snapshot> snapshot = store.read(
-                Datasets.SNAP_MACRO_COLLECTED, Datasets.MAX_AGE_REALTIME, "macro_collected");
+                Datasets.SNAP_MACRO_COLLECTED, maxAge, "macro_collected");
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("readMode", store.readMode().name().toLowerCase());
@@ -58,6 +73,9 @@ public class MacroService {
         out.put("available", true);
         out.put("collectedAt", snap.collectedAt());
         snap.putFreshness(out);
+        // stale 배지는 자동 갱신 간격과 무관하게 **15분** 기준을 그대로 씁니다.
+        // 사용자가 10초를 골랐다고 50초 된 저장본이 "오래된 저장본"이 되면,
+        // 배지가 데이터 품질이 아니라 화면 설정을 말하게 됩니다.
         out.put("stale", !snap.isFresh(Datasets.MAX_AGE_REALTIME));
         out.put("categories", payload.get("categories"));
         out.put("rates", payload.get("rates"));

@@ -77,9 +77,15 @@ public class DashboardController {
     }
 
     // ------------------------------------------------------- 📊 매크로
+    /**
+     * @param live 매크로 화면의 자동 갱신이 켜져 있으면 true.
+     *             저장본을 다시 받을 기준이 15분 → 60초로 내려갑니다.
+     *             (더 짧게 두지 않는 이유는 Datasets.MAX_AGE_LIVE 주석에)
+     */
     @GetMapping("/macro/overview")
-    public Map<String, Object> macroOverview() {
-        return macro.overview();
+    public Map<String, Object> macroOverview(
+            @RequestParam(name = "live", defaultValue = "false") boolean live) {
+        return macro.overview(live);
     }
 
     @GetMapping("/macro/risk")
@@ -203,6 +209,10 @@ public class DashboardController {
         return Map.of(
                 "markets", RadarService.MARKETS,
                 "investors", RadarService.INVESTORS,
+                // 화면이 "지원 안 함"을 표시할 수 있도록 함께 내려보냅니다.
+                // 목록만 주면 고를 수 있는 것과 없는 것이 똑같아 보입니다.
+                "supportedInvestors", RadarService.SUPPORTED_INVESTORS,
+                "unsupportedInvestorNote", RadarService.UNSUPPORTED_INVESTOR_NOTE,
                 "tradeTypes", RadarService.TRADE_TYPES,
                 "intervals", RadarService.INTERVALS);
     }

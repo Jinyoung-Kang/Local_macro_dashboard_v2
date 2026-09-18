@@ -76,7 +76,10 @@ open http://localhost:3000
 |---|---|
 | <http://localhost:3000> | 화면 (비밀번호는 `.env`의 `APP_PASSWORD`) |
 | <http://localhost:8080/api/health> | 백엔드 상태 |
-| <http://localhost:8000/docs> | 수집기 API 문서 |
+| <http://localhost:8000/docs> | 수집기 API 문서 (이 맥에서만 열립니다) |
+
+DB·Redis·수집기는 **이 맥에서만** 접근할 수 있습니다. 화면·API는 같은 와이파이의
+다른 기기에서도 열 수 있고, `.env`의 `WEB_BIND_HOST`로 바꿉니다 ([4-11](#4-11-로그인이-없는-경로는-이-맥-밖으로-열지-않습니다)).
 
 `make setup`은 `.env`를 만들고 **세션 서명 키를 무작위로 생성**합니다. 그다음
 `.env`에서 `APP_PASSWORD`부터 바꾸세요 — 이 값 하나가 대시보드 전체의 접근
@@ -94,7 +97,7 @@ make doctor            # 데이터가 안 보일 때 — 어디가 막혔는지 
 make logs S=collector  # 특정 서비스 로그
 make down / make up    # 정지 / 재기동
 make backup            # DB 백업 → backups/
-make test              # 세 언어 테스트 전부
+make test              # 세 언어 테스트 전부 (테스트 전용 DB에서 — 7장)
 ```
 
 **Docker로 실행하면 맥에 Java·Maven·Node·psql을 설치할 필요가 없습니다.**
@@ -108,9 +111,18 @@ Desktop이 뜨면 자동으로 복구**됩니다.
 
 ### 2-1-1. 브랜치와 업데이트 — `git pull` 대신 `make update`
 
-**기본 브랜치는 `main`이고, 실행도 `main`에서 합니다.** 새 작업은 작업용
-브랜치(`claude/…`)에 먼저 올라가고, 확인이 끝나면 `main`에 합칩니다. 합친
-브랜치는 지웁니다.
+**기본 브랜치는 `main` 하나입니다. 실행도 `main`에서 합니다.** 새 작업은
+`main`에 바로 올라가므로, 평소에는 아래 두 줄이면 끝입니다.
+
+```bash
+cd ~/Projects/Local-macro-dashboard-v2
+make update && make up
+```
+
+작업용 브랜치(`claude/…`)를 따로 쓰던 시기가 있었고, 그때는 "고친 기능이 화면에
+없는" 일이 잦았습니다. `git pull`이 다른 브랜치의 작업을 받아오지 않기
+때문입니다. 지금은 브랜치를 남기지 않지만, 그 함정을 다시 밟지 않도록
+`make update`가 **다른 브랜치에 새 작업이 있는지까지 확인해** 알려 줍니다.
 
 ```bash
 make update    # 모든 브랜치 정보를 받고 → 지금 브랜치를 당기고
@@ -136,7 +148,7 @@ make up        # 받은 코드로 다시 빌드·기동
 `make up`도 마지막에 빌드한 브랜치·커밋을 찍고, 받을 것이 남아 있으면
 경고합니다. 고친 기능이 화면에 안 보이면 **이 값부터** 보세요.
 
-작업 브랜치를 `main`에 합치고 정리하는 순서(저장소 주인이 하는 일):
+작업 브랜치가 생겼을 때 `main`에 합치고 정리하는 순서:
 
 ```bash
 git checkout main
@@ -145,6 +157,11 @@ git push origin main
 git push origin --delete claude/<브랜치>     # 합친 브랜치는 지웁니다
 git remote prune origin
 ```
+
+> **워크플로 파일(`.github/workflows/`)을 고쳤다면** 토큰에 `workflow` 권한이
+> 있어야 push됩니다. 없으면 `refusing to allow a Personal Access Token to
+> create or update workflow ... without 'workflow' scope`가 나옵니다. 토큰을
+> 새로 만들 필요는 없고, 기존 토큰 설정에서 `workflow`를 체크하면 됩니다.
 
 > **`git push`에서 `Permission ... denied to <본인 아이디>` (403)가 나면**
 > 저장소 설정이 아니라 **맥에 저장된 GitHub 자격 증명** 문제입니다. 공개
@@ -199,14 +216,14 @@ Homebrew로 PostgreSQL·Redis까지 직접 설치해 Docker를 전혀 쓰지 않
 
 | 메뉴 | 경로 | 내용 |
 |---|---|---|
-| 📊 거시경제 매크로 지표 | `/macro` | **📋 전체 대시보드 원본 데이터 보기/복사**(상단), 환율·국채·원자재·지수, 10Y−2Y·30Y−2Y 금리차(공식 확정치 + 스크래핑 시세 병기), 신용·변동성 리스크, **심화 지표 5종** (차트 기간 1~10년 선택) |
+| 📊 거시경제 매크로 지표 | `/macro` | **📋 전체 대시보드 원본 데이터 보기/복사**(상단), **자동 갱신 간격 선택**(10초~30분·끄기 — 4-12), 환율·국채·원자재·지수, 10Y−2Y·30Y−2Y 금리차(공식 확정치 + 스크래핑 시세 병기), 신용·변동성 리스크, **심화 지표 5종** (차트 기간 1~10년 선택) |
 | 🏢 연준 순유동성 트래커 | `/liquidity` | WALCL − TGA − ON RRP, 구성 항목 분해(자릿수가 달라 패널·단위를 분리), 4주/12주 모멘텀 |
 | 🔄 섹터 & 자산군 로테이션 | `/sector` | S&P 11개 섹터 + 자산군 수익률·순위·벤치마크 대비 초과성과 |
 | 📑 기관 13F 포트폴리오 | `/institutions` | 기관별 분기 보유 종목, 분기 대비 액션, 비중 추이 |
 | 🎯 기관 13F Money 교집합 | `/consensus` | 여러 기관 공통 보유·동시 매수/매도 집중도 |
 | 🏛️ 글로벌 투기세력 (COT) | `/cot` | CFTC 비상업·상업·비보고 순포지션 6개 자산 |
 | 🇰🇷 국내 파생 & 투기세력 | `/krx` | KOSPI200 선물 OI·베이시스·4대 국면·한국판 COT Index·장중 수급 가속도 |
-| 📡 외국인/기관 수급 레이더 | `/radar` | 투자자별 순매수 상위, 소스 진단, 누적 이력 |
+| 📡 외국인/기관 수급 레이더 | `/radar` | 투자자별 순매수 상위, 소스 진단, 누적 이력 · **받을 수 없는 투자주체는 '지원 안 함'으로 표시**(6-1) |
 | 🗄️ 데이터 저장소 상태 | `/status` | 수집 현황·신선도·실패 원인·누락 데이터셋·**교차 검증** |
 | 🤖 AI 종합 데이터 분석 | `/ai/report` | 수집 데이터 기반 AI 리포트 (리포트·원본 텍스트 복사, 생성 경과 시간 표시) |
 | 🤖 AI API 연결 테스트 | `/ai/test` | 엔진별 응답·지연·자동 번역 확인 |
@@ -398,6 +415,65 @@ Naver·Daum·KIS는 "가장 최근에 끝난 거래일"만 줍니다. 수집기�
 > **수집기를 꾸준히 돌리는 것이 곧 백업입니다.** PostgreSQL 볼륨은 백업할
 > 가치가 있습니다.
 
+### 4-11. 로그인이 없는 경로는 이 맥 밖으로 열지 않습니다
+
+컨테이너 다섯 개 중 **로그인을 요구하는 것은 화면과 API 둘뿐**입니다.
+PostgreSQL·Redis·수집기는 비밀번호가 없거나(`macro/macro`) 토큰이 선택 사항이라,
+포트를 밖으로 열면 같은 와이파이에 있는 누구나 DB에 붙거나 수집기 API로 데이터를
+받아갈 수 있습니다. 카페·공용 와이파이에서는 그대로 노출입니다.
+
+| 서비스 | 포트 | 어디까지 열리나 | 이유 |
+|---|---|---|---|
+| frontend | 3000 | 기본 `0.0.0.0` (`WEB_BIND_HOST`로 변경) | 비밀번호로 막혀 있고, 휴대폰에서 보는 용도가 있습니다 |
+| backend | 8080 | 기본 `0.0.0.0` (`WEB_BIND_HOST`로 변경) | 세션 쿠키 없이는 데이터 API에 접근할 수 없습니다 |
+| collector | 8000 | **127.0.0.1 고정** | 호출 한 번이 외부 수집·저장을 일으킵니다 |
+| postgres | 5432 | **127.0.0.1 고정** | 기본 계정이 `macro/macro`입니다 |
+| redis | 6379 | **127.0.0.1 고정** | 인증이 없습니다 |
+
+컨테이너끼리는 Docker 내부 네트워크로 통신하므로 **기능 손실이 없습니다.**
+`make db`·`make status`·`make doctor`도 `127.0.0.1`로 붙으므로 그대로 동작합니다.
+
+이 맥에서만 쓰신다면 `.env`에 `WEB_BIND_HOST=127.0.0.1`을 넣어 전부 닫을 수
+있습니다. 반대로 휴대폰에서 보실 거라면 **`APP_PASSWORD`를 기본값에서 반드시
+바꾸세요** — 그 값 하나가 대시보드 전체의 접근 통제입니다.
+
+수집기 API에 토큰(`COLLECTOR_API_TOKEN`)을 설정하면 수집을 유발하는 경로가 전부
+막힙니다. `/health`와 `/status`만 열어 둡니다 — 컨테이너 헬스체크와
+`make status`·`make doctor`가 쓰고, 비밀값은 담지 않습니다(키는 설정 여부만
+`true/false`로 알립니다).
+
+### 4-12. 자동 갱신은 지킬 수 있는 주기만 약속합니다
+
+매크로 화면은 갱신 간격을 고를 수 있습니다(10초·30초·1분·5분·10분·30분·끄기).
+고르면 **페이지를 새로 그리지 않고 숫자만** 바뀌고, 선택은 브라우저에 기억됩니다.
+
+**목록에 '실시간'은 없습니다.** 매크로 카드 21개는 전부 Yahoo를 폴링해서
+받아옵니다(한 번에 약 3초). 국채(`^TNX`·`^TYX`)와 VIX는 출처부터 15분 지연
+시세이고, WebSocket 스트리밍을 주는 소스는 KIS(국내 주식 체결가)뿐이라 환율·
+미국채·원자재에는 쓸 수 없습니다. 초 단위 실시간은 구현의 문제가 아니라 데이터의
+문제라, 지킬 수 없는 선택지를 목록에 넣지 않았습니다.
+
+**값이 실제로 움직이는 하한은 60초입니다.** 10초를 골라도 저장본 기준이 15분이면
+같은 숫자만 다시 그립니다. 그래서 1분 이하를 고르면 화면이 `?live=true`로 요청하고,
+백엔드가 저장본 기준을 60초로 낮춰 그만큼 자주 수집을 맡깁니다. 더 낮추지 않는
+이유는 **Yahoo 429**입니다 — 이 저장소는 차단으로 매크로 화면이 빈 이력이 있습니다.
+
+| 고른 간격 | 화면이 다시 읽는 주기 | 값이 바뀌는 주기 | 매크로 외부 요청(시간당) |
+|---|---|---|---|
+| 끄기 | 없음 | 수집기 스케줄 5분 | 약 252건 |
+| 10초·30초·1분 | 고른 대로 | 최대 1분 | 약 1,260건 |
+| 5분·10분·30분 | 고른 대로 | 수집기 스케줄 5분 | 약 252건 |
+
+리스크·심화 지표는 일별·주별 확정치라 기존 주기(2분·5분)보다 빨라지지 않습니다.
+탭을 다른 곳으로 옮기면 자동 갱신이 멈추고, 돌아오면 즉시 한 번 읽습니다 —
+아무도 보지 않는 화면이 수집기를 깨우지 않게 하기 위해서입니다.
+
+'⚠️ 오래된 저장본' 배지는 갱신 간격과 무관하게 **15분** 기준을 그대로 씁니다.
+배지가 데이터 품질이 아니라 화면 설정을 말하게 되면 안 되기 때문입니다.
+
+이 선택이 지켜지는지는 `MacroLiveModeTest`가 고정합니다 — 60초 하한을 누군가
+낮추면 테스트가 먼저 깨집니다.
+
 ---
 
 ## 5. 수집 작업 (11개 — 구버전과 동일)
@@ -439,6 +515,24 @@ KIS(장중 가집계) → Daum(API) → Naver → LS(OPEN API) → PyKrx → 누
 더 이상 열어두지 않습니다(31ms 즉시 refused = 방화벽 드롭이 아니라 닫힌 포트).
 표준 443을 먼저 쓰고 8080은 보조로만 남깁니다.
 
+### 6-1. 지금 받을 수 있는 투자주체 (2026-09 기준)
+
+| 투자주체 | 상태 | 담당 소스 |
+|---|---|---|
+| 외국인 · 기관 | ✅ 정상 | Daum (`investorType=FOREIGN\|INSTITUTION`) |
+| 개인 · 연기금 · 금융투자 · 투신 | ❌ **지원 안 함** | Naver가 담당했으나 **페이지 폐지**(HTTP 410) |
+
+Daum API는 외국인·기관 두 가지만 받습니다. 나머지 넷은 Naver의 투자자별 매매상위
+페이지가 유일한 경로였는데, 네이버가 그 페이지를 없애고 `stock.naver.com`으로
+옮겼습니다. 남은 폴백인 LS는 인증이 거절되고(403), KRX(pykrx)는 JSON 대신 차단
+응답을 줍니다.
+
+그래서 화면 목록에는 남기되 **`개인 (지원 안 함)`처럼 적고 고를 수 없게** 했습니다.
+목록에서 지우면 "원래 있던 항목이 왜 없지?"가 되고, 고를 수 있게 두면
+"수급 데이터를 얻지 못했습니다"만 보게 됩니다.
+
+소스가 복구되면 `RadarService.SUPPORTED_INVESTORS` 한 줄만 되돌리면 됩니다.
+
 ---
 
 ## 7. 테스트
@@ -452,15 +546,26 @@ make test-backend      # 백엔드만
 make test-frontend     # 화면만
 ```
 
+> ⚠️ **테스트는 전용 DB(`macrodash_test`)에서 돕니다.**
+> 백엔드 통합 테스트는 시작할 때마다 `snapshots`를 비웁니다. 접속 대상이
+> 평소 쓰는 `macrodash`였을 때는 `make test-backend` 한 번으로 수집해 둔
+> 데이터가 전부 사라졌습니다(복구하려면 `make collect-all` — 10분 이상).
+> `make test-*`가 테스트 DB를 알아서 만들어 쓰고, 테스트 자체도 이름이
+> `_test`로 끝나지 않는 DB에서는 **지우기 전에 실행을 거부**합니다.
+
 직접 부르려면 — 각 블록은 **최상위에서 새로 시작**한다고 보고 경로를 적었습니다.
+DB 주소를 손으로 적을 때도 `macrodash_test`를 쓰세요.
 
 ```bash
+# 테스트 DB 준비 (한 번만 — make test-* 는 이걸 자동으로 합니다)
+make db-test
+
 # 수집기 (PostgreSQL 필요 — 없으면 저장 계층 테스트만 자동 건너뜀)
-(cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash \
+(cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5432/macrodash_test \
   python -m pytest tests -q)
 
 # 백엔드 (통합 테스트가 실제 DB를 사용 · Java 21 필요)
-(cd backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash mvn verify)
+(cd backend && TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/macrodash_test mvn verify)
 
 # 화면 (타입 검사 포함)
 (cd frontend && npm run lint && npm run build)
@@ -488,6 +593,9 @@ make test-frontend     # 화면만
 - `collector/tests/test_log_redaction.py` — 로그에서 API 키·Bearer 토큰이
   가려지는지, 라이브러리가 인자로 넘긴 URL까지 걸리는지, 비밀이 아닌 값은
   건드리지 않는지
+- `collector/tests/test_api_token.py` — 수집을 유발하는 경로(`/live` · `/verify` ·
+  `/toss` · `/diagnostics` · `/collect`)가 토큰 없이 열리지 않는지, 반대로
+  토큰을 설정하지 않은 로컬에서는 아무것도 막지 않는지
 - `backend/.../StoreReaderNonBlockingTest.java` — **화면이 수집을 기다리지
   않는지**, 저장본이 없을 때만 기다리는지, 같은 태스크 재요청을 억제하는지,
   수동 새로고침이 방금 받은 분기 공시를 다시 받지 않는지
@@ -503,7 +611,8 @@ make test-frontend     # 화면만
 - `backend/.../DatasetsParityTest.java` — **Python과 Java가 같은 데이터셋 이름을
   쓰는지** (실제 `catalog.py`를 읽어 대조)
 - `backend/.../ApiIntegrationTest.java` — 인증 강제, 저장본이 없을 때 500이 아니라
-  `available=false`, 수집기가 죽어도 화면이 뜨는지
+  `available=false`, 수집기가 죽어도 화면이 뜨는지. 이 테스트는 `snapshots`를
+  비우므로 **DB 이름이 `_test`로 끝나지 않으면 지우기 전에 실행을 거부**합니다
 
 ---
 
@@ -543,13 +652,20 @@ make test-frontend     # 화면만
 | 수집기 로그 첫 줄이 `KRX 로그인 실패: KRX_ID …` | pykrx가 import할 때 찍는 문구입니다. **우리 앱의 오류가 아닙니다** (최신 버전은 우리 로거로 옮겨 뜻이 통하게 적습니다) |
 | 스크래핑 비교표에서 WTI·브렌트·상해종합만 `429 Too Many Requests` | Yahoo 데이터 API에 생 requests로 붙던 경로였습니다. 최신 버전은 앱 전체가 쓰는 yfinance 경로 하나로 모읍니다 |
 | 로그에 API 키가 보임 | 최신 버전은 로깅 계층에서 가립니다(`api_key=***redacted***`). 예전 로그에 남았다면 **해당 키를 재발급**하세요 |
+| `make backup`이 제대로 됐는지 모르겠음 | 백업이 끝나면 **덤프 종료 표시·테이블 수·누적 수급 행수와 날짜 범위·시계열·스냅샷 건수**를 함께 찍습니다. `정상 종료 표시 확인`이 뜨고 날짜 범위가 기대와 같으면 정상입니다 |
+| 투자주체가 `(지원 안 함)`으로 뜸 | 개인·연기금·금융투자·투신을 담당하던 Naver 페이지가 폐지됐습니다(HTTP 410). 외국인·기관은 Daum으로 정상 동작합니다 (6-1) |
+| 수급 레이더가 특정 조합에서만 빈 화면 | 최신 버전은 소스별 이유를 배너에 함께 적습니다. 예전에는 백엔드가 수집기를 부를 때 **URL을 두 번 인코딩**해 한글 투자주체가 깨졌습니다(`%25EA%25B8%25B0…`) |
+| 다른 기기(휴대폰)에서 화면이 안 열림 | `.env`의 `WEB_BIND_HOST`가 `127.0.0.1`이면 이 맥에서만 열립니다. `0.0.0.0`으로 바꾸고 `make up`. 이때 `APP_PASSWORD`는 반드시 기본값이 아니어야 합니다 |
+| 다른 기기에서 DB·수집기에 붙으려는데 안 됨 | 의도된 제한입니다. DB(`5432`)·Redis(`6379`)·수집기(`8000`)는 로그인이 없어 이 맥에서만 열립니다. 예전에는 같은 와이파이의 누구나 `macro/macro`로 DB에 붙을 수 있었습니다 |
 | 수급 레이더 진단의 `NAVER 빈 결과` | 최신 버전은 원인을 구분해 말합니다 — "표가 없습니다"(차단·JS 요구)와 "종목 행이 없습니다"(휴장·구조 변경) |
 | 같은 태스크가 로그에 여러 번 시작됨 | 최신 버전은 이미 도는 수집이 있으면 새로 시작하지 않고 그 결과를 함께 씁니다 |
 | `.env` 첫 줄이 `# .env.example …`이라 잘못 저장한 것 같음 | **정상입니다.** `make setup`이 `.env.example`을 복사해 만들기 때문입니다(최신 버전은 머리말을 `.env`로 바꿔 줍니다). `KEY=VALUE` 줄만 맞으면 됩니다 |
 | `.env` 값에 따옴표를 둘렀는데 인식이 이상함 | docker compose는 `KEY=VALUE`를 그대로 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다. `export`나 들여쓰기도 안 됩니다 |
 | 수동 새로고침을 눌러도 화면이 그대로 | 최신 버전은 수집이 끝나면 **자동으로 갱신**됩니다(`수집 중… 끝나면 자동 갱신` 표시). 그대로라면 `make update && make up` |
 | **고쳤다는 기능이 화면에 없음** | 그 코드로 빌드되지 않았습니다. 화면 **왼쪽 아래 버전**(`main@1e4d3be`)과 `make version`을 보세요. 새 작업이 다른 브랜치에 있으면 `git pull`은 아무것도 받지 않습니다 — `make update`를 쓰세요 |
-| **`git push`가 `Permission to …denied to <본인 아이디>` (403)** | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다(공개 저장소는 pull에 로그인이 필요 없어 push할 때만 드러납니다). ① `gh auth login` 후 `gh auth setup-git` — GitHub CLI가 있으면 이게 가장 간단합니다. ② 없으면 키체인의 낡은 값을 지우고 새 토큰으로: `printf "protocol=https\nhost=github.com\n\n" \| git credential-osxkeychain erase` 실행 → GitHub Settings → Developer settings → Personal access tokens에서 **classic + `repo` 권한**(또는 fine-grained + 이 저장소의 **Contents: Read and write**) 발급 → 다시 `git push` 할 때 비밀번호 칸에 **토큰**을 붙여넣기. ③ SSH를 쓰려면 `git remote set-url origin git@github.com:Jinyoung-Kang/Local_macro_dashboard_v2.git` |
+| **`git push`가 `Permission to …denied to <본인 아이디>` (403)** | 저장소 권한이 아니라 **맥에 저장된 GitHub 토큰**이 만료됐거나 쓰기 권한이 없습니다(공개 저장소는 pull에 로그인이 필요 없어 push할 때만 드러납니다). 키체인의 낡은 값을 지우고 `printf "protocol=https\nhost=github.com\n\n" \| git credential-osxkeychain erase`, GitHub Settings → Developer settings → Personal access tokens에서 **classic + `repo` 권한**(또는 fine-grained + 이 저장소의 **Contents: Read and write**)을 발급한 뒤 다시 `git push`, 비밀번호 칸에 **토큰**을 붙여넣습니다. 사용자 이름을 매번 치지 않으려면 `git config credential.https://github.com.username <아이디>` |
+| `git push`가 `refusing to allow a Personal Access Token to … workflow` | `.github/workflows/`를 고친 경우입니다. 토큰 설정에서 **`workflow` 권한**을 체크하면 됩니다(토큰을 새로 만들 필요 없음) |
+| `git pull`·`git fetch`까지 `Permission denied (publickey)` | 원격 주소가 SSH(`git@github.com:…`)인데 이 맥에 SSH 키가 없는 경우입니다. `git remote -v`로 확인하고 HTTPS로 되돌리세요: `git remote set-url origin https://github.com/Jinyoung-Kang/Local_macro_dashboard_v2.git` |
 | `git push`는 안 되는데 코드는 최신 | 정상입니다. **받기와 올리기는 별개**입니다. `make version`의 `올릴 것 : 로컬에만 있는 커밋 N개`가 아직 원격에 없다는 뜻이고, 화면 왼쪽 아래 버전이 최신이면 **지금 돌고 있는 코드는 최신이 맞습니다** |
 | `make update`가 `수정 중인 파일이 있어 당기지 않았습니다` | 고쳐 둔 파일이 있어 덮어쓰지 않은 것입니다. `git status`로 확인 후 `git restore <파일>`(버리기) 또는 `git stash`(보관) |
 | 화면이 전부 "데이터 없음" | 수집기가 아직 한 번도 돌지 않았습니다. `POST /collect?group=fast` 또는 `🗄️ 데이터 저장소 상태`에서 태스크별 "다시 실행" |

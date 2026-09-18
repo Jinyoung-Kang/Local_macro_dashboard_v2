@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { LineSeries, SERIES_COLORS } from "@/components/charts";
+import {
+  AutoRefreshControl,
+  LIVE_THRESHOLD_SECONDS,
+  useAutoRefreshSeconds,
+} from "@/components/AutoRefresh";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import { RawSnapshotCard } from "@/components/RawSnapshotCard";
 import {
@@ -80,9 +85,28 @@ const RISK_TABLE = [
 ];
 
 export default function MacroPage() {
-  const overview = useApi<MacroOverview>("/api/macro/overview", 60_000);
-  const risk = useApi<RiskIndicators>("/api/macro/risk", 120_000);
-  const advanced = useApi<AdvancedIndicators>("/api/macro/advanced", 300_000);
+  const [refreshSeconds, setRefreshSeconds] = useAutoRefreshSeconds();
+  const refreshMs = refreshSeconds * 1000;
+
+  // 1분 이하를 고르면 백엔드에 live로 요청합니다. 저장본을 다시 받을 기준이
+  // 15분에서 60초로 내려가, 카드 숫자가 실제로 움직입니다.
+  // (60초보다 더 줄이지 않는 이유 — Yahoo 429. Datasets.MAX_AGE_LIVE 참고)
+  const live = refreshSeconds > 0 && refreshSeconds <= LIVE_THRESHOLD_SECONDS;
+
+  // 카드 시세만 빠르게 읽습니다.
+  //
+  // 리스크 지표는 일별 확정치(FRED·변동성 저장본)이고 심화 지표 5종은 대부분
+  // 주·월 단위로 갱신됩니다. 10초마다 다시 읽어 봐야 같은 값이라, 기존 주기
+  // (2분·5분)보다 빨라지지 않게 막아 둡니다. 느리게 고르는 것은 그대로 따릅니다.
+  const slower = (floorMs: number) =>
+    refreshMs === 0 ? 0 : Math.max(refreshMs, floorMs);
+
+  const overview = useApi<MacroOverview>(
+    `/api/macro/overview${live ? "?live=true" : ""}`,
+    refreshMs,
+  );
+  const risk = useApi<RiskIndicators>("/api/macro/risk", slower(120_000));
+  const advanced = useApi<AdvancedIndicators>("/api/macro/advanced", slower(300_000));
 
   if (overview.loading && !overview.data) {
     return <Loading label="매크로 지표를 불러오는 중…" />;
@@ -101,12 +125,28 @@ export default function MacroPage() {
           <p className="mt-1 text-xs text-muted">
             환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 5종
           </p>
+          {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
+              적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
+          {live && (
+            <p className="mt-1 text-[11px] text-muted">
+              카드 시세는 최대 1분마다 새로 수집됩니다. 출처(Yahoo·TradingView)가
+              폴링·지연 시세라 그보다 빠르게는 바뀌지 않습니다.
+            </p>
+          )}
         </div>
-        <Freshness
-          collectedAt={data?.collectedAtKst}
-          ageSeconds={data?.ageSeconds}
-          stale={data?.stale}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <AutoRefreshControl
+            seconds={refreshSeconds}
+            onChange={setRefreshSeconds}
+            loadedAt={overview.loadedAt}
+            loading={overview.loading}
+          />
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            stale={data?.stale}
+          />
+        </div>
       </header>
 
       {/* 상단에 둡니다 — 화면을 스크롤하며 눈으로 옮겨 적지 않아도 되도록,

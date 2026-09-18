@@ -10,6 +10,18 @@
 #
 # 실행:  docker compose up -d --build
 # 접속:  http://localhost:3000  (기본 비밀번호 admin1234@ — .env에서 변경하세요)
+#
+# [포트를 어디까지 여는가]
+# postgres·redis·collector는 **이 맥에서만** 접근하면 됩니다(127.0.0.1 고정).
+# 예전에는 셋 다 모든 네트워크 인터페이스에 열려 있어서, 같은 와이파이에 있는
+# 다른 기기가 비밀번호 macro/macro로 DB에 붙거나, 로그인 없이 수집기 API를
+# 호출해 시장 데이터를 받아갈 수 있었습니다. 카페·공용 와이파이에서는 그대로
+# 노출입니다. 이 셋은 컨테이너끼리 내부 네트워크로 통신하므로 밖에 열 이유가
+# 없습니다(호스트에서 쓰는 make db·make status는 127.0.0.1로 그대로 됩니다).
+#
+# 화면(frontend)·API(backend)는 로그인을 거치고, 휴대폰에서 보는 용도가
+# 있으므로 기본값을 0.0.0.0으로 둡니다. 이 맥에서만 쓰신다면 .env에
+# WEB_BIND_HOST=127.0.0.1을 넣어 완전히 닫을 수 있습니다.
 # =============================================================================
 
 services:
@@ -27,7 +39,7 @@ services:
       # 최초 기동 시 스키마를 적용합니다(멱등).
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
     ports:
-      - "${DATABASE_PORT:-5432}:5432"
+      - "127.0.0.1:${DATABASE_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-macro} -d ${DATABASE_NAME:-macrodash}"]
       interval: 10s
@@ -40,7 +52,7 @@ services:
     # 캐시 전용이므로 디스크 저장은 끕니다(재기동하면 비어도 됩니다).
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -79,7 +91,7 @@ services:
     volumes:
       - ./db/migrations:/app/db/migrations:ro
     ports:
-      - "${COLLECTOR_PORT:-8000}:8000"
+      - "127.0.0.1:${COLLECTOR_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 20s
@@ -112,7 +124,7 @@ services:
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"
       CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${WEB_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 20s
@@ -133,7 +145,7 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8080}"
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${WEB_BIND_HOST:-0.0.0.0}:${FRONTEND_PORT:-3000}:3000"
 
 volumes:
   postgres-data:
