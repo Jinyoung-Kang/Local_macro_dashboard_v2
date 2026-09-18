@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from . import catalog, http, indicators, store
+from . import catalog, equities, http, indicators, store
 from .services import (
     cot as cot_service,
     fred as fred_service,
@@ -317,6 +317,38 @@ def task_fx_history() -> str:
         {"period": indicators.FX_HISTORY_PERIOD, "series": series},
     )
     return f"{len(series)}/{len(specs)} 계열"
+
+
+def task_equity_history() -> str:
+    """
+    📈 13F 매핑 종목 + 벤치마크의 일별 종가.
+
+    구루 포트폴리오 위험 분석(베타·추적오차·VaR)과 종목 스코어카드가 씁니다.
+
+    **매핑표를 가격과 같은 저장본에 함께 싣습니다.** 백엔드가 매핑표를 따로
+    들고 있으면 한쪽에만 종목을 추가하는 순간 조용히 어긋납니다. 단일 출처로
+    둬야 "왜 이 종목만 분석에서 빠지지?"를 한 곳에서 확인할 수 있습니다.
+    """
+    tickers = equities.all_tickers()
+    raw = sector_service.collect_daily_closes(
+        tickers, period=equities.PRICE_HISTORY_PERIOD
+    )
+    frames = raw.get("tickers") or {}
+
+    if not frames:
+        raise EmptyResult(
+            f"0/{len(tickers)} 티커 — 기존 저장본 유지"
+            + _reason_suffix([raw.get("error")] if raw.get("error") else [])
+        )
+
+    store.put_snapshot(catalog.SNAP_EQUITY_HISTORY, {
+        "period": equities.PRICE_HISTORY_PERIOD,
+        "tickers": frames,
+        # 이름 → {ticker, sector}. 백엔드가 13F 종목명을 여기에 대조합니다.
+        "nameMap": equities.mapping_payload(),
+        "benchmarks": equities.BENCHMARKS,
+    })
+    return f"{len(frames)}/{len(tickers)} 티커"
 
 
 def task_volatility_history() -> str:
@@ -665,6 +697,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("krx_futures", "slow", task_krx_futures, "KRX 선물/미결제약정 (이력 누적)"),
     Task("sector_history", "slow", task_sector_history, "섹터·자산군 ETF 종가"),
     Task("fx_history", "slow", task_fx_history, "환율·달러인덱스 일별 종가"),
+    Task("equity_history", "slow", task_equity_history, "13F 매핑 종목 일별 종가"),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열"),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

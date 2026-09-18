@@ -43,6 +43,8 @@ class DatasetsParityTest {
                 .isEqualTo(Datasets.SNAP_COT_HISTORY);
         assertThat(constant(source, "SNAP_FX_HISTORY"))
                 .isEqualTo(Datasets.SNAP_FX_HISTORY);
+        assertThat(constant(source, "SNAP_EQUITY_HISTORY"))
+                .isEqualTo(Datasets.SNAP_EQUITY_HISTORY);
     }
 
     @Test

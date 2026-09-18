@@ -621,6 +621,7 @@ def missing_datasets() -> list[dict]:
         (catalog.SNAP_KRX_FUTURES, "KRX 선물 시계열"),
         (catalog.SNAP_SECTOR_HISTORY, "섹터·자산군 ETF 종가"),
         (catalog.SNAP_FX_HISTORY, "환율·달러인덱스 일별 종가"),
+        (catalog.SNAP_EQUITY_HISTORY, "13F 매핑 종목 일별 종가"),
         (catalog.SNAP_COT_HISTORY, "CFTC COT 통합"),
         (catalog.snap_daum_futures_trend(25), "Daum 선물 수급 (계약수)"),
     ]

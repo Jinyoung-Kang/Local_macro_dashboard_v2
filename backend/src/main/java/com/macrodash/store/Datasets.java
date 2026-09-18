@@ -20,6 +20,7 @@ public final class Datasets {
     public static final String SNAP_KRX_FUTURES = "krx.futures_history";
     public static final String SNAP_SECTOR_HISTORY = "sector.etf_history";
     public static final String SNAP_FX_HISTORY = "macro.fx_history";
+    public static final String SNAP_EQUITY_HISTORY = "equity.price_history";
     public static final String SNAP_COT_HISTORY = "cot.multi_asset";
 
     /** 변동성 지수는 가장 긴 기간으로 한 번 저장하고 짧은 기간은 잘라 씁니다. */

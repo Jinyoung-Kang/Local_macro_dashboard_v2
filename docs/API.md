@@ -44,6 +44,12 @@
 | `GET /api/sec13f/portfolio?cik=&quarters=8&topN=30` | 기관 포트폴리오 + 분기 대비 액션 |
 | `GET /api/sec13f/consensus?ciks=&reportDate=&minHolders=2` | 교집합 |
 | `GET /api/sec13f/new-buys?ciks=&reportDate=&minHolders=3` | 이번 분기 공통 신규 매수 |
+| `GET /api/guru/profiles` | 기관별 성격 (집중도·유효 종목 수·회전율) |
+| `GET /api/guru/similarity` | 기관 간 유사도 행렬 (겹침 비중 + 코사인) |
+| `GET /api/guru/holders?q=NVIDIA` | 이 종목을 누가 들고 있나 |
+| `GET /api/guru/risk?cik=&benchmark=SPY&years=1` | 구루 포트폴리오 위험. 응답의 `coverage`가 **덮은 비중**을 항상 담습니다 |
+| `GET /api/stock/universe` | 스코어카드를 낼 수 있는 종목 목록 |
+| `GET /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1` | 종목 스코어카드 (가격 기반 지표만 — `missing`이 빠진 항목을 알려 줍니다) |
 | `GET /api/cot/assets`, `/api/cot/overview`, `/api/cot/asset?name=` | CFTC COT |
 | `GET /api/cot/extremes?name=&percentile=95&lookbackWeeks=52` | 극단 포지션 이후 4·13주 수익률 (가격은 ETF 대용) |
 | `GET /api/krx/futures?days=60` | KOSPI200 선물 시계열 + 최신 판정 |

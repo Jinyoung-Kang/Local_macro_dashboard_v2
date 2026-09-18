@@ -404,6 +404,157 @@ export interface FxSeries {
   points: { date: string; value: number | null }[];
 }
 
+/** 🧬 구루 스타일 프로파일. */
+export interface GuruProfilesResponse {
+  available: boolean;
+  message?: string;
+  note?: string;
+  rows: GuruProfile[];
+}
+
+export interface GuruProfile {
+  cik: string;
+  key: string;
+  name: string;
+  desc: string;
+  reportDate: string | null;
+  totalValue: number | null;
+  holdingCount: number;
+  /** 1/HHI — 쏠림을 반영한 "실질" 종목 수. 종목 수만 세면 인덱스와 집중투자가 같아집니다. */
+  effectiveHoldings: number | null;
+  hhi: number;
+  top10Weight: number;
+  /** 직전 분기가 없으면 null (0이 아닙니다). */
+  turnover: number | null;
+  quarterCount: number;
+}
+
+/** 🤝 기관 간 유사도. */
+export interface GuruSimilarityResponse {
+  available: boolean;
+  message?: string;
+  note?: string;
+  institutions: { cik: string; key: string; name: string; reportDate: string }[];
+  /** 겹침 비중 (%) — 대각선은 100. */
+  overlap: number[][];
+  /** 코사인 유사도 (0~1) — 대각선은 1. */
+  cosine: number[][];
+  topPairs: { left: string; right: string; overlap: number; cosine: number }[];
+}
+
+/** 🔍 이 종목을 누가 들고 있나. */
+export interface GuruHoldersResponse {
+  available: boolean;
+  message?: string;
+  query: string;
+  rows: {
+    institution: string;
+    cik: string;
+    name: string;
+    cusip: string;
+    weight: number;
+    value: number;
+    reportDate: string;
+  }[];
+}
+
+/** 🛡️ 구루 포트폴리오 위험. */
+export interface GuruRiskResponse {
+  available: boolean;
+  message?: string;
+  note?: string;
+  cik: string;
+  benchmark: string;
+  years: number;
+  institution?: Record<string, string>;
+  reportDate?: string;
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+  /** 13F에 티커가 없어 이름으로 가격을 찾습니다. 못 찾은 몫은 분석에서 빠집니다. */
+  coverage?: {
+    holdings: number;
+    totalHoldings: number;
+    weight: number;
+    totalWeight: number;
+    uncovered: { name: string; weight: number }[];
+    uncoveredCount: number;
+  };
+  metrics?: {
+    volatility: number | null;
+    var95: number | null;
+    var99: number | null;
+    es95: number | null;
+    es99: number | null;
+    maxDrawdown: number | null;
+    beta: number | null;
+    trackingError: number | null;
+    samples: number;
+    from: string;
+    to: string;
+  };
+  contributions?: GuruRiskContribution[];
+  sectors?: { sector: string; weight: number }[];
+}
+
+export interface GuruRiskContribution {
+  ticker: string;
+  name: string;
+  sector: string | null;
+  weight: number;
+  volatility: number | null;
+  marginal: number | null;
+  /** 기여의 합 = 포트폴리오 변동성. 개별 변동성을 그냥 더한 값이 아닙니다. */
+  contribution: number | null;
+  share: number | null;
+}
+
+/** 🩺 종목 스코어카드 (가격 기반 지표만). */
+export interface ScorecardResponse {
+  available: boolean;
+  message?: string;
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  benchmark: string;
+  years: number;
+  universeLabel: string;
+  universeSize?: number;
+  /** 이 카드에 <b>없는</b> 것. 응답이 먼저 말합니다. */
+  missing: string[];
+  caveat: string;
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+  metrics?: ScorecardMetric[];
+  /** 5개 지표 백분위의 평균. "종합 점수"가 아닙니다. */
+  priceScore?: number | null;
+  scoredCount?: number;
+  raw?: {
+    momentum1m: number | null;
+    momentum6m: number | null;
+    beta: number | null;
+    samples: number;
+  };
+}
+
+export interface ScorecardMetric {
+  label: string;
+  how: string;
+  value: number | null;
+  unit: string;
+  /** 유니버스 백분위. 비교 대상이 10개 미만이면 null입니다. */
+  score: number | null;
+  direction: string;
+}
+
+export interface StockUniverseResponse {
+  available: boolean;
+  message?: string;
+  universeLabel?: string;
+  rows: { ticker: string; name: string; sector: string | null }[];
+}
+
 export interface TaskSummary {
   task: string;
   speed: string | null;

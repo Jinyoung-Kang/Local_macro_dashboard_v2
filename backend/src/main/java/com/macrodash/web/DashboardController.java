@@ -7,7 +7,9 @@ import com.macrodash.service.KrxService;
 import com.macrodash.service.LiquidityService;
 import com.macrodash.service.MacroService;
 import com.macrodash.service.FxService;
+import com.macrodash.service.GuruService;
 import com.macrodash.service.RadarService;
+import com.macrodash.service.ScorecardService;
 import com.macrodash.service.Sec13FService;
 import com.macrodash.service.SectorService;
 import com.macrodash.service.SnapshotTextService;
@@ -59,13 +61,16 @@ public class DashboardController {
     private final SnapshotTextService snapshotText;
     private final AnalyticsService analytics;
     private final FxService fx;
+    private final GuruService guru;
+    private final ScorecardService scorecard;
 
     public DashboardController(MacroService macro, LiquidityService liquidity,
                                SectorService sector, Sec13FService sec13f, CotService cot,
                                KrxService krx, RadarService radar, DataStatusService status,
                                VerificationService verification,
                                SnapshotTextService snapshotText,
-                               AnalyticsService analytics, FxService fx) {
+                               AnalyticsService analytics, FxService fx,
+                               GuruService guru, ScorecardService scorecard) {
         this.macro = macro;
         this.liquidity = liquidity;
         this.sector = sector;
@@ -78,6 +83,8 @@ public class DashboardController {
         this.snapshotText = snapshotText;
         this.analytics = analytics;
         this.fx = fx;
+        this.guru = guru;
+        this.scorecard = scorecard;
     }
 
     @GetMapping("/health")
@@ -261,6 +268,60 @@ public class DashboardController {
     }
 
     // -------------------------------------------------------- 📡 레이더
+    // ------------------------------------------------- 🧬 구루 포트폴리오 분석
+    /** 기관별 성격 요약 (집중도·유효 종목 수·회전율). */
+    @GetMapping("/guru/profiles")
+    public Map<String, Object> guruProfiles() {
+        return guru.profiles();
+    }
+
+    /** 기관 간 유사도 행렬 (겹침 비중 + 코사인). */
+    @GetMapping("/guru/similarity")
+    public Map<String, Object> guruSimilarity() {
+        return guru.similarity();
+    }
+
+    /** 이 종목을 누가 들고 있나 (13F 공시 이름 일부로 검색). */
+    @GetMapping("/guru/holders")
+    public Map<String, Object> guruHolders(@RequestParam(required = false) String q) {
+        return guru.holders(q);
+    }
+
+    /**
+     * 구루 포트폴리오의 위험 지표.
+     *
+     * <p>13F에는 티커가 없어 이름으로 가격을 찾습니다. 매핑표에 없는 종목은
+     * 빠지며, 덮은 비중이 응답의 coverage에 항상 들어 있습니다.
+     */
+    @GetMapping("/guru/risk")
+    public Map<String, Object> guruRisk(
+            @RequestParam String cik,
+            @RequestParam(defaultValue = "SPY") String benchmark,
+            @RequestParam(defaultValue = "1") int years) {
+        return guru.risk(cik, benchmark, years);
+    }
+
+    // --------------------------------------------------------- 🩺 스코어카드
+    /** 스코어카드를 낼 수 있는 종목 목록. */
+    @GetMapping("/stock/universe")
+    public Map<String, Object> stockUniverse() {
+        return scorecard.universe();
+    }
+
+    /**
+     * 종목 스코어카드 — <b>가격으로 잴 수 있는 것만</b>.
+     *
+     * <p>재무·성장·밸류에이션은 수집하지 않아 빠져 있습니다. 응답의
+     * {@code missing}과 {@code caveat}이 그 사실을 함께 전달합니다.
+     */
+    @GetMapping("/stock/scorecard")
+    public Map<String, Object> stockScorecard(
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "SPY") String benchmark,
+            @RequestParam(defaultValue = "1") int years) {
+        return scorecard.scorecard(symbol, benchmark, years);
+    }
+
     @GetMapping("/radar/options")
     public Map<String, Object> radarOptions() {
         return Map.of(
