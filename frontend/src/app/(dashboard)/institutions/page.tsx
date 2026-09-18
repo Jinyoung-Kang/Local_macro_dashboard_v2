@@ -15,14 +15,13 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useUsdKrw } from "@/hooks/useUsdKrw";
 import {
   deltaColor,
   EMPTY,
   formatCurrency,
-  formatKrw,
   formatNumber,
 } from "@/lib/format";
-import type { UsdKrwResponse } from "@/lib/types";
 import type { PortfolioResponse } from "@/lib/types";
 
 const SERIES_COLORS = [
@@ -49,7 +48,7 @@ export default function InstitutionsPage() {
   );
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다. 여기서 따로 받아 오면
   // 같은 포트폴리오가 메뉴마다 다른 원화 금액으로 보입니다.
-  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
+  const usdKrw = useUsdKrw();
 
   const selected = institutions.data?.institutions.find((entry) => entry.cik === cik);
   const history = data?.weightHistory;
@@ -138,18 +137,8 @@ export default function InstitutionsPage() {
               value={formatCurrency(data.latest?.totalValue ?? null)}
               // 달러 금액은 크기가 잘 안 잡힙니다. 매크로 화면이 이미 수집한
               // 같은 원/달러 값으로 환산해 함께 적습니다(환율을 모르면 생략).
-              caption={
-                usdKrw.data?.available && data.latest?.totalValue
-                  ? `약 ${formatKrw(data.latest.totalValue * (usdKrw.data.rate ?? 0))}`
-                  : undefined
-              }
-              note={
-                usdKrw.data?.available
-                  ? `원/달러 ${formatNumber(usdKrw.data.rate, 2)} 기준${
-                      usdKrw.data.lastTs ? ` · ${usdKrw.data.lastTs}` : ""
-                    }`
-                  : "원/달러 값이 없어 원화 환산은 생략했습니다."
-              }
+              caption={usdKrw.toKrw(data.latest?.totalValue ?? null) ?? undefined}
+              note={usdKrw.note}
             />
             <Metric
               label="수집된 분기"
@@ -190,7 +179,7 @@ export default function InstitutionsPage() {
 
           <Card
             title={`📋 보유 종목 상세 (기준일 ${data.latest?.reportDate ?? EMPTY})`}
-            subtitle="직전 분기 대비 액션은 비중 변화 ±0.05%p를 기준으로 분류합니다."
+            subtitle={`직전 분기 대비 액션은 비중 변화 ±0.05%p를 기준으로 분류합니다. ${usdKrw.note}`}
           >
             <Table
               rows={data.holdings ?? []}
@@ -228,7 +217,18 @@ export default function InstitutionsPage() {
                   key: "value",
                   header: "평가액",
                   align: "right",
-                  render: (row) => formatCurrency(row.value),
+                  // 총액만 원화로 적으면, 종목 하나가 얼마짜리인지는 여전히
+                  // 머리로 곱해야 합니다. 같은 환율로 여기도 함께 적습니다.
+                  render: (row) => (
+                    <span className="flex flex-col items-end">
+                      <span>{formatCurrency(row.value)}</span>
+                      {usdKrw.toKrw(row.value) && (
+                        <span className="text-[11px] text-muted">
+                          {usdKrw.toKrw(row.value)}
+                        </span>
+                      )}
+                    </span>
+                  ),
                 },
                 {
                   key: "shares",

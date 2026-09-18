@@ -111,7 +111,11 @@ function formatKoreanScale(value: number | null | undefined, suffix: string): st
   }
   const magnitude = Math.abs(value);
   if (magnitude >= 1e12) {
-    return `${formatNumber(value / 1e12, 3)}조 ${suffix}`;
+    // 자릿수가 커질수록 소수는 의미를 잃습니다. "8,607.639조 원"에서 뒤 세
+    // 자리는 6,390억인데, 8,607조 옆에 붙어 있으면 읽는 사람이 자릿수를 다시
+    // 세게 만들 뿐입니다. 1,000조를 넘으면 정수로 적습니다.
+    const digits = magnitude >= 1e15 ? 0 : magnitude >= 1e14 ? 1 : 3;
+    return `${formatNumber(value / 1e12, digits)}조 ${suffix}`;
   }
   if (magnitude >= 1e8) {
     // 억 단위는 소수점을 거의 쓰지 않습니다. 1,000억이 넘으면 정수로 충분합니다.

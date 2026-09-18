@@ -558,6 +558,14 @@ public class SnapshotTextService {
     private String koreanScale(double amount, String suffix) {
         double magnitude = Math.abs(amount);
         if (magnitude >= 1e12) {
+            // 자릿수가 커질수록 소수는 의미를 잃습니다. "8,607.639조"에서 뒤
+            // 세 자리는 6,390억인데, 8,607조 옆에서는 자릿수만 헷갈리게 합니다.
+            if (magnitude >= 1e15) {
+                return "%,.0f조 %s".formatted(amount / 1e12, suffix);
+            }
+            if (magnitude >= 1e14) {
+                return "%,.1f조 %s".formatted(amount / 1e12, suffix);
+            }
             return "%,.3f조 %s".formatted(amount / 1e12, suffix);
         }
         if (magnitude >= 1e8) {

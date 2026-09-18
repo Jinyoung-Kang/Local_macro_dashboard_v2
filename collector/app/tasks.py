@@ -4,7 +4,7 @@ app/tasks.py
 
 [작업군과 주기 — 구버전과 동일]
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
-  slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history ·
+  slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend
   weekly (12시간): sec_13f
 
@@ -260,6 +260,63 @@ def task_sector_history() -> str:
 
     store.put_snapshot(catalog.SNAP_SECTOR_HISTORY, payload)
     return f"{len(collected)}/{len(tickers)} 티커"
+
+
+def task_fx_history() -> str:
+    """
+    💱 환율·달러인덱스 일별 종가 (여러 계열 겹쳐 보기용).
+
+    티커는 매크로 카드의 fx 카테고리에서 그대로 가져옵니다. 차트만 다른
+    티커를 쓰면 카드의 최근값과 차트의 끝값이 어긋나고, 보는 사람은 둘 중
+    무엇이 맞는지 알 수 없습니다.
+
+    엔/원은 Yahoo가 '1엔당 원'을 줄 때가 있어 카드와 같은 배율 판정을
+    거칩니다(market_service.quote_scale). 이 판정이 한쪽에만 있으면 같은
+    지표가 카드에서는 930원, 차트에서는 9.3원으로 그려집니다.
+    """
+    specs = indicators.fx_history_specs()
+    if not specs:
+        raise EmptyResult("환율 계열 정의가 비어 있습니다 (indicators.MACRO_CATEGORIES 확인)")
+
+    tickers = tuple(spec["ticker"] for spec in specs)
+    raw = sector_service.collect_daily_closes(tickers, period=indicators.FX_HISTORY_PERIOD)
+    frames = raw.get("tickers") or {}
+
+    series: dict[str, dict] = {}
+    for spec in specs:
+        frame = frames.get(spec["ticker"])
+        closes = (frame or {}).get("close") or []
+        dates = (frame or {}).get("dates") or []
+        if not closes or not dates:
+            continue
+
+        scale = market_service.quote_scale(spec["key"], closes[-1])
+        series[spec["key"]] = {
+            "key": spec["key"],
+            # 화면 버튼 순서. JSONB는 키 순서를 보존하지 않아, 순서를 값으로
+            # 적어 두지 않으면 목록이 가나다순으로 뒤집힙니다.
+            "order": len(series),
+            "name": spec["name"],
+            "ticker": spec["ticker"],
+            "unit": spec.get("unit"),
+            # 배율을 함께 저장합니다. 나중에 값만 보고는 100엔당인지 1엔당인지
+            # 되짚을 수 없습니다.
+            "scale": scale,
+            "dates": dates,
+            "close": [value * scale for value in closes],
+        }
+
+    if not series:
+        raise EmptyResult(
+            f"0/{len(specs)} 계열 — 기존 저장본 유지"
+            + _reason_suffix([raw.get("error")] if raw.get("error") else [])
+        )
+
+    store.put_snapshot(
+        catalog.SNAP_FX_HISTORY,
+        {"period": indicators.FX_HISTORY_PERIOD, "series": series},
+    )
+    return f"{len(series)}/{len(specs)} 계열"
 
 
 def task_volatility_history() -> str:
@@ -607,6 +664,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("fed_liquidity", "slow", task_fed_liquidity, "연준 순유동성 (이력 누적)"),
     Task("krx_futures", "slow", task_krx_futures, "KRX 선물/미결제약정 (이력 누적)"),
     Task("sector_history", "slow", task_sector_history, "섹터·자산군 ETF 종가"),
+    Task("fx_history", "slow", task_fx_history, "환율·달러인덱스 일별 종가"),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열"),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

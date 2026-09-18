@@ -12,8 +12,8 @@ import {
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useUsdKrw } from "@/hooks/useUsdKrw";
 import {
-  EMPTY,
   formatBillionUsd,
   formatTrillionDelta,
   formatTrillionUsd,
@@ -41,6 +41,9 @@ export default function LiquidityPage() {
     `/api/liquidity?years=${years}`,
     300_000,
   );
+  // 달러 금액에 원화를 함께 적습니다. 매크로 화면이 이미 수집한 같은 환율을
+  // 쓰므로, 두 화면을 나란히 놓아도 환산액이 어긋나지 않습니다.
+  const usdKrw = useUsdKrw();
 
   if (loading && !data) {
     return <Loading label="순유동성 데이터를 불러오는 중…" />;
@@ -118,21 +121,25 @@ export default function LiquidityPage() {
             value={formatTrillionUsd(latest.netLiquidityT)}
             delta={latest.deltaT}
             deltaText={formatTrillionDelta(latest.deltaT)}
-            caption={latest.date ? `기준일 ${latest.date}` : undefined}
+            caption={usdKrw.trillionToKrw(latest.netLiquidityT) ?? undefined}
+            note={latest.date ? `기준일 ${latest.date} · ${usdKrw.note}` : usdKrw.note}
           />
           <Metric
             label="연준 총자산 (WALCL)"
             value={formatTrillionUsd(latest.walclT)}
+            caption={usdKrw.trillionToKrw(latest.walclT) ?? undefined}
           />
           <Metric
             label="재무부 일반계정 (TGA)"
             value={formatBillionUsd(latest.tgaB)}
-            caption="TGA 증가 = 시장에서 자금 흡수"
+            caption={usdKrw.billionToKrw(latest.tgaB) ?? undefined}
+            note="TGA 증가 = 시장에서 자금 흡수"
           />
           <Metric
             label="역레포 (ON RRP)"
             value={formatBillionUsd(latest.rrpB)}
-            caption="RRP 감소 = 시장으로 유동성 환류"
+            caption={usdKrw.billionToKrw(latest.rrpB) ?? undefined}
+            note="RRP 감소 = 시장으로 유동성 환류"
           />
         </div>
       )}
@@ -144,13 +151,15 @@ export default function LiquidityPage() {
             value={formatTrillionDelta(data.momentum.change4w)}
             delta={data.momentum.change4w}
             deltaText=""
-            caption="유동성은 방향과 속도가 함께 중요합니다."
+            caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change4w)}
+            note="유동성은 방향과 속도가 함께 중요합니다."
           />
           <Metric
             label="12주 변화"
             value={formatTrillionDelta(data.momentum.change12w)}
             delta={data.momentum.change12w}
             deltaText=""
+            caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change12w)}
           />
         </div>
       )}
@@ -206,6 +215,19 @@ export default function LiquidityPage() {
       </Card>
     </div>
   );
+}
+
+/**
+ * 변화량의 원화 환산.
+ *
+ * <p>환율을 모르면 undefined를 돌려 <b>줄 자체를 없앱니다</b>. 빈 문자열을
+ * 돌려주면 자리는 차지하면서 아무 말도 하지 않는 줄이 남습니다.
+ */
+function krwDelta(
+  convert: (value: number | null | undefined) => string | null,
+  value: number | null | undefined,
+): string | undefined {
+  return convert(value) ?? undefined;
 }
 
 /**

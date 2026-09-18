@@ -339,6 +339,71 @@ export interface RadarResponse {
   rows: RadarRow[];
 }
 
+/** 📡 외국인·기관 공통 수급 (상위 N 목록의 교집합). */
+export interface RadarConsensusResponse {
+  available: boolean;
+  message?: string;
+  reasons?: string[];
+  warning?: string;
+  note?: string;
+  market: string;
+  tradeType: string;
+  intervalType: string;
+  topN: number;
+  foreignCount?: number;
+  institutionCount?: number;
+  sources?: string[];
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+  rows: RadarConsensusRow[];
+}
+
+export interface RadarConsensusRow {
+  code: string;
+  name: string;
+  price: number | null;
+  changePct: number | null;
+  foreignEok: number | null;
+  institutionEok: number | null;
+  /** 한쪽 금액이 없으면 null입니다(0으로 채우지 않습니다). */
+  totalEok: number | null;
+  foreignRank: number | null;
+  institutionRank: number | null;
+}
+
+/** 💱 환율·달러인덱스 비교 차트. */
+export interface FxSeriesResponse {
+  available: boolean;
+  message?: string;
+  period: string;
+  /** index = 기준일 100 · raw = 원래 단위 */
+  mode: "index" | "raw";
+  /** 단위가 섞인 계열을 raw로 겹쳐 그리는 중인지. 화면이 경고를 띄웁니다. */
+  mixedUnits?: boolean;
+  selected?: string[];
+  catalog: { id: string; label: string; unit: string | null; ticker: string | null }[];
+  series: FxSeries[];
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+}
+
+export interface FxSeries {
+  id: string;
+  label: string;
+  unit: string | null;
+  ticker: string | null;
+  available: boolean;
+  latest: number | null;
+  latestDate: string | null;
+  /** 기준일은 계열마다 다를 수 있습니다(시장별 휴일이 다릅니다). */
+  baseDate: string | null;
+  baseValue: number | null;
+  changePct: number | null;
+  points: { date: string; value: number | null }[];
+}
+
 export interface TaskSummary {
   task: string;
   speed: string | null;

@@ -29,10 +29,14 @@ MACRO_CATEGORIES = [
         "title": "💵 통화 및 환율",
         "note": "실시간",
         "items": [
-            {"key": "dxy", "name": "달러 인덱스 (DXY)", "ticker": "DX-Y.NYB", "note": "실시간"},
-            {"key": "usdkrw", "name": "원/달러 (USD/KRW)", "ticker": "KRW=X", "note": "실시간"},
-            {"key": "usdjpy", "name": "달러/엔 (USD/JPY)", "ticker": "JPY=X", "note": "실시간"},
-            {"key": "jpykrw", "name": "엔/원 100엔당 (JPY/KRW)", "ticker": "JPYKRW=X", "note": "실시간"},
+            {"key": "dxy", "name": "달러 인덱스 (DXY)", "ticker": "DX-Y.NYB", "note": "실시간",
+             "unit": "pt"},
+            {"key": "usdkrw", "name": "원/달러 (USD/KRW)", "ticker": "KRW=X", "note": "실시간",
+             "unit": "원"},
+            {"key": "usdjpy", "name": "달러/엔 (USD/JPY)", "ticker": "JPY=X", "note": "실시간",
+             "unit": "엔"},
+            {"key": "jpykrw", "name": "엔/원 100엔당 (JPY/KRW)", "ticker": "JPYKRW=X",
+             "note": "실시간", "unit": "원"},
         ],
     },
     {
@@ -81,6 +85,23 @@ MACRO_CATEGORIES = [
 
 # 야간선물/해외 지수선물 스크래핑 결과가 주입되는 카테고리
 SCRAPED_INJECT_CATEGORY = "asia_equity"
+
+# ==============================================================================
+# 1-1. 환율 비교 차트 (여러 계열 겹쳐 보기)
+# ==============================================================================
+# 위 fx 카테고리와 **같은 티커**를 씁니다. 차트만 따로 티커를 고르면 카드의
+# 최근값과 차트의 끝값이 어긋나고, 보는 사람은 둘 중 무엇이 맞는지 알 수
+# 없습니다. 목록을 복사하지 않고 그때그때 꺼내 오는 이유입니다.
+FX_HISTORY_PERIOD = "5y"
+
+
+def fx_history_specs() -> list[dict]:
+    """환율 비교 차트가 쓸 계열 정의 (매크로 카드 fx 카테고리 그대로)."""
+    for category in MACRO_CATEGORIES:
+        if category["id"] == "fx":
+            return [dict(item) for item in category["items"]]
+    return []
+
 
 # TradingView Scanner 수익률로 덮어쓸 지표.
 # ZT=F는 2년 국채 **선물 가격**(~100pt)이라 "수익률(%)" 라벨과 단위가 맞지

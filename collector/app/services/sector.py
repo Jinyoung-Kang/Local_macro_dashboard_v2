@@ -113,6 +113,13 @@ def collect_etf_history(tickers: tuple[str, ...], period: str = "2y") -> dict:
     return {"tickers": out, "error": error}
 
 
+# 이 함수는 사실 "야후 심볼 여러 개의 일별 종가"를 받는 일반 수집기입니다.
+# 환율 비교 차트(KRW=X·JPY=X·DX-Y.NYB)도 같은 것이 필요합니다. 같은 코드를
+# 한 벌 더 두면 배치 실패 폴백·빈 프레임 처리 같은 손질이 한쪽에만 들어가
+# 조용히 갈라집니다. 이름만 하나 더 붙여 두고 구현은 하나로 둡니다.
+collect_daily_closes = collect_etf_history
+
+
 def _fetch_single(symbol: str, period: str) -> pd.DataFrame | None:
     frame = yf.Ticker(symbol).history(period=period, auto_adjust=True)
     if frame is None or frame.empty or "Close" not in frame.columns:

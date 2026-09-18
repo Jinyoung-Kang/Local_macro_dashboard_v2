@@ -14,8 +14,9 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatCurrency, formatKrw, formatNumber } from "@/lib/format";
-import type { ConsensusResponse, NewBuysResponse, UsdKrwResponse } from "@/lib/types";
+import { useUsdKrw } from "@/hooks/useUsdKrw";
+import { EMPTY, formatCurrency, formatNumber } from "@/lib/format";
+import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
 
 /**
  * 🎯 기관 13F Money 교집합.
@@ -39,7 +40,7 @@ export default function ConsensusPage() {
     }${reportDate ? `&reportDate=${reportDate}` : ""}`,
   );
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
-  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
+  const usdKrw = useUsdKrw();
 
   const toggle = (cik: string) => {
     setSelected((previous) =>
@@ -130,7 +131,7 @@ export default function ConsensusPage() {
             <HorizontalBars data={chartData} unit="곳" height={Math.max(260, chartData.length * 26)} />
           </Card>
 
-          <Card title="📋 교집합 상세">
+          <Card title="📋 교집합 상세" subtitle={usdKrw.note}>
             <Table
               rows={data.rows}
               rowKey={(row) => row.name}
@@ -181,9 +182,9 @@ export default function ConsensusPage() {
                   render: (row) => (
                     <span className="flex flex-col items-end">
                       <span>{formatCurrency(row.totalValue)}</span>
-                      {usdKrw.data?.available && (
+                      {usdKrw.toKrw(row.totalValue) && (
                         <span className="text-[11px] text-muted">
-                          약 {formatKrw(row.totalValue * (usdKrw.data.rate ?? 0))}
+                          {usdKrw.toKrw(row.totalValue)}
                         </span>
                       )}
                     </span>
@@ -232,12 +233,12 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
     `/api/sec13f/new-buys?minHolders=${minHolders}` +
       (reportDate ? `&reportDate=${encodeURIComponent(reportDate)}` : ""),
   );
-  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
+  const usdKrw = useUsdKrw();
 
   return (
     <Card
       title="🆕 이번 분기 공통 신규 매수"
-      subtitle="여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다."
+      subtitle={`여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다. ${usdKrw.note}`}
       actions={
         <Select
           label="최소 기관 수"
@@ -282,9 +283,9 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 render: (row) => (
                   <span className="flex flex-col items-end">
                     <span>{formatCurrency(row.totalValue)}</span>
-                    {usdKrw.data?.available && (
+                    {usdKrw.toKrw(row.totalValue) && (
                       <span className="text-[11px] text-muted">
-                        약 {formatKrw(row.totalValue * (usdKrw.data.rate ?? 0))}
+                        {usdKrw.toKrw(row.totalValue)}
                       </span>
                     )}
                   </span>

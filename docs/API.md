@@ -26,6 +26,8 @@
 | `GET /api/macro/risk` | VIX·MOVE·HY OAS·CP 스프레드·STLFSI4 |
 | `GET /api/macro/advanced` | 심화 지표 6종 (해석·백분위 포함) |
 | `GET /api/macro/usdkrw` | 원/달러 환율 (달러 금액의 원화 병기용, 매크로 카드와 같은 값) |
+| `GET /api/macro/fx?ids=usdkrw,dxy&period=1y&mode=index` | 환율·달러인덱스 비교 (여러 계열 겹쳐 보기). `mode=index`는 기준일 100, `raw`는 원래 단위 |
+| `GET /api/macro/fx/options` | 고를 수 있는 기간·기본 선택 |
 | `GET /api/macro/scraped` | 비공식 참고 시세 |
 | `GET /api/macro/spread?longId=DGS10&shortId=DGS2` | 공식 일별 스프레드 시계열 |
 | `GET /api/macro/fred/{seriesId}?years=10` | FRED 시리즈 원본 |
@@ -49,6 +51,7 @@
 | `GET /api/krx/intraday?minutes=30` | 장중 수급 가속도 |
 | `GET /api/radar/options` | 선택지 목록 |
 | `GET /api/radar/ranking?market=&investor=&tradeType=&topN=&intervalType=` | 수급 랭킹 |
+| `GET /api/radar/consensus?market=&tradeType=&topN=&intervalType=` | 외국인·기관이 **같은 방향**으로 움직인 종목 (두 상위 N 목록의 교집합) |
 | `GET /api/radar/history?market=&investor=&tradeType=` | 누적 이력 |
 | `GET /api/radar/diagnostics` | 5개 소스 연결 진단 |
 

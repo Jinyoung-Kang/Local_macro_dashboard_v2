@@ -19,6 +19,7 @@ SNAP_SCRAPER_MARKETS = "macro.scraper_markets"  # TradingView/Yahoo 참고 시�
 SNAP_FED_LIQUIDITY = "liquidity.fed_net"        # 연준 순유동성
 SNAP_KRX_FUTURES = "krx.futures_history"        # KOSPI200 선물 시계열
 SNAP_SECTOR_HISTORY = "sector.etf_history"      # 섹터/자산군 ETF 종가
+SNAP_FX_HISTORY = "macro.fx_history"            # 환율·달러인덱스 일별 종가 (겹쳐 보기)
 SNAP_COT_HISTORY = "cot.multi_asset"            # CFTC COT 통합
 
 # 변동성 지수(^VIX / ^MOVE)는 가장 긴 기간으로 한 번 저장하고, 짧은 기간

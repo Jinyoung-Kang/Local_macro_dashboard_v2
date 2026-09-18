@@ -318,6 +318,21 @@ def collect_macro_cards(categories: list[dict]) -> dict:
     return {"categories": out_categories, "rates": rates}
 
 
+def quote_scale(key: str, raw_value: float) -> float:
+    """
+    원본 호가를 화면 단위로 옮기는 배율.
+
+    JPYKRW=X는 1엔당(약 9.3)으로 올 때와 100엔당(약 930)으로 올 때가 섞입니다.
+    지표 이름이 "엔/원 100엔당"이므로 낮은 쪽은 100을 곱해 맞춥니다.
+
+    **카드와 차트가 같은 함수를 씁니다.** 예전처럼 카드 쪽에만 이 규칙이 있으면,
+    같은 지표가 카드에서는 930원, 차트에서는 9.3원으로 그려집니다.
+    """
+    if key == "jpykrw" and raw_value < 50:
+        return 100.0
+    return 1.0
+
+
 def _build_card(spec: dict, payload: dict | None) -> dict:
     base = {
         "key": spec["key"],
@@ -336,7 +351,7 @@ def _build_card(spec: dict, payload: dict | None) -> dict:
         return {**base, "status": "fail"}
 
     # 엔/원 100엔당 환산. 원본 현재가로 한 번만 판정합니다.
-    scale = 100.0 if (spec["key"] == "jpykrw" and raw_current < 50) else 1.0
+    scale = quote_scale(spec["key"], raw_current)
     current = raw_current * scale
     last_ts = _format_timestamp(points[-1]["date"], is_intraday)
 

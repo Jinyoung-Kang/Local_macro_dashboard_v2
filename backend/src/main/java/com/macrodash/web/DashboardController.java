@@ -6,6 +6,7 @@ import com.macrodash.service.DataStatusService;
 import com.macrodash.service.KrxService;
 import com.macrodash.service.LiquidityService;
 import com.macrodash.service.MacroService;
+import com.macrodash.service.FxService;
 import com.macrodash.service.RadarService;
 import com.macrodash.service.Sec13FService;
 import com.macrodash.service.SectorService;
@@ -57,13 +58,14 @@ public class DashboardController {
     private final VerificationService verification;
     private final SnapshotTextService snapshotText;
     private final AnalyticsService analytics;
+    private final FxService fx;
 
     public DashboardController(MacroService macro, LiquidityService liquidity,
                                SectorService sector, Sec13FService sec13f, CotService cot,
                                KrxService krx, RadarService radar, DataStatusService status,
                                VerificationService verification,
                                SnapshotTextService snapshotText,
-                               AnalyticsService analytics) {
+                               AnalyticsService analytics, FxService fx) {
         this.macro = macro;
         this.liquidity = liquidity;
         this.sector = sector;
@@ -75,6 +77,7 @@ public class DashboardController {
         this.verification = verification;
         this.snapshotText = snapshotText;
         this.analytics = analytics;
+        this.fx = fx;
     }
 
     @GetMapping("/health")
@@ -108,6 +111,25 @@ public class DashboardController {
     @GetMapping("/macro/usdkrw")
     public Map<String, Object> usdKrw() {
         return macro.usdKrw();
+    }
+
+    /**
+     * 💱 환율·달러인덱스 비교 차트 (여러 계열 겹쳐 보기).
+     *
+     * @param ids    쉼표로 구분한 계열 키. 비면 기본 선택(원/달러 + 달러 인덱스)
+     * @param mode   index = 기준일 100 (기본) · raw = 원래 단위
+     */
+    @GetMapping("/macro/fx")
+    public Map<String, Object> macroFx(
+            @RequestParam(required = false) String ids,
+            @RequestParam(defaultValue = "1y") String period,
+            @RequestParam(defaultValue = "index") String mode) {
+        return fx.series(ids, period, mode);
+    }
+
+    @GetMapping("/macro/fx/options")
+    public Map<String, Object> macroFxOptions() {
+        return Map.of("periods", FxService.PERIODS, "defaultIds", FxService.DEFAULT_IDS);
     }
 
     @GetMapping("/macro/scraped")
@@ -261,6 +283,21 @@ public class DashboardController {
             @RequestParam(defaultValue = "TODAY") String intervalType,
             @RequestParam(required = false) String targetDate) {
         return radar.ranking(market, investor, tradeType, topN, intervalType, targetDate);
+    }
+
+    /**
+     * 📡 외국인·기관이 같은 방향으로 움직인 종목.
+     *
+     * <p>두 주체의 상위 목록을 각각 받아 종목코드로 맞춘 교집합입니다.
+     * 상위 N 밖의 종목은 소스가 주지 않아 포함되지 않습니다.
+     */
+    @GetMapping("/radar/consensus")
+    public Map<String, Object> radarConsensus(
+            @RequestParam(defaultValue = "KOSPI") String market,
+            @RequestParam(defaultValue = "순매수") String tradeType,
+            @RequestParam(defaultValue = "30") int topN,
+            @RequestParam(defaultValue = "TODAY") String intervalType) {
+        return radar.consensus(market, tradeType, topN, intervalType);
     }
 
     @GetMapping("/radar/history")

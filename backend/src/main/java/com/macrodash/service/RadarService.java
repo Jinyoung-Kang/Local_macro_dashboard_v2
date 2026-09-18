@@ -2,6 +2,7 @@ package com.macrodash.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
+import com.macrodash.analytics.SupplyConsensus;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.config.AppProperties;
 import com.macrodash.store.Datasets;
@@ -185,6 +186,126 @@ public class RadarService {
         return "외부 데이터 소스가 모두 실패해 수집기가 저장해 둔 이력("
                 + (historyDate == null ? "날짜 미상" : historyDate)
                 + ")을 보여 주고 있습니다. 지금 시점의 수급이 아닙니다.";
+    }
+
+    /**
+     * 📡 외국인·기관이 <b>같은 방향</b>으로 움직인 종목.
+     *
+     * <p>두 주체의 상위 목록을 각각 받아 종목코드로 맞춥니다. 화면이 표 둘을
+     * 오가며 눈으로 대조하지 않아도 되게 하는 것이 목적입니다.
+     *
+     * <p><b>한계를 그대로 전달합니다</b> — 이것은 두 상위 N개 목록의
+     * 교집합입니다. 소스(Daum)가 상위 목록만 주고 전체 종목의 수급을 주지
+     * 않기 때문에, 외국인 상위 N 밖에서 사들인 종목은 기관이 1위로 샀더라도
+     * 여기 나오지 않습니다. N을 키우면 그만큼 넓게 봅니다.
+     *
+     * <p>한쪽이라도 수급을 받지 못하면 <b>교집합을 만들지 않습니다</b>. 받은
+     * 쪽만으로 목록을 만들면 "둘이 함께 샀다"는 뜻이 아닌 것이 그 이름으로
+     * 화면에 남습니다.
+     */
+    public Map<String, Object> consensus(String market, String tradeType,
+                                         int topN, String intervalType) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("market", market);
+        out.put("tradeType", tradeType);
+        out.put("intervalType", intervalType);
+        out.put("topN", topN);
+
+        Map<String, Object> foreign = ranking(market, "외국인", tradeType, topN, intervalType, null);
+        Map<String, Object> institution =
+                ranking(market, "기관", tradeType, topN, intervalType, null);
+
+        List<String> missing = new ArrayList<>();
+        if (!Boolean.TRUE.equals(foreign.get("available"))) {
+            missing.add("외국인");
+        }
+        if (!Boolean.TRUE.equals(institution.get("available"))) {
+            missing.add("기관");
+        }
+
+        if (!missing.isEmpty()) {
+            out.put("available", false);
+            out.put("rows", List.of());
+            out.put("message", String.join("·", missing)
+                    + " 수급을 받지 못해 교집합을 만들 수 없습니다. "
+                    + "한쪽만으로는 '둘이 함께 샀다'를 말할 수 없습니다.");
+            out.put("reasons", mergedReasons(foreign, institution));
+            return out;
+        }
+
+        List<Map<String, Object>> rows =
+                SupplyConsensus.intersect(rowsOf(foreign), rowsOf(institution));
+
+        out.put("available", !rows.isEmpty());
+        out.put("rows", rows);
+        out.put("foreignCount", rowsOf(foreign).size());
+        out.put("institutionCount", rowsOf(institution).size());
+        // 신선도는 두 조회 중 **오래된 쪽**을 따릅니다. 새것만 적으면
+        // 실제보다 최신인 것처럼 보입니다.
+        putOlderFreshness(out, foreign, institution);
+        out.put("sources", List.of(
+                String.valueOf(foreign.getOrDefault("source", "출처 미상")),
+                String.valueOf(institution.getOrDefault("source", "출처 미상"))));
+        out.put("note", "각 주체의 상위 " + topN + "개 목록을 종목코드로 맞춘 결과입니다. "
+                + "상위 " + topN + "위 밖에서 같은 방향으로 매매한 종목은 소스가 "
+                + "주지 않아 알 수 없습니다.");
+        if (Boolean.TRUE.equals(foreign.get("isHistorical"))
+                || Boolean.TRUE.equals(institution.get("isHistorical"))) {
+            out.put("warning", "한쪽 이상이 누적 이력으로 대체됐습니다. 지금 시점의 "
+                    + "수급이 아닙니다.");
+        }
+        if (rows.isEmpty()) {
+            out.put("message", "두 주체의 상위 " + topN + "개에 겹치는 종목이 없습니다. "
+                    + "표시 종목 수를 늘려 보세요.");
+        }
+        return out;
+    }
+
+    /** ranking() 응답의 rows는 JsonNode이거나 빈 목록입니다. 둘 다 받습니다. */
+    private List<JsonNode> rowsOf(Map<String, Object> response) {
+        Object rows = response.get("rows");
+        if (rows instanceof JsonNode node && node.isArray()) {
+            List<JsonNode> out = new ArrayList<>();
+            node.forEach(out::add);
+            return out;
+        }
+        return List.of();
+    }
+
+    private List<String> mergedReasons(Map<String, Object> foreign, Map<String, Object> institution) {
+        List<String> out = new ArrayList<>();
+        for (Map<String, Object> side : List.of(foreign, institution)) {
+            Object reasons = side.get("reasons");
+            if (reasons instanceof List<?> list) {
+                for (Object reason : list) {
+                    String text = String.valueOf(reason);
+                    if (!out.contains(text)) {
+                        out.add(text);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private void putOlderFreshness(Map<String, Object> out, Map<String, Object> foreign,
+                                   Map<String, Object> institution) {
+        Object leftAge = foreign.get("ageSeconds");
+        Object rightAge = institution.get("ageSeconds");
+        Map<String, Object> older = institution;
+        if (leftAge instanceof Number left && rightAge instanceof Number right) {
+            older = left.doubleValue() >= right.doubleValue() ? foreign : institution;
+        } else if (leftAge instanceof Number) {
+            older = foreign;
+        }
+        if (older.get("collectedAtKst") != null) {
+            out.put("collectedAtKst", older.get("collectedAtKst"));
+        }
+        if (older.get("ageSeconds") != null) {
+            out.put("ageSeconds", older.get("ageSeconds"));
+        }
+        out.put("stale", Boolean.TRUE.equals(foreign.get("stale"))
+                || Boolean.TRUE.equals(institution.get("stale")));
     }
 
     /** 누적 이력 조회 (Naver/Daum이 제공하지 않는 과거 데이터). */
