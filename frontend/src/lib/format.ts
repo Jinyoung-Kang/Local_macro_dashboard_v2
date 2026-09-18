@@ -82,16 +82,88 @@ export function deltaColor(
 }
 
 export function formatCurrency(value: number | null | undefined): string {
+  return formatUsd(value);
+}
+
+/**
+ * 달러 금액을 한국식 단위(조·억)로 적습니다.
+ *
+ * <p><b>왜 B·M이 아닌가</b> — "$299.25B"는 한국어로 읽을 때 자릿수를 머리로
+ * 한 번 더 옮겨야 합니다("2,992억 달러"). 이 대시보드는 원화 금액과 나란히
+ * 읽는 화면이 많아, 두 통화를 같은 단위 체계(조·억)로 맞춥니다.
+ *
+ * <p>1조 달러 미만은 모두 <b>억 달러</b>로 적습니다. 십억(B) 단위를 쓰면
+ * "877.0 십억 달러"처럼 한 번에 크기가 안 잡히는 표기가 됩니다.
+ */
+export function formatUsd(value: number | null | undefined): string {
+  return formatKoreanScale(value, "달러");
+}
+
+/** 원화 금액을 조·억 단위로. */
+export function formatKrw(value: number | null | undefined): string {
+  return formatKoreanScale(value, "원");
+}
+
+/** 조(1e12)·억(1e8) 단위 공통 규칙. */
+function formatKoreanScale(value: number | null | undefined, suffix: string): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return EMPTY;
   }
-  if (Math.abs(value) >= 1e9) {
-    return `$${(value / 1e9).toFixed(2)}B`;
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1e12) {
+    return `${formatNumber(value / 1e12, 3)}조 ${suffix}`;
   }
-  if (Math.abs(value) >= 1e6) {
-    return `$${(value / 1e6).toFixed(2)}M`;
+  if (magnitude >= 1e8) {
+    // 억 단위는 소수점을 거의 쓰지 않습니다. 1,000억이 넘으면 정수로 충분합니다.
+    return `${formatNumber(value / 1e8, magnitude >= 1e11 ? 0 : 1)}억 ${suffix}`;
   }
-  return `$${value.toLocaleString("ko-KR", { maximumFractionDigits: 0 })}`;
+  if (magnitude >= 1e4) {
+    return `${formatNumber(value / 1e4, 0)}만 ${suffix}`;
+  }
+  return `${formatNumber(value, 0)} ${suffix}`;
+}
+
+/**
+ * 달러 금액 + 원화 환산을 한 줄로.
+ *
+ * <p>환율을 모르면 <b>달러만</b> 돌려줍니다. 임의의 기본 환율로 원화를 지어내면
+ * 화면이 틀린 금액을 사실처럼 보여 주게 됩니다.
+ */
+export function formatUsdWithKrw(
+  usd: number | null | undefined,
+  rate: number | null | undefined,
+): string {
+  const dollars = formatUsd(usd);
+  if (
+    usd === null || usd === undefined || Number.isNaN(usd)
+    || rate === null || rate === undefined || !Number.isFinite(rate) || rate <= 0
+  ) {
+    return dollars;
+  }
+  return `${dollars} (약 ${formatKrw(usd * rate)})`;
+}
+
+/**
+ * 조 달러로 들어오는 값(순유동성 등)을 억/조 달러 표기로.
+ *
+ * <p>저장본이 이미 "조 달러" 단위인 계열이 있습니다(netLiquidityT). 0.012조를
+ * 그대로 적으면 크기가 안 잡히므로 120억 달러로 바꿔 적습니다.
+ */
+export function formatTrillionUsd(valueInTrillions: number | null | undefined): string {
+  if (valueInTrillions === null || valueInTrillions === undefined
+      || Number.isNaN(valueInTrillions)) {
+    return EMPTY;
+  }
+  return formatUsd(valueInTrillions * 1e12);
+}
+
+/** 십억 달러로 들어오는 값(TGA·RRP)을 억/조 달러 표기로. */
+export function formatBillionUsd(valueInBillions: number | null | undefined): string {
+  if (valueInBillions === null || valueInBillions === undefined
+      || Number.isNaN(valueInBillions)) {
+    return EMPTY;
+  }
+  return formatUsd(valueInBillions * 1e9);
 }
 
 /**
@@ -105,10 +177,9 @@ export function formatTrillionDelta(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return EMPTY;
   }
-  if (Math.abs(value) >= 0.01) {
-    return `${formatSigned(value, 3)} 조 달러`;
-  }
-  return `${formatSigned(value * 1000, 1)} 십억 달러`;
+  // 부호가 중요한 값이라 +/-를 앞에 붙이고, 단위는 억·조로 통일합니다.
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${formatTrillionUsd(Math.abs(value))}`;
 }
 
 /** 수집 후 경과 시간을 사람이 읽는 문장으로. */

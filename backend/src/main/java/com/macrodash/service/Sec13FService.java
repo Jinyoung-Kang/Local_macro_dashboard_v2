@@ -66,7 +66,7 @@ public class Sec13FService {
         }
 
         JsonNode payload = snapshot.get().payload();
-        List<JsonNode> allQuarters = Json.array(payload, "quarters");
+        List<JsonNode> allQuarters = dedupeByReportDate(Json.array(payload, "quarters"));
         if (allQuarters.isEmpty()) {
             out.put("available", false);
             out.put("quarters", List.of());
@@ -104,6 +104,26 @@ public class Sec13FService {
         out.put("holdings", compareQuarters(latest, previous, topN));
         out.put("weightHistory", weightHistory(selected, topN));
         return out;
+    }
+
+    /**
+     * 같은 분기(reportDate)가 두 번 들어온 경우 하나만 남깁니다.
+     *
+     * <p>SEC에는 정정 공시(13F-HR/A)가 있습니다. 원본과 정정본이 같은 분기를
+     * 가리키므로 목록에 같은 reportDate가 두 번 나타나고, 화면에서는 히트맵에
+     * 빈 열이 하나 더 생기고 "수집된 분기"에도 같은 날짜가 두 번 찍힙니다.
+     * 목록은 최신순이므로 <b>먼저 나온 것(더 최근 제출)</b>을 남깁니다.
+     */
+    static List<JsonNode> dedupeByReportDate(List<JsonNode> quarters) {
+        Map<String, JsonNode> byDate = new LinkedHashMap<>();
+        for (JsonNode quarter : quarters) {
+            String reportDate = Json.asText(quarter, "reportDate");
+            if (reportDate == null) {
+                continue;
+            }
+            byDate.putIfAbsent(reportDate, quarter);
+        }
+        return new ArrayList<>(byDate.values());
     }
 
     /**
@@ -280,7 +300,8 @@ public class Sec13FService {
                 continue;
             }
 
-            List<JsonNode> quarters = Json.array(snapshot.get().payload(), "quarters");
+            List<JsonNode> quarters = dedupeByReportDate(
+                    Json.array(snapshot.get().payload(), "quarters"));
             if (quarters.isEmpty()) {
                 continue;
             }
@@ -396,7 +417,8 @@ public class Sec13FService {
             if (snapshot.isEmpty() || snapshot.get().payload() == null) {
                 continue;
             }
-            List<JsonNode> quarters = Json.array(snapshot.get().payload(), "quarters");
+            List<JsonNode> quarters = dedupeByReportDate(
+                    Json.array(snapshot.get().payload(), "quarters"));
             if (quarters.size() < 2) {
                 // 비교할 직전 분기가 없으면 신규 매수를 판정할 수 없습니다.
                 continue;

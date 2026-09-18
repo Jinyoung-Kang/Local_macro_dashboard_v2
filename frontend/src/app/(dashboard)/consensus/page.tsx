@@ -14,8 +14,8 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatCurrency, formatNumber } from "@/lib/format";
-import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
+import { EMPTY, formatCurrency, formatKrw, formatNumber } from "@/lib/format";
+import type { ConsensusResponse, NewBuysResponse, UsdKrwResponse } from "@/lib/types";
 
 /**
  * 🎯 기관 13F Money 교집합.
@@ -38,6 +38,8 @@ export default function ConsensusPage() {
       ciks ? `&ciks=${ciks}` : ""
     }${reportDate ? `&reportDate=${reportDate}` : ""}`,
   );
+  // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
+  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
 
   const toggle = (cik: string) => {
     setSelected((previous) =>
@@ -176,7 +178,16 @@ export default function ConsensusPage() {
                   key: "totalValue",
                   header: "합산 평가액",
                   align: "right",
-                  render: (row) => formatCurrency(row.totalValue),
+                  render: (row) => (
+                    <span className="flex flex-col items-end">
+                      <span>{formatCurrency(row.totalValue)}</span>
+                      {usdKrw.data?.available && (
+                        <span className="text-[11px] text-muted">
+                          약 {formatKrw(row.totalValue * (usdKrw.data.rate ?? 0))}
+                        </span>
+                      )}
+                    </span>
+                  ),
                 },
                 {
                   key: "holders",
@@ -221,6 +232,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
     `/api/sec13f/new-buys?minHolders=${minHolders}` +
       (reportDate ? `&reportDate=${encodeURIComponent(reportDate)}` : ""),
   );
+  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
 
   return (
     <Card
@@ -267,7 +279,16 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 key: "totalValue",
                 header: "합산 평가액",
                 align: "right",
-                render: (row) => formatCurrency(row.totalValue),
+                render: (row) => (
+                  <span className="flex flex-col items-end">
+                    <span>{formatCurrency(row.totalValue)}</span>
+                    {usdKrw.data?.available && (
+                      <span className="text-[11px] text-muted">
+                        약 {formatKrw(row.totalValue * (usdKrw.data.rate ?? 0))}
+                      </span>
+                    )}
+                  </span>
+                ),
               },
               {
                 key: "buyers",

@@ -95,7 +95,7 @@ export default function MacroPage() {
 
   // 카드 시세만 빠르게 읽습니다.
   //
-  // 리스크 지표는 일별 확정치(FRED·변동성 저장본)이고 심화 지표 5종은 대부분
+  // 리스크 지표는 일별 확정치(FRED·변동성 저장본)이고 심화 지표 6종은 대부분
   // 주·월 단위로 갱신됩니다. 10초마다 다시 읽어 봐야 같은 값이라, 기존 주기
   // (2분·5분)보다 빨라지지 않게 막아 둡니다. 느리게 고르는 것은 그대로 따릅니다.
   const slower = (floorMs: number) =>
@@ -123,7 +123,7 @@ export default function MacroPage() {
         <div>
           <h1 className="text-xl font-bold text-bright">📊 거시경제 매크로 지표</h1>
           <p className="mt-1 text-xs text-muted">
-            환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 5종
+            환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 6종
           </p>
           {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
               적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
@@ -587,6 +587,13 @@ const ZERO_LINE_NOTES: Record<
     tone: "danger",
     message:
       "10년−3개월 스프레드가 역전(음수) 상태입니다. 역사적으로 1~2년 내 침체가 뒤따른 구간입니다.",
+  },
+  T30Y3M: {
+    side: "below",
+    tone: "danger",
+    message:
+      "30년−3개월 스프레드가 역전(음수) 상태입니다. 만기 축 전체가 눌려 있다는 뜻으로, "
+      + "10Y-3M보다 늦게 역전되고 늦게 풀립니다.",
   },
   NFCI: {
     side: "above",

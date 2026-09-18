@@ -289,11 +289,13 @@ public class SnapshotTextService {
         Object latest = result.get("latest");
         if (latest instanceof Map<?, ?> map) {
             lines.add("- 기준일: " + map.get("date"));
-            lines.add("- 순유동성: " + format(map.get("netLiquidityT"), " 조 달러"));
-            lines.add("- 직전 대비: " + format(map.get("deltaT"), " 조 달러"));
-            lines.add("- 연준 총자산(WALCL): " + format(map.get("walclT"), " 조 달러"));
-            lines.add("- 재무부 일반계정(TGA): " + format(map.get("tgaB"), " 십억 달러"));
-            lines.add("- 역레포(ON RRP): " + format(map.get("rrpB"), " 십억 달러"));
+            // 단위는 화면과 같게 조·억으로 맞춥니다. AI가 "십억"과 "조"를 섞어
+            // 읽으면 자릿수를 한 번 더 옮겨야 하고, 그 과정에서 틀립니다.
+            lines.add("- 순유동성: " + formatUsdFromTrillions(map.get("netLiquidityT")));
+            lines.add("- 직전 대비: " + formatUsdFromTrillions(map.get("deltaT")));
+            lines.add("- 연준 총자산(WALCL): " + formatUsdFromTrillions(map.get("walclT")));
+            lines.add("- 재무부 일반계정(TGA): " + formatUsdFromBillions(map.get("tgaB")));
+            lines.add("- 역레포(ON RRP): " + formatUsdFromBillions(map.get("rrpB")));
         }
         lines.add("");
     }
@@ -528,23 +530,45 @@ public class SnapshotTextService {
     }
 
     /**
-     * 달러 금액을 화면(formatCurrency)과 <b>같은 규칙</b>으로 줄여 씁니다.
+     * 달러 금액을 화면과 <b>같은 규칙</b>(조·억)으로 적습니다.
      *
-     * <p>13F 합산 평가액은 조 단위까지 갑니다. 원시 숫자를 그대로 두면 한 줄이
-     * 길어지고, 화면에서 "$12.34B"로 본 값과 텍스트가 달라 보입니다.
+     * <p>화면이 "2,992억 달러"로 보여 주는 값을 텍스트가 "$299.25B"로 적으면,
+     * 같은 숫자를 두 번 다르게 말하는 셈입니다. 단위 체계를 하나로 맞춥니다.
      */
     private String formatUsd(Object value) {
         if (!(value instanceof Number number)) {
             return "데이터 없음";
         }
-        double amount = number.doubleValue();
-        if (Math.abs(amount) >= 1e9) {
-            return "$%.2fB".formatted(amount / 1e9);
+        return koreanScale(number.doubleValue(), "달러");
+    }
+
+    /** 조 달러 단위로 들어온 값(netLiquidityT 등). */
+    private String formatUsdFromTrillions(Object value) {
+        return value instanceof Number number
+                ? koreanScale(number.doubleValue() * 1e12, "달러") : "데이터 없음";
+    }
+
+    /** 십억 달러 단위로 들어온 값(TGA·RRP). */
+    private String formatUsdFromBillions(Object value) {
+        return value instanceof Number number
+                ? koreanScale(number.doubleValue() * 1e9, "달러") : "데이터 없음";
+    }
+
+    /** 조(1e12)·억(1e8) 표기. 화면의 formatUsd/formatKrw와 같은 규칙입니다. */
+    private String koreanScale(double amount, String suffix) {
+        double magnitude = Math.abs(amount);
+        if (magnitude >= 1e12) {
+            return "%,.3f조 %s".formatted(amount / 1e12, suffix);
         }
-        if (Math.abs(amount) >= 1e6) {
-            return "$%.2fM".formatted(amount / 1e6);
+        if (magnitude >= 1e8) {
+            return magnitude >= 1e11
+                    ? "%,.0f억 %s".formatted(amount / 1e8, suffix)
+                    : "%,.1f억 %s".formatted(amount / 1e8, suffix);
         }
-        return "$%,.0f".formatted(amount);
+        if (magnitude >= 1e4) {
+            return "%,.0f만 %s".formatted(amount / 1e4, suffix);
+        }
+        return "%,.0f %s".formatted(amount, suffix);
     }
 
     private String orNa(String value) {

@@ -21,7 +21,7 @@ import java.util.Optional;
  * 📊 거시경제 매크로 지표 메뉴.
  *
  * <p>담당: 지표 카드, 10Y−2Y / 30Y−2Y 장단기 금리차, 신용·변동성 리스크 지표,
- * 심화 매크로 지표 5종, 개별 지표 차트.
+ * 심화 매크로 지표 6종, 개별 지표 차트.
  *
  * <p>계산은 전부 여기서 합니다. 구버전은 화면 코드(views/macro_view.py)가 직접
  * 계산해서, 같은 수치를 AI 리포트가 다르게 말하는 일이 있었습니다.
@@ -185,6 +185,36 @@ public class MacroService {
         return out;
     }
 
+    /**
+     * 우리가 계산해서 만드는 파생 시리즈: id → {빼일 시리즈, 뺄 시리즈}.
+     *
+     * <p>FRED는 10Y-3M(T10Y3M)은 시리즈로 주지만 30Y-3M은 주지 않습니다.
+     * 두 원본(DGS30·DGS3MO)이 이미 수집되고 있으므로 <b>같은 날짜끼리</b> 빼서
+     * 만듭니다. 한쪽 날짜만 있는 날은 버립니다 — 앞뒤 값으로 메우면 실제로는
+     * 발표되지 않은 날의 스프레드를 만들어내게 됩니다.
+     */
+    public static final Map<String, String[]> DERIVED_SPREADS = Map.of(
+            "T30Y3M", new String[]{"DGS30", "DGS3MO"});
+
+    /** 날짜별 값 (파생 시리즈 포함). 날짜 오름차순입니다. */
+    private Map<LocalDate, Double> resolvedSeries(String seriesId) {
+        String[] parts = DERIVED_SPREADS.get(seriesId);
+        if (parts == null) {
+            return seriesMap(seriesId);
+        }
+        Map<LocalDate, Double> left = seriesMap(parts[0]);
+        Map<LocalDate, Double> right = seriesMap(parts[1]);
+
+        Map<LocalDate, Double> out = new java.util.TreeMap<>();
+        for (Map.Entry<LocalDate, Double> entry : left.entrySet()) {
+            Double other = right.get(entry.getKey());
+            if (entry.getValue() != null && other != null) {
+                out.put(entry.getKey(), entry.getValue() - other);
+            }
+        }
+        return out;
+    }
+
     private Map<LocalDate, Double> seriesMap(String seriesId) {
         Map<LocalDate, Double> out = new LinkedHashMap<>();
         Optional<Snapshot> snapshot = store.read(
@@ -202,8 +232,58 @@ public class MacroService {
         return out;
     }
 
+    /**
+     * 💱 원/달러 환율 (달러 금액을 원화로 함께 보여 줄 때 씁니다).
+     *
+     * <p>매크로 카드가 이미 수집하는 <b>같은 값</b>을 그대로 씁니다. 여기서
+     * 따로 받아 오면 화면마다 환율이 달라져, 같은 포트폴리오가 메뉴에 따라
+     * 다른 원화 금액으로 보이게 됩니다.
+     *
+     * <p>값이 없으면 available=false입니다. 임의의 기본 환율(예: 1,300원)을
+     * 쓰지 않습니다 — 그러면 틀린 원화 금액을 사실처럼 보여 주게 됩니다.
+     */
+    public Map<String, Object> usdKrw() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Optional<Snapshot> snapshot = store.read(
+                Datasets.SNAP_MACRO_COLLECTED, Datasets.MAX_AGE_REALTIME, "macro_collected");
+
+        if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            out.put("available", false);
+            out.put("message", "매크로 저장본이 없어 환율을 알 수 없습니다.");
+            return out;
+        }
+
+        for (JsonNode category : Json.array(snapshot.get().payload(), "categories")) {
+            for (JsonNode item : Json.array(category, "items")) {
+                if (!"usdkrw".equals(Json.asText(item, "key"))) {
+                    continue;
+                }
+                Double price = Json.asDouble(item, "price");
+                if (price == null || price <= 0) {
+                    break;
+                }
+                out.put("available", true);
+                out.put("rate", price);
+                out.put("name", Json.asText(item, "name"));
+                out.put("lastTs", Json.asText(item, "lastTs"));
+                out.put("source", Json.asText(item, "source"));
+                snapshot.get().putFreshness(out);
+                return out;
+            }
+        }
+
+        out.put("available", false);
+        out.put("message", "매크로 저장본에 원/달러 값이 없습니다(수집 실패).");
+        return out;
+    }
+
     /** FRED 시리즈 원본 (차트용). */
     public Map<String, Object> fredSeries(String seriesId, Integer years) {
+        // 파생 시리즈(30Y-3M 등)는 저장본이 없습니다 — 원본 둘을 빼서 만듭니다.
+        if (DERIVED_SPREADS.containsKey(seriesId)) {
+            return derivedSeriesResponse(seriesId, years);
+        }
+
         Optional<Snapshot> snapshot = store.read(
                 Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
 
@@ -228,6 +308,41 @@ public class MacroService {
 
         out.put("available", !points.isEmpty());
         snapshot.get().putFreshness(out);
+        out.put("points", points);
+        return out;
+    }
+
+    /** 파생 시리즈의 차트 응답. 신선도는 원본 중 <b>더 오래된 쪽</b>을 따릅니다. */
+    private Map<String, Object> derivedSeriesResponse(String seriesId, Integer years) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("seriesId", seriesId);
+        out.put("derivedFrom", DERIVED_SPREADS.get(seriesId));
+
+        Map<LocalDate, Double> series = resolvedSeries(seriesId);
+        LocalDate cutoff = (years != null && years > 0)
+                ? LocalDate.now().minusYears(years) : null;
+
+        List<Map<String, Object>> points = new ArrayList<>();
+        for (Map.Entry<LocalDate, Double> entry : series.entrySet()) {
+            if (cutoff != null && entry.getKey().isBefore(cutoff)) {
+                continue;
+            }
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("date", entry.getKey().toString());
+            point.put("value", entry.getValue());
+            points.add(point);
+        }
+
+        // 원본 저장본의 신선도를 그대로 전달합니다(둘 중 오래된 쪽 기준).
+        String[] parts = DERIVED_SPREADS.get(seriesId);
+        Optional<Snapshot> left = store.read(
+                Datasets.fredSeries(parts[0]), Datasets.MAX_AGE_DAILY, "fred_series");
+        Optional<Snapshot> right = store.read(
+                Datasets.fredSeries(parts[1]), Datasets.MAX_AGE_DAILY, "fred_series");
+        left.flatMap(a -> right.map(b -> a.ageSeconds() >= b.ageSeconds() ? a : b))
+                .ifPresent(older -> older.putFreshness(out));
+
+        out.put("available", !points.isEmpty());
         out.put("points", points);
         return out;
     }
@@ -352,7 +467,7 @@ public class MacroService {
         return out;
     }
 
-    /** 심화 매크로 지표 5종 (최신값·변화·백분위·해석). */
+    /** 심화 매크로 지표 6종 (최신값·변화·백분위·해석). */
     public Map<String, Object> advancedIndicators() {
         Map<String, Object> latest = new LinkedHashMap<>();
 
@@ -367,17 +482,16 @@ public class MacroService {
             entry.put("why", meta.why());
             entry.put("source", meta.source());
 
-            Optional<Snapshot> snapshot = store.read(
-                    Datasets.fredSeries(seriesId), Datasets.MAX_AGE_DAILY, "fred_series");
-
-            if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+            // 파생 시리즈(30Y-3M)는 저장본이 없고 원본 둘을 빼서 만듭니다.
+            Map<LocalDate, Double> series = resolvedSeries(seriesId);
+            if (series.isEmpty()) {
                 entry.put("available", false);
                 latest.put(seriesId, entry);
                 continue;
             }
 
-            List<Double> values = Json.pointValues(snapshot.get().payload());
-            List<LocalDate> dates = Json.pointDates(snapshot.get().payload());
+            List<LocalDate> dates = new ArrayList<>(series.keySet());
+            List<Double> values = new ArrayList<>(series.values());
             Double value = SeriesMath.last(values);
 
             if (value == null) {

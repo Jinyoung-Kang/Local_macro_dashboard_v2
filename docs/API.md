@@ -24,7 +24,8 @@
 |---|---|
 | `GET /api/macro/overview?live=` | 카드 + 스프레드 + 신선도. `live=true`면 저장본을 다시 받을 기준이 15분 → **60초**로 내려갑니다(화면의 자동 갱신이 1분 이하일 때). 60초보다 낮추지 않는 이유는 README 4-12 |
 | `GET /api/macro/risk` | VIX·MOVE·HY OAS·CP 스프레드·STLFSI4 |
-| `GET /api/macro/advanced` | 심화 지표 5종 (해석·백분위 포함) |
+| `GET /api/macro/advanced` | 심화 지표 6종 (해석·백분위 포함) |
+| `GET /api/macro/usdkrw` | 원/달러 환율 (달러 금액의 원화 병기용, 매크로 카드와 같은 값) |
 | `GET /api/macro/scraped` | 비공식 참고 시세 |
 | `GET /api/macro/spread?longId=DGS10&shortId=DGS2` | 공식 일별 스프레드 시계열 |
 | `GET /api/macro/fred/{seriesId}?years=10` | FRED 시리즈 원본 |

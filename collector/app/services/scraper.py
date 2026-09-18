@@ -36,15 +36,20 @@ KST = ZoneInfo("Asia/Seoul")
 TRADINGVIEW_BONDS_SCANNER_URL = "https://scanner.tradingview.com/bonds/scan"
 TRADINGVIEW_SYMBOL_SCANNER_URL = "https://scanner.tradingview.com/symbol"
 TRADINGVIEW_US_TREASURY_SYMBOLS = {
+    # 3개월물은 심볼 표기가 다릅니다(US03MY — M은 month).
+    "TVC:US03MY": "us03m",
     "TVC:US02Y": "us02y",
     "TVC:US10Y": "us10y",
     "TVC:US30Y": "us30y",
 }
 
-TREASURY_KEYS = ("us02y", "us10y", "us30y")
+TREASURY_KEYS = ("us03m", "us02y", "us10y", "us30y")
 
 # kind: tradingview_symbol(=Symbol Scanner JSON) | yahoo_chart(=chart JSON)
 SCRAPER_MARKETS = [
+    {"key": "us03m", "name": "미국채 3개월물", "kind": "tradingview_symbol",
+     "symbol": "TVC:US03MY", "provider": "TradingView Scanner", "unit": "%",
+     "url": "https://www.tradingview.com/symbols/TVC-US03MY/"},
     {"key": "us02y", "name": "미국채 2년물", "kind": "tradingview_symbol",
      "symbol": "TVC:US02Y", "provider": "TradingView Scanner", "unit": "%",
      "url": "https://www.tradingview.com/symbols/TVC-US02Y/"},

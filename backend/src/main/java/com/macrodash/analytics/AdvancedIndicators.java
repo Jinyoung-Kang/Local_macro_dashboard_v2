@@ -5,9 +5,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 심화 매크로 지표 5종의 정의와 해석 임계치.
+ * 심화 매크로 지표 6종의 정의와 해석 임계치.
  *
- * <p>왜 이 5개인가 — 기존 지표(명목금리·하이일드·STLFSI4)에는 세 가지 사각지대가
+ * <p>왜 이 6개인가 — 기존 지표(명목금리·하이일드·STLFSI4)에는 세 가지 사각지대가
  * 있습니다.
  * <ol>
  *   <li>명목금리만으로는 "인플레 기대가 오른 것"과 "실질 긴축이 강해진 것"을
@@ -16,6 +16,8 @@ import java.util.Map;
  *       쓰는 것은 10Y-3M입니다 → T10Y3M 추가</li>
  *   <li>신용 스트레스를 하이일드로만 봅니다. 경색은 보통 투자등급에서 먼저
  *       번집니다 → BAMLC0A0CM(IG 스프레드) 추가</li>
+ *   <li>10Y-3M은 역전에서 먼저 벗어납니다. 만기 축을 30년까지 넓히면 장기
+ *       기대가 실제로 돌아왔는지 따로 확인할 수 있습니다 → T30Y3M 추가</li>
  * </ol>
  * NFCI는 STLFSI4와 구성이 달라, 두 지수가 갈라지는 것 자체가 신호입니다.
  *
@@ -28,7 +30,7 @@ public final class AdvancedIndicators {
 
     /** 화면 카드 배치 순서. 가나다순이 아니라 중요도 순입니다(머리기사는 10Y-3M). */
     public static final List<String> DISPLAY_ORDER =
-            List.of("T10Y3M", "DFII10", "T10YIE", "BAMLC0A0CM", "NFCI");
+            List.of("T10Y3M", "T30Y3M", "DFII10", "T10YIE", "BAMLC0A0CM", "NFCI");
 
     public record Meta(String id, String label, String unit, int digits,
                        String group, String why, String source) {
@@ -42,6 +44,14 @@ public final class AdvancedIndicators {
                 "뉴욕 연준 침체확률 모델이 쓰는 스프레드입니다. 10Y-2Y보다 침체 예측력이 "
                         + "높다는 것이 연준 리서치의 정설입니다.",
                 "FRED T10Y3M (일간)"));
+        // FRED에 T30Y3M이라는 시리즈는 없습니다. DGS30 − DGS3MO로 우리가 계산합니다
+        // (계산 규칙은 MacroService.DERIVED_SPREADS).
+        map.put("T30Y3M", new Meta("T30Y3M", "장단기 금리차 30Y-3M", "%p", 3, "금리 구조",
+                "10Y-3M보다 만기 축이 훨씬 넓어, 장기 기대(성장·인플레·기간 프리미엄)와 "
+                        + "현재 통화정책의 격차를 더 크게 보여 줍니다. 10Y-3M이 역전에서 "
+                        + "벗어난 뒤에도 30Y-3M이 눌려 있으면 장기 기대가 아직 돌아오지 "
+                        + "않았다는 뜻입니다.",
+                "FRED DGS30 − DGS3MO (일간, 우리가 계산)"));
         map.put("DFII10", new Meta("DFII10", "10년 실질금리 (TIPS)", "%", 3, "금리 구조",
                 "명목금리에서 인플레 기대를 걷어낸 값입니다. 금·장기 성장주 밸류에이션에 "
                         + "가장 직접적으로 작용합니다.",
@@ -68,6 +78,9 @@ public final class AdvancedIndicators {
     public static Interpretation interpret(String seriesId, double value) {
         return switch (seriesId) {
             case "T10Y3M" -> interpretT10Y3M(value);
+            // 30Y-3M도 부호의 의미는 같습니다(역전=긴축이 장기 기대를 넘어섬).
+            // 다만 만기 축이 넓어 평상시 값 자체가 더 크므로 '평탄' 기준만 넓힙니다.
+            case "T30Y3M" -> interpretT30Y3M(value);
             case "DFII10" -> interpretRealRate(value);
             case "BAMLC0A0CM" -> interpretIgSpread(value);
             case "NFCI" -> interpretNfci(value);
@@ -93,6 +106,24 @@ public final class AdvancedIndicators {
         }
         return new Interpretation("정상", "green",
                 "장기금리가 단기금리보다 높은 정상 구조입니다.");
+    }
+
+    static Interpretation interpretT30Y3M(double value) {
+        if (value < -0.5) {
+            return new Interpretation("깊은 역전", "red",
+                    "30년물이 3개월물보다 크게 낮습니다. 장기 성장·인플레 기대가 현재 "
+                            + "정책금리 수준을 한참 밑돈다는 뜻입니다.");
+        }
+        if (value < 0) {
+            return new Interpretation("역전", "orange",
+                    "만기 축 전체가 눌려 있습니다. 10Y-3M보다 늦게 역전되고 늦게 풀립니다.");
+        }
+        if (value < 1.0) {
+            return new Interpretation("평탄", "blue",
+                    "장기 프리미엄이 거의 없습니다. 역전 해소 직후이거나 진입 직전입니다.");
+        }
+        return new Interpretation("정상", "green",
+                "장기물이 단기물보다 충분히 높은 정상 구조입니다.");
     }
 
     static Interpretation interpretRealRate(double value) {

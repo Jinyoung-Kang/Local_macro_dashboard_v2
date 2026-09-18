@@ -195,18 +195,42 @@ function BarValueLabel({
   );
 }
 
+/**
+ * 툴팁 상자 스타일.
+ *
+ * <p><b>왜 손봤는가</b> — 기본 스타일은 배경(#161B22)이 카드 배경과 같고
+ * 테두리도 흐려서, 툴팁이 차트 위에 떠 있는 것인지 그려진 것인지 구분되지
+ * 않았습니다. 막대 위에 겹치면 글자가 막대 색과 뒤섞여 숫자를 읽을 수
+ * 없었습니다(실제로 화면에서 그랬습니다).
+ *
+ * <p>고친 것: 배경을 카드보다 <b>더 어둡게</b>(캔버스 색) 낮추고, 테두리를
+ * 밝히고, 그림자를 넣어 떠 있게 하고, 글자를 밝은 색으로 올렸습니다.
+ */
 function tooltipStyle() {
   return {
     contentStyle: {
-      backgroundColor: "#161B22",
-      border: "1px solid #30363D",
+      backgroundColor: "rgba(1, 4, 9, 0.97)",
+      border: "1px solid #8B949E",
       borderRadius: 8,
+      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.65)",
       fontSize: 12,
-      color: "#C9D1D9",
+      padding: "8px 10px",
+      color: "#F0F6FC",
     },
-    labelStyle: { color: "#8B949E" },
+    labelStyle: { color: "#C9D1D9", fontWeight: 600, marginBottom: 4 },
+    itemStyle: { color: "#F0F6FC", padding: 0 },
+    wrapperStyle: { outline: "none", zIndex: 40 },
   };
 }
+
+/**
+ * 막대 차트의 마우스 커서(행 강조) 색.
+ *
+ * <p>Recharts 기본값은 밝은 회색(rgba(204,204,204,…))입니다. 어두운 테마에서는
+ * 이 회색이 막대보다 밝아, 가리키는 막대의 값 라벨이 <b>흰 배경 위 흰 글씨</b>가
+ * 됩니다. 강조는 남기되 색은 강조색의 옅은 틴트로 바꿉니다.
+ */
+const BAR_CURSOR = { fill: "rgba(88, 166, 255, 0.12)" };
 
 export type Point = { date: string; value: number | null };
 
@@ -377,6 +401,7 @@ export function MultiLineSeries({
         />
         <Tooltip
           {...tooltipStyle()}
+          cursor={{ stroke: "#8B949E", strokeWidth: 1 }}
           formatter={(value: number, name: string) => [
             value === null || value === undefined
               ? EMPTY
@@ -453,6 +478,7 @@ export function HorizontalBars({
         />
         <Tooltip
           {...tooltipStyle()}
+          cursor={BAR_CURSOR}
           formatter={(value: number) => [`${formatNumber(value, 2)}${unit}`, valueName]}
         />
         <ReferenceLine x={0} stroke="#8B949E" />
@@ -500,6 +526,7 @@ export function SignedBars({
         />
         <Tooltip
           {...tooltipStyle()}
+          cursor={BAR_CURSOR}
           formatter={(value: number) => [`${formatNumber(value, 0)}${unit}`, valueName]}
         />
         <ReferenceLine y={0} stroke="#8B949E" />
@@ -570,7 +597,7 @@ export function ScatterPlot({
         <ReferenceLine y={0} stroke="#8B949E" />
         <Tooltip
           {...tooltipStyle()}
-          cursor={{ strokeDasharray: "3 3" }}
+          cursor={{ strokeDasharray: "3 3", stroke: "#8B949E" }}
           formatter={(value: number, name: string) => [
             `${formatNumber(value, 3)}${name === xLabel ? xUnit : yUnit}`,
             name,

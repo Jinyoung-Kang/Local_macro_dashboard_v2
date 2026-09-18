@@ -104,6 +104,12 @@ public class DashboardController {
         return macro.advancedIndicators();
     }
 
+    /** 💱 원/달러 환율 (달러 금액을 원화로 병기할 때 씁니다). */
+    @GetMapping("/macro/usdkrw")
+    public Map<String, Object> usdKrw() {
+        return macro.usdKrw();
+    }
+
     @GetMapping("/macro/scraped")
     public Map<String, Object> macroScraped() {
         return macro.scrapedMarkets();

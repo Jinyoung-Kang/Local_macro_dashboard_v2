@@ -15,7 +15,14 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatCurrency, formatNumber } from "@/lib/format";
+import {
+  deltaColor,
+  EMPTY,
+  formatCurrency,
+  formatKrw,
+  formatNumber,
+} from "@/lib/format";
+import type { UsdKrwResponse } from "@/lib/types";
 import type { PortfolioResponse } from "@/lib/types";
 
 const SERIES_COLORS = [
@@ -40,6 +47,9 @@ export default function InstitutionsPage() {
   const { data, loading, error, reload } = useApi<PortfolioResponse>(
     `/api/sec13f/portfolio?cik=${cik}&quarters=${quarters}&topN=${topN}`,
   );
+  // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다. 여기서 따로 받아 오면
+  // 같은 포트폴리오가 메뉴마다 다른 원화 금액으로 보입니다.
+  const usdKrw = useApi<UsdKrwResponse>("/api/macro/usdkrw", 120_000);
 
   const selected = institutions.data?.institutions.find((entry) => entry.cik === cik);
   const history = data?.weightHistory;
@@ -126,6 +136,20 @@ export default function InstitutionsPage() {
             <Metric
               label="포트폴리오 총액"
               value={formatCurrency(data.latest?.totalValue ?? null)}
+              // 달러 금액은 크기가 잘 안 잡힙니다. 매크로 화면이 이미 수집한
+              // 같은 원/달러 값으로 환산해 함께 적습니다(환율을 모르면 생략).
+              caption={
+                usdKrw.data?.available && data.latest?.totalValue
+                  ? `약 ${formatKrw(data.latest.totalValue * (usdKrw.data.rate ?? 0))}`
+                  : undefined
+              }
+              note={
+                usdKrw.data?.available
+                  ? `원/달러 ${formatNumber(usdKrw.data.rate, 2)} 기준${
+                      usdKrw.data.lastTs ? ` · ${usdKrw.data.lastTs}` : ""
+                    }`
+                  : "원/달러 값이 없어 원화 환산은 생략했습니다."
+              }
             />
             <Metric
               label="수집된 분기"

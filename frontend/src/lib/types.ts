@@ -575,3 +575,15 @@ export interface NewBuysResponse {
     reportDate: string;
   }[];
 }
+
+/** 💱 원/달러 (달러 금액을 원화로 병기할 때). */
+export interface UsdKrwResponse {
+  available: boolean;
+  /** 값이 없으면 available=false이고 rate는 없습니다(기본 환율을 지어내지 않습니다). */
+  rate?: number;
+  name?: string;
+  lastTs?: string | null;
+  source?: string | null;
+  collectedAtKst?: string;
+  message?: string;
+}

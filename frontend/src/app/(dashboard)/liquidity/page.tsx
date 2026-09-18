@@ -12,7 +12,12 @@ import {
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatNumber, formatSigned, formatTrillionDelta } from "@/lib/format";
+import {
+  EMPTY,
+  formatBillionUsd,
+  formatTrillionDelta,
+  formatTrillionUsd,
+} from "@/lib/format";
 import type { LiquidityResponse } from "@/lib/types";
 
 const PERIODS = [
@@ -56,15 +61,23 @@ export default function LiquidityPage() {
   }));
   //
   // 단위는 위 KPI 타일과 **같게** 맞춥니다.
-  //   총자산 = 조 달러(T) / TGA·RRP = 십억 달러(B)
+  //   총자산 = 조 달러 / TGA·RRP = 억 달러
   // 예전에는 차트만 셋 다 조 달러로 그렸습니다. 그러면 (a) 같은 화면에서
   // 타일은 "5.2 십억 달러", 차트는 "0.01T"로 서로 다른 단위를 쓰고,
   // (b) ON RRP 실제 수준(약 0.005조)에서는 눈금이 전부 "0.00T"가 됩니다.
   // 패널을 나눈 목적(각자 제 범위를 갖게 하는 것)이 그대로 사라집니다.
+  // 저장본 단위는 조 달러(walclT)와 십억 달러(wtregenB·rrpB)로 서로 다릅니다.
+  // 화면 표기는 조·억으로 통일하므로, 십억 단위 계열은 10을 곱해 억으로 옮깁니다.
   const componentSeries = {
     walcl: rows.map((row) => ({ date: row.date, value: row.walclT ?? null })),
-    tga: rows.map((row) => ({ date: row.date, value: row.wtregenB })),
-    rrp: rows.map((row) => ({ date: row.date, value: row.rrpB })),
+    tga: rows.map((row) => ({
+      date: row.date,
+      value: row.wtregenB === null || row.wtregenB === undefined ? null : row.wtregenB * 10,
+    })),
+    rrp: rows.map((row) => ({
+      date: row.date,
+      value: row.rrpB === null || row.rrpB === undefined ? null : row.rrpB * 10,
+    })),
   };
 
   return (
@@ -102,39 +115,23 @@ export default function LiquidityPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric
             label="순유동성 (Net Liquidity)"
-            value={
-              latest.netLiquidityT === null
-                ? EMPTY
-                : `${formatNumber(latest.netLiquidityT, 3)} 조 달러`
-            }
+            value={formatTrillionUsd(latest.netLiquidityT)}
             delta={latest.deltaT}
             deltaText={formatTrillionDelta(latest.deltaT)}
             caption={latest.date ? `기준일 ${latest.date}` : undefined}
           />
           <Metric
             label="연준 총자산 (WALCL)"
-            value={
-              latest.walclT === null || latest.walclT === undefined
-                ? EMPTY
-                : `${formatNumber(latest.walclT, 3)} 조 달러`
-            }
+            value={formatTrillionUsd(latest.walclT)}
           />
           <Metric
             label="재무부 일반계정 (TGA)"
-            value={
-              latest.tgaB === null || latest.tgaB === undefined
-                ? EMPTY
-                : `${formatNumber(latest.tgaB, 1)} 십억 달러`
-            }
+            value={formatBillionUsd(latest.tgaB)}
             caption="TGA 증가 = 시장에서 자금 흡수"
           />
           <Metric
             label="역레포 (ON RRP)"
-            value={
-              latest.rrpB === null || latest.rrpB === undefined
-                ? EMPTY
-                : `${formatNumber(latest.rrpB, 1)} 십억 달러`
-            }
+            value={formatBillionUsd(latest.rrpB)}
             caption="RRP 감소 = 시장으로 유동성 환류"
           />
         </div>
@@ -164,7 +161,7 @@ export default function LiquidityPage() {
       >
         <LineSeries
           data={netLiquidity}
-          unit="T"
+          unit="조"
           color={SERIES_COLORS.green}
           height={320}
         />
@@ -223,7 +220,7 @@ const COMPONENTS = [
     key: "walcl" as const,
     name: "연준 총자산 (WALCL)",
     unit: "조 달러",
-    suffix: "T",
+    suffix: "조",
     precision: 2,
     color: SERIES_COLORS.blue,
     note: "자산 매입은 유동성을 늘리고, 축소(QT)는 줄입니다.",
@@ -231,8 +228,8 @@ const COMPONENTS = [
   {
     key: "tga" as const,
     name: "재무부 일반계정 (TGA)",
-    unit: "십억 달러",
-    suffix: "B",
+    unit: "억 달러",
+    suffix: "억",
     precision: 0,
     color: SERIES_COLORS.orange,
     note: "TGA 증가 = 시장에서 자금 흡수.",
@@ -240,8 +237,8 @@ const COMPONENTS = [
   {
     key: "rrp" as const,
     name: "역레포 (ON RRP)",
-    unit: "십억 달러",
-    suffix: "B",
+    unit: "억 달러",
+    suffix: "억",
     precision: 0,
     color: SERIES_COLORS.green,
     note: "RRP 감소 = 시장으로 유동성 환류.",
