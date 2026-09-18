@@ -1,5 +1,6 @@
 package com.macrodash.web;
 
+import com.macrodash.service.AnalyticsService;
 import com.macrodash.service.CotService;
 import com.macrodash.service.DataStatusService;
 import com.macrodash.service.KrxService;
@@ -35,6 +36,8 @@ import java.util.Map;
  *  📡 외국인/기관 수급 레이더    GET /api/radar/*
  *  🗄️ 데이터 저장소 상태         GET /api/status, /api/verification
  *  📋 전체 원본 데이터            GET /api/snapshot/text
+ *  🔗 지표 상관관계               GET /api/analytics/correlation
+ *  🧭 시장 국면                   GET /api/analytics/regime
  *  🤖 AI 리포트 · 연결 테스트    → AiController
  *  🔌 토스증권 API 테스트        → AiController(진단 묶음)
  * </pre>
@@ -53,12 +56,14 @@ public class DashboardController {
     private final DataStatusService status;
     private final VerificationService verification;
     private final SnapshotTextService snapshotText;
+    private final AnalyticsService analytics;
 
     public DashboardController(MacroService macro, LiquidityService liquidity,
                                SectorService sector, Sec13FService sec13f, CotService cot,
                                KrxService krx, RadarService radar, DataStatusService status,
                                VerificationService verification,
-                               SnapshotTextService snapshotText) {
+                               SnapshotTextService snapshotText,
+                               AnalyticsService analytics) {
         this.macro = macro;
         this.liquidity = liquidity;
         this.sector = sector;
@@ -69,6 +74,7 @@ public class DashboardController {
         this.status = status;
         this.verification = verification;
         this.snapshotText = snapshotText;
+        this.analytics = analytics;
     }
 
     @GetMapping("/health")
@@ -166,6 +172,20 @@ public class DashboardController {
         return sec13f.consensus(selected, reportDate, minHolders, topN);
     }
 
+    /** 🆕 이번 분기에 여러 기관이 함께 새로 담은 종목. */
+    @GetMapping("/sec13f/new-buys")
+    public Map<String, Object> newBuys(
+            @RequestParam(required = false) String ciks,
+            @RequestParam(required = false) String reportDate,
+            @RequestParam(defaultValue = "3") int minHolders) {
+
+        List<String> selected = (ciks == null || ciks.isBlank())
+                ? Sec13FService.INSTITUTIONS.stream().map(entry -> entry.get("cik")).toList()
+                : Arrays.stream(ciks.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList();
+
+        return sec13f.newBuys(selected, reportDate, minHolders);
+    }
+
     // --------------------------------------------------------- 🏛️ COT
     @GetMapping("/cot/assets")
     public Map<String, Object> cotAssets() {
@@ -180,6 +200,15 @@ public class DashboardController {
     @GetMapping("/cot/asset")
     public Map<String, Object> cotAsset(@RequestParam String name) {
         return cot.asset(name);
+    }
+
+    /** 극단 포지션 이후 4·13주 수익률 분포 (가격은 ETF 대용). */
+    @GetMapping("/cot/extremes")
+    public Map<String, Object> cotExtremes(
+            @RequestParam String name,
+            @RequestParam(defaultValue = "95") double percentile,
+            @RequestParam(defaultValue = "52") int lookbackWeeks) {
+        return cot.extremes(name, percentile, lookbackWeeks);
     }
 
     // --------------------------------------------------------- 🇰🇷 KRX
@@ -273,6 +302,34 @@ public class DashboardController {
     @PostMapping("/verification")
     public Map<String, Object> verification() {
         return verification.run();
+    }
+
+    // ------------------------------------------- 🔗 상관관계 · 🧭 국면
+    /** 상관 분석에 쓸 수 있는 계열 목록. */
+    @GetMapping("/analytics/series")
+    public Map<String, Object> analyticsSeries() {
+        return Map.of("series", analytics.catalog());
+    }
+
+    /**
+     * 두 계열의 상관관계.
+     *
+     * @param mode change(기본, 변화끼리) 또는 level(수준끼리 — 허위 상관 주의)
+     */
+    @GetMapping("/analytics/correlation")
+    public Map<String, Object> correlation(
+            @RequestParam String x,
+            @RequestParam String y,
+            @RequestParam(defaultValue = "60") int window,
+            @RequestParam(defaultValue = "3") int years,
+            @RequestParam(defaultValue = "change") String mode) {
+        return analytics.correlation(x, y, window, years, mode);
+    }
+
+    /** 성장·신용 축 × 유동성 축으로 판정한 시장 국면. */
+    @GetMapping("/analytics/regime")
+    public Map<String, Object> regime(@RequestParam(defaultValue = "5") int years) {
+        return analytics.regime(years);
     }
 
     // -------------------------------------------- 📋 전체 원본 데이터

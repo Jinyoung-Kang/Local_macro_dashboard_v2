@@ -14,9 +14,12 @@ import {
   LineChart,
   ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts";
 import { EMPTY, formatNumber } from "@/lib/format";
 
@@ -507,5 +510,154 @@ export function SignedBars({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  );
+}
+
+/**
+ * 산점도 — 두 지표가 실제로 같이 움직이는지 눈으로 봅니다.
+ *
+ * <p>상관계수 하나만 보면 놓치는 것이 있습니다. 0.7이라는 숫자는 "대체로 같이
+ * 움직인다"일 수도 있고 "평소엔 무관한데 몇 번의 급변이 끌어올린 값"일 수도
+ * 있습니다. 점을 뿌려 보면 그 차이가 바로 보입니다.
+ */
+export function ScatterPlot({
+  data,
+  xLabel,
+  yLabel,
+  xUnit = "",
+  yUnit = "",
+  height = 320,
+  color = SERIES_COLORS.blue,
+}: {
+  data: { x: number; y: number; date: string }[];
+  xLabel: string;
+  yLabel: string;
+  xUnit?: string;
+  yUnit?: string;
+  height?: number;
+  color?: string;
+}) {
+  if (data.length === 0) {
+    return <div className="py-10 text-center text-sm text-muted">표시할 점이 없습니다.</div>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+        <CartesianGrid stroke={GRID} />
+        <XAxis
+          type="number"
+          dataKey="x"
+          name={xLabel}
+          tick={AXIS}
+          tickLine={false}
+          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
+                   offset: -18, fill: AXIS.stroke, fontSize: 11 }}
+        />
+        <YAxis
+          type="number"
+          dataKey="y"
+          name={yLabel}
+          tick={AXIS}
+          tickLine={false}
+          width={70}
+          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+        />
+        <ZAxis range={[24, 24]} />
+        {/* 0선을 그어 사분면이 보이게 합니다 — 변화끼리 비교할 때 핵심입니다. */}
+        <ReferenceLine x={0} stroke="#8B949E" />
+        <ReferenceLine y={0} stroke="#8B949E" />
+        <Tooltip
+          {...tooltipStyle()}
+          cursor={{ strokeDasharray: "3 3" }}
+          formatter={(value: number, name: string) => [
+            `${formatNumber(value, 3)}${name === xLabel ? xUnit : yUnit}`,
+            name,
+          ]}
+          labelFormatter={() => ""}
+        />
+        <Scatter data={data} fill={color} fillOpacity={0.55} />
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * 비중 히트맵 — 분기마다 어느 종목의 비중이 커지고 줄었는지.
+ *
+ * <p>선 차트로 15개 종목을 겹쳐 그리면 색이 모자라고 선이 엉킵니다. 값의 크기를
+ * 색 농도로 칠하면 "어느 칸이 진해지는가"만 보면 됩니다.
+ *
+ * <p>색만으로 값을 나르지 않도록 <b>칸 안에 숫자도 함께</b> 적습니다.
+ */
+export function WeightHeatmap({
+  dates,
+  series,
+  unit = "%",
+}: {
+  dates: string[];
+  series: Record<string, (number | null)[]>;
+  unit?: string;
+}) {
+  const names = Object.keys(series);
+  if (names.length === 0 || dates.length === 0) {
+    return <div className="py-10 text-center text-sm text-muted">표시할 비중 이력이 없습니다.</div>;
+  }
+
+  const values = names.flatMap((name) => series[name] ?? []);
+  const max = Math.max(...values.filter((v): v is number => typeof v === "number"), 0);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-xs">
+        <thead>
+          <tr className="text-[11px] text-muted">
+            <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">종목</th>
+            {dates.map((date) => (
+              <th key={date} className="px-2 py-2 text-right font-medium tabular-nums">
+                {date.slice(2)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {names.map((name) => (
+            <tr key={name}>
+              <td className="sticky left-0 bg-surface px-3 py-1.5 text-left text-body">{name}</td>
+              {(series[name] ?? []).map((value, index) => {
+                // 0%는 "데이터 없음"이 아니라 "그 분기에 보유하지 않음"입니다.
+                const ratio = typeof value === "number" && max > 0 ? value / max : 0;
+                return (
+                  <td
+                    key={`${name}-${dates[index] ?? index}`}
+                    className="px-2 py-1.5 text-right tabular-nums"
+                    style={{
+                      backgroundColor:
+                        typeof value === "number" && value > 0
+                          ? `rgba(57, 135, 229, ${0.08 + ratio * 0.62})`
+                          : "transparent",
+                    }}
+                    title={`${name} · ${dates[index] ?? ""}`}
+                  >
+                    {typeof value === "number"
+                      ? value > 0
+                        ? `${formatNumber(value, 1)}${unit}`
+                        // 0%는 "미보유"입니다. 값을 모르는 것(EMPTY)과 같은 기호를
+                        // 쓰면 둘을 구분할 수 없습니다.
+                        : "·"
+                      : EMPTY}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-[11px] text-muted">
+        색이 진할수록 비중이 큽니다. &quot;·&quot;는 그 분기에 <b>보유하지 않았다</b>는 뜻이고,
+        &quot;{EMPTY}&quot;는 <b>값을 모른다</b>는 뜻입니다 — 둘은 다릅니다.
+      </p>
+    </div>
   );
 }

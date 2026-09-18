@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MultiLineSeries } from "@/components/charts";
+import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
 import {
   Banner,
   Card,
@@ -135,8 +135,27 @@ export default function InstitutionsPage() {
           </div>
 
           <Card
-            title="📈 상위 종목 분기별 비중 추이"
-            subtitle="보유하지 않은 분기는 0%입니다(데이터 없음이 아니라 미보유)."
+            title="🗺️ 상위 종목 분기별 비중 히트맵"
+            subtitle="색이 진할수록 비중이 큽니다. 어느 칸이 진해지는지만 보면 흐름이 읽힙니다."
+          >
+            {/*
+              선 차트로 15개 종목을 겹쳐 그리면 색이 모자라고 선이 엉켜서, 정작
+              "무엇이 늘고 무엇이 줄었나"가 보이지 않았습니다. 히트맵은 같은 값을
+              칸의 농도로 칠하고 숫자도 함께 적습니다(색만으로 값을 나르지 않습니다).
+            */}
+            {Object.keys(data.weightHistory?.series ?? {}).length === 0 ? (
+              <EmptyState message="비중 이력을 그릴 분기 데이터가 부족합니다." />
+            ) : (
+              <WeightHeatmap
+                dates={data.weightHistory?.dates ?? []}
+                series={data.weightHistory?.series ?? {}}
+              />
+            )}
+          </Card>
+
+          <Card
+            title="📈 상위 종목 분기별 비중 추이 (선)"
+            subtitle="같은 값을 선으로 본 것입니다. 특정 종목의 방향을 좇을 때 씁니다."
           >
             {chartSeries.length === 0 ? (
               <EmptyState message="비중 추이를 그릴 분기 데이터가 부족합니다." />

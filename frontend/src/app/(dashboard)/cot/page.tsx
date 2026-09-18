@@ -14,8 +14,8 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatSigned } from "@/lib/format";
-import type { CotAssetResponse, CotSummary } from "@/lib/types";
+import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned } from "@/lib/format";
+import type { CotAssetResponse, CotExtremesResponse, CotSummary } from "@/lib/types";
 
 /**
  * 🏛️ 글로벌 투기세력 (CFTC COT).
@@ -233,6 +233,181 @@ export default function CotPage() {
           </>
         )}
       </Card>
+
+      <ExtremesPanel asset={asset} />
     </div>
+  );
+}
+
+/**
+ * 📉 극단 포지션 이후 무슨 일이 있었나.
+ *
+ * <p>"3년 백분위 96%"는 지금이 역사적 극단이라고 알려 주지만, <b>그래서 어땠는지</b>는
+ * 말해 주지 않았습니다. 과거 같은 극단 이후의 4주·13주 수익률을, <b>아무 때나
+ * 들어갔을 때</b>와 나란히 놓습니다. 비교 대상이 없으면 좋은 숫자인지 알 수 없습니다.
+ *
+ * <p>⚠️ COT에는 가격이 없어 ETF 종가를 대용으로 씁니다. 화면이 그 사실을 감추면
+ * 선물 수익률로 오해합니다.
+ */
+function ExtremesPanel({ asset }: { asset: string }) {
+  const [percentile, setPercentile] = useState("95");
+  const [lookback, setLookback] = useState("52");
+
+  const { data, loading, error, reload } = useApi<CotExtremesResponse>(
+    `/api/cot/extremes?name=${encodeURIComponent(asset)}` +
+      `&percentile=${percentile}&lookbackWeeks=${lookback}`,
+  );
+
+  return (
+    <Card
+      title="📉 극단 포지션 이후 성적 (백테스트)"
+      subtitle={
+        data?.available
+          ? `백분위는 그 시점까지의 최근 ${data.lookbackWeeks}주로만 계산합니다 (미래를 보지 않습니다).`
+          : "과거에 같은 극단이 나왔을 때 이후 수익률이 어땠는지 셉니다."
+      }
+      actions={
+        <div className="flex flex-wrap items-end gap-3">
+          <Select
+            label="극단 기준"
+            value={percentile}
+            onChange={setPercentile}
+            options={["90", "95", "98"].map((value) => ({
+              value,
+              label: `상·하위 ${100 - Number(value)}%`,
+            }))}
+          />
+          <Select
+            label="백분위 구간"
+            value={lookback}
+            onChange={setLookback}
+            options={["26", "52", "104"].map((value) => ({ value, label: `${value}주` }))}
+          />
+        </div>
+      }
+    >
+      {loading && !data && <Loading />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+
+      {data?.available && (
+        <>
+          <Banner tone="info">
+            가격은 <strong>{data.priceProxyLabel ?? data.priceProxy}</strong> 종가를 대용으로
+            씁니다 ({data.priceFrom} ~ {data.priceTo}). {data.proxyNotice}
+          </Banner>
+
+          <div className="mt-4 flex flex-col gap-4">
+            {(data.sides ?? []).map((side) => (
+              <div key={side.side} className="rounded-lg border border-border bg-canvas p-3">
+                <p className="text-sm font-semibold text-bright">{side.side}</p>
+                <p className="mt-0.5 text-[11px] text-muted">{side.rule}</p>
+                <div className="mt-3">
+                  <Table
+                    rows={[
+                      { horizon: "4주 뒤", signal: side.h4, base: side.baseline4 },
+                      { horizon: "13주 뒤", signal: side.h13, base: side.baseline13 },
+                    ]}
+                    rowKey={(row) => `${side.side}-${row.horizon}`}
+                    columns={[
+                      { key: "horizon", header: "기간", render: (row) => row.horizon },
+                      {
+                        key: "count",
+                        header: "표본",
+                        align: "right",
+                        render: (row) => `${row.signal.count}건`,
+                      },
+                      {
+                        key: "mean",
+                        header: "평균 수익률",
+                        align: "right",
+                        render: (row) => (
+                          <span className={deltaColor(row.signal.mean)}>
+                            {formatPercent(row.signal.mean)}
+                          </span>
+                        ),
+                      },
+                      {
+                        key: "median",
+                        header: "중앙값",
+                        align: "right",
+                        render: (row) => formatPercent(row.signal.median),
+                      },
+                      {
+                        key: "winRate",
+                        header: "상승 비율",
+                        align: "right",
+                        render: (row) =>
+                          row.signal.winRate === null
+                            ? EMPTY
+                            : `${formatNumber(row.signal.winRate, 0)}%`,
+                      },
+                      {
+                        key: "baseline",
+                        header: "비교: 아무 때나",
+                        align: "right",
+                        render: (row) => (
+                          <span className="text-muted">
+                            {formatPercent(row.base.mean)} ·{" "}
+                            {row.base.winRate === null
+                              ? EMPTY
+                              : `${formatNumber(row.base.winRate, 0)}% 상승`}
+                          </span>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5">
+            <h3 className="mb-2 text-sm font-semibold text-bright">최근 극단 신호</h3>
+            <Table
+              rows={data.recentEvents ?? []}
+              rowKey={(row) => `${row.date}-${row.side}`}
+              emptyMessage="이 조건에 걸린 시점이 없습니다."
+              columns={[
+                { key: "date", header: "기준일", render: (row) => row.date },
+                { key: "side", header: "구분", render: (row) => row.side },
+                {
+                  key: "percentile",
+                  header: "백분위",
+                  align: "right",
+                  render: (row) => `${formatNumber(row.percentile, 1)}%`,
+                },
+                {
+                  key: "net",
+                  header: "순포지션",
+                  align: "right",
+                  render: (row) => formatSigned(row.net, 0),
+                },
+                {
+                  key: "return4w",
+                  header: "이후 4주",
+                  align: "right",
+                  render: (row) => (
+                    <span className={deltaColor(row.return4w)}>{formatPercent(row.return4w)}</span>
+                  ),
+                },
+                {
+                  key: "return13w",
+                  header: "이후 13주",
+                  align: "right",
+                  render: (row) => (
+                    <span className={deltaColor(row.return13w)}>{formatPercent(row.return13w)}</span>
+                  ),
+                },
+              ]}
+            />
+            <p className="mt-2 text-[11px] text-muted">
+              아직 4·13주가 지나지 않은 최근 신호는 수익률을 {EMPTY}로 둡니다 — 없는 미래를
+              0으로 채우지 않습니다.
+            </p>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }

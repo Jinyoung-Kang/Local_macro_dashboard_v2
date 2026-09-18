@@ -459,3 +459,119 @@ export interface DiagnosticsResponse {
     { ok: boolean; stage: string; message: string; sample?: unknown }
   >;
 }
+
+// ------------------------------------------------- 🔗 상관관계 · 🧭 국면
+export interface SeriesRef {
+  id: string;
+  label: string;
+  group: string;
+  unit: string;
+  source: string;
+}
+
+export interface CorrelationResponse {
+  available: boolean;
+  message?: string;
+  x?: SeriesRef;
+  y?: SeriesRef;
+  mode: "change" | "level";
+  window: number;
+  /** 전체 구간 상관계수. 계산할 수 없으면 null입니다(0이 아닙니다). */
+  overall: number | null;
+  samples: number;
+  firstDate?: string | null;
+  lastDate?: string | null;
+  rolling?: { date: string; value: number | null }[];
+  scatter?: { date: string; x: number; y: number }[];
+  notes?: string[];
+}
+
+export interface RegimeSignal {
+  id: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  state: string;
+  reading: string;
+  healthy: boolean;
+}
+
+export interface RegimeVerdict {
+  code: "EXPANSION" | "LATE" | "RECOVERY" | "CONTRACTION" | "UNKNOWN";
+  label: string;
+  summary: string;
+  growthAxis: string;
+  liquidityAxis: string;
+  signals: RegimeSignal[];
+  missing: string[];
+}
+
+export interface RegimeResponse {
+  available: boolean;
+  asOf?: string | null;
+  verdict?: RegimeVerdict;
+  timeline?: { date: string; code: string; label: string }[];
+  episodes?: { code: string; label: string; start: string; end: string; weeks: number }[];
+  note?: string;
+}
+
+// ----------------------------------------------- 📉 COT 극단값 백테스트
+export interface CotExtremeSummary {
+  count: number;
+  mean: number | null;
+  median: number | null;
+  winRate: number | null;
+  best: number | null;
+  worst: number | null;
+}
+
+export interface CotExtremeSide {
+  side: string;
+  rule: string;
+  h4: CotExtremeSummary;
+  h13: CotExtremeSummary;
+  baseline4: CotExtremeSummary;
+  baseline13: CotExtremeSummary;
+}
+
+export interface CotExtremesResponse {
+  available: boolean;
+  message?: string;
+  asset: string;
+  percentile: number;
+  lookbackWeeks?: number;
+  priceProxy?: string | null;
+  priceProxyLabel?: string | null;
+  proxyNotice?: string;
+  priceFrom?: string;
+  priceTo?: string;
+  sides?: CotExtremeSide[];
+  recentEvents?: {
+    date: string;
+    side: string;
+    net: number;
+    percentile: number;
+    return4w: number | null;
+    return13w: number | null;
+  }[];
+}
+
+// ------------------------------------------------ 🆕 13F 공통 신규 매수
+export interface NewBuysResponse {
+  available: boolean;
+  participants: string[];
+  participantCount: number;
+  availableDates: string[];
+  reportDate?: string | null;
+  minHolders: number;
+  note?: string;
+  rows: {
+    name: string;
+    cusip?: string;
+    buyers: string[];
+    buyerCount: number;
+    totalValue: number;
+    avgWeight: number;
+    reportDate: string;
+  }[];
+}

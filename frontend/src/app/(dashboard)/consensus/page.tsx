@@ -5,6 +5,7 @@ import { HorizontalBars } from "@/components/charts";
 import {
   Banner,
   Card,
+  EmptyState,
   ErrorState,
   Loading,
   Metric,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { EMPTY, formatCurrency, formatNumber } from "@/lib/format";
-import type { ConsensusResponse } from "@/lib/types";
+import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
 
 /**
  * 🎯 기관 13F Money 교집합.
@@ -197,6 +198,95 @@ export default function ConsensusPage() {
           </p>
         </>
       )}
+
+      <NewBuysCard reportDate={reportDate} />
     </div>
+  );
+}
+
+/**
+ * 🆕 이번 분기에 여러 기관이 <b>함께 새로 담은</b> 종목.
+ *
+ * <p>교집합은 "지금 누가 무엇을 들고 있는가"를 보여 줍니다. 그런데 더 신호에
+ * 가까운 것은 <b>이번 분기에 새로 들어온</b> 종목입니다 — 한 곳이 새로 사면
+ * 취향이지만, 여러 곳이 같은 분기에 새로 사면 테마입니다.
+ *
+ * <p>직전 분기와 비교할 수 없는 항목(주식 수 누락 등)은 세지 않습니다. 모르는
+ * 것을 신규 매수로 올리면 없던 테마가 생깁니다.
+ */
+function NewBuysCard({ reportDate }: { reportDate: string }) {
+  const [minHolders, setMinHolders] = useState("3");
+
+  const { data, loading, error, reload } = useApi<NewBuysResponse>(
+    `/api/sec13f/new-buys?minHolders=${minHolders}` +
+      (reportDate ? `&reportDate=${encodeURIComponent(reportDate)}` : ""),
+  );
+
+  return (
+    <Card
+      title="🆕 이번 분기 공통 신규 매수"
+      subtitle="여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다."
+      actions={
+        <Select
+          label="최소 기관 수"
+          value={minHolders}
+          onChange={setMinHolders}
+          options={["2", "3", "4", "5"].map((value) => ({ value, label: `${value}곳 이상` }))}
+        />
+      }
+    >
+      {loading && !data && <Loading />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+
+      {data && !data.available && (
+        <EmptyState
+          message={`${minHolders}곳 이상이 함께 새로 담은 종목이 없습니다. 기준을 낮춰 보세요.`}
+        />
+      )}
+
+      {data?.available && (
+        <>
+          <Table
+            rows={data.rows}
+            rowKey={(row) => row.name}
+            columns={[
+              { key: "name", header: "종목", render: (row) => row.name },
+              {
+                key: "buyerCount",
+                header: "새로 담은 기관",
+                align: "right",
+                render: (row) => <span className="font-semibold text-up">{row.buyerCount}곳</span>,
+              },
+              {
+                key: "avgWeight",
+                header: "평균 비중",
+                align: "right",
+                render: (row) => `${formatNumber(row.avgWeight, 2)}%`,
+              },
+              {
+                key: "totalValue",
+                header: "합산 평가액",
+                align: "right",
+                render: (row) => formatCurrency(row.totalValue),
+              },
+              {
+                key: "buyers",
+                header: "기관 목록",
+                render: (row) => (
+                  <span className="flex flex-wrap gap-1">
+                    {row.buyers.map((buyer) => (
+                      <SourceBadge key={buyer}>{buyer.split(" ")[0] ?? buyer}</SourceBadge>
+                    ))}
+                  </span>
+                ),
+              },
+            ]}
+          />
+          <p className="mt-2 text-[11px] text-muted">
+            기준 분기 {data.rows[0]?.reportDate ?? EMPTY} · {data.note}
+          </p>
+        </>
+      )}
+    </Card>
   );
 }

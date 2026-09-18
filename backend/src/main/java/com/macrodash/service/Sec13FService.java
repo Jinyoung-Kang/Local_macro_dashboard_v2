@@ -373,6 +373,115 @@ public class Sec13FService {
     }
 
     /**
+     * 🆕 이번 분기에 <b>여러 기관이 함께 새로 담은</b> 종목.
+     *
+     * <p>교집합 화면은 "지금 누가 무엇을 들고 있는가"를 보여 줍니다. 그런데 더
+     * 신호에 가까운 것은 <b>이번 분기에 새로 들어온</b> 종목입니다 — 한 곳이
+     * 새로 사면 취향이지만, 여러 곳이 같은 분기에 새로 사면 테마입니다.
+     *
+     * <p>"신규 매수"는 {@link #compareQuarters}가 붙인 액션을 그대로 씁니다.
+     * 직전 분기와 비교할 수 없는 경우(주식 수 누락 등)는 <b>세지 않습니다</b> —
+     * 모르는 것을 신규 매수로 올리면 없던 테마가 생깁니다.
+     *
+     * @param minHolders 최소 몇 곳이 새로 담았을 때 목록에 올릴지
+     */
+    public Map<String, Object> newBuys(List<String> ciks, String reportDate, int minHolders) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> aggregate = new LinkedHashMap<>();
+        List<String> participants = new ArrayList<>();
+        Set<String> availableDates = new LinkedHashSet<>();
+
+        for (String cik : ciks) {
+            Optional<Snapshot> snapshot = readHistory(cik, Datasets.MAX_TRACKED_QUARTERS);
+            if (snapshot.isEmpty() || snapshot.get().payload() == null) {
+                continue;
+            }
+            List<JsonNode> quarters = Json.array(snapshot.get().payload(), "quarters");
+            if (quarters.size() < 2) {
+                // 비교할 직전 분기가 없으면 신규 매수를 판정할 수 없습니다.
+                continue;
+            }
+            quarters.forEach(q -> availableDates.add(Json.asText(q, "reportDate")));
+
+            int index = 0;
+            if (reportDate != null && !reportDate.isBlank()) {
+                index = -1;
+                for (int i = 0; i < quarters.size() - 1; i++) {
+                    if (reportDate.equals(Json.asText(quarters.get(i), "reportDate"))) {
+                        index = i;
+                        break;
+                    }
+                }
+                if (index < 0) {
+                    continue;
+                }
+            }
+
+            JsonNode current = quarters.get(index);
+            JsonNode previous = quarters.get(index + 1);
+            String institution = institutionByCik(cik).getOrDefault("name", cik);
+            participants.add(institution);
+
+            for (Map<String, Object> holding : compareQuarters(current, previous, 200)) {
+                String action = String.valueOf(holding.get("action"));
+                if (!action.contains("신규 매수")) {
+                    continue;
+                }
+                String name = String.valueOf(holding.get("name"));
+                Map<String, Object> entry = aggregate.computeIfAbsent(name, key -> {
+                    Map<String, Object> fresh = new LinkedHashMap<>();
+                    fresh.put("name", key);
+                    fresh.put("cusip", holding.get("cusip"));
+                    fresh.put("buyers", new ArrayList<String>());
+                    fresh.put("totalValue", 0.0);
+                    fresh.put("weightSum", 0.0);
+                    fresh.put("reportDate", Json.asText(current, "reportDate"));
+                    return fresh;
+                });
+
+                @SuppressWarnings("unchecked")
+                List<String> buyers = (List<String>) entry.get("buyers");
+                buyers.add(institution);
+
+                double value = holding.get("value") instanceof Double d ? d : 0.0;
+                double weight = holding.get("weight") instanceof Double w ? w : 0.0;
+                entry.put("totalValue", (double) entry.get("totalValue") + value);
+                entry.put("weightSum", (double) entry.get("weightSum") + weight);
+            }
+        }
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map<String, Object> entry : aggregate.values()) {
+            @SuppressWarnings("unchecked")
+            List<String> buyers = (List<String>) entry.get("buyers");
+            if (buyers.size() < Math.max(1, minHolders)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>(entry);
+            row.put("buyerCount", buyers.size());
+            row.put("avgWeight", (double) entry.get("weightSum") / buyers.size());
+            row.remove("weightSum");
+            rows.add(row);
+        }
+
+        rows.sort(Comparator
+                .comparingInt((Map<String, Object> row) -> (int) row.get("buyerCount"))
+                .thenComparingDouble(row -> (double) row.get("totalValue"))
+                .reversed());
+
+        out.put("participants", participants);
+        out.put("participantCount", participants.size());
+        out.put("availableDates", availableDates.stream().sorted(Comparator.reverseOrder()).toList());
+        out.put("reportDate", reportDate);
+        out.put("minHolders", minHolders);
+        out.put("rows", rows);
+        out.put("available", !rows.isEmpty());
+        out.put("note", "직전 분기와 비교할 수 없는 항목(주식 수 누락 등)은 세지 않습니다. "
+                + "13F는 분기 공시이며 45일 지연입니다.");
+        return out;
+    }
+
+    /**
      * 저장본 읽기.
      *
      * <p>q1은 q8의 앞부분이므로, 짧은 요청도 긴 저장본에서 잘라 씁니다

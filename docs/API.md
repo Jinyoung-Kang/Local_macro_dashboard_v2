@@ -40,7 +40,9 @@
 | `GET /api/sec13f/institutions` | 기관 목록 |
 | `GET /api/sec13f/portfolio?cik=&quarters=8&topN=30` | 기관 포트폴리오 + 분기 대비 액션 |
 | `GET /api/sec13f/consensus?ciks=&reportDate=&minHolders=2` | 교집합 |
+| `GET /api/sec13f/new-buys?ciks=&reportDate=&minHolders=3` | 이번 분기 공통 신규 매수 |
 | `GET /api/cot/assets`, `/api/cot/overview`, `/api/cot/asset?name=` | CFTC COT |
+| `GET /api/cot/extremes?name=&percentile=95&lookbackWeeks=52` | 극단 포지션 이후 4·13주 수익률 (가격은 ETF 대용) |
 | `GET /api/krx/futures?days=60` | KOSPI200 선물 시계열 + 최신 판정 |
 | `GET /api/krx/investor-trend` | Daum 투자주체별 수급 (계약수) |
 | `GET /api/krx/intraday?minutes=30` | 장중 수급 가속도 |
@@ -59,6 +61,14 @@
 | `POST /api/status/refresh?runFast=true` | 수동 새로고침 |
 | `POST /api/status/run/{taskName}` | 특정 태스크 실행 |
 | `POST /api/verification` | 교차 검증 (판정 포함) |
+
+### 🧭 국면 · 🔗 상관관계
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/analytics/series` | 상관 분석에 쓸 수 있는 계열 목록 (20종) |
+| `GET /api/analytics/correlation?x=&y=&window=60&years=3&mode=change` | 롤링 상관계수 + 산점도. `mode=level`에는 허위 상관 경고가 붙습니다 |
+| `GET /api/analytics/regime?years=5` | 4국면 판정 + 근거 신호 + 주간 이력·구간 |
 
 ### 📋 전체 원본 데이터
 

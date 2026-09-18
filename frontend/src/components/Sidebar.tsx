@@ -28,6 +28,8 @@ export const MENUS = [
   { href: "/cot", label: "🏛️ 글로벌 투기세력 (COT)" },
   { href: "/krx", label: "🇰🇷 국내 파생 & 투기세력 (KRX)" },
   { href: "/radar", label: "📡 외국인/기관 수급 레이더" },
+  { href: "/regime", label: "🧭 시장 국면 판정" },
+  { href: "/correlation", label: "🔗 지표 상관관계" },
   { href: "/status", label: "🗄️ 데이터 저장소 상태" },
   { href: "/ai/report", label: "🤖 AI 종합 데이터 분석" },
   { href: "/ai/test", label: "🤖 AI API 연결 테스트" },
