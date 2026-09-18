@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { auth } from "@/lib/api";
 import { Button } from "@/components/ui";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
@@ -37,6 +38,21 @@ export function Sidebar({ readMode }: { readMode?: string }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  /*
+    모바일에서는 메뉴를 접어 둡니다.
+    좁은 화면에서 사이드바는 본문 위에 세로로 쌓이는데, 메뉴 12개 + 하단
+    영역이 730px이라 폰에서는 화면 두 번을 넘겨야 첫 숫자가 보였습니다.
+    데스크톱(lg 이상)은 왼쪽 고정 열이라 접을 이유가 없어 그대로 둡니다.
+  */
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // 메뉴를 고르면 닫습니다. 열린 채로 두면 이동 후에도 본문이 아래로 밀립니다.
+  useEffect(() => setMenuOpen(false), [pathname]);
+
+  const current = MENUS.find(
+    (menu) => pathname === menu.href || pathname.startsWith(`${menu.href}/`),
+  );
+
   // 수집 요청 → 끝날 때까지 대기 → 화면 전체 갱신까지 한 번에 처리합니다.
   // (예전에는 router.refresh()만 불렀는데, 화면이 클라이언트에서 데이터를
   //  읽으므로 아무 일도 일어나지 않아 사용자가 직접 새로고침해야 했습니다.)
@@ -49,14 +65,26 @@ export function Sidebar({ readMode }: { readMode?: string }) {
 
   return (
     <aside className="flex w-full shrink-0 flex-col gap-4 border-b border-border bg-surface p-4 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:overflow-y-auto">
-      <div>
-        <h1 className="text-sm font-bold text-bright">대시보드 메뉴</h1>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted">
-          글로벌 매크로 및 시장 수급 정밀 분석 시스템
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-sm font-bold text-bright">대시보드 메뉴</h1>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            {/* 좁은 화면에서는 "지금 보고 있는 메뉴"가 소개 문구보다 유용합니다. */}
+            <span className="lg:hidden">{current?.label ?? "메뉴를 고르세요"}</span>
+            <span className="hidden lg:inline">
+              글로벌 매크로 및 시장 수급 정밀 분석 시스템
+            </span>
+          </p>
+        </div>
+        <Button
+          className="lg:hidden"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? "메뉴 닫기 ✕" : "메뉴 열기 ☰"}
+        </Button>
       </div>
 
-      <nav className="flex flex-col gap-1">
+      <nav className={`flex-col gap-1 ${menuOpen ? "flex" : "hidden"} lg:flex`}>
         {MENUS.map((menu) => {
           const active = pathname === menu.href || pathname.startsWith(`${menu.href}/`);
           return (
@@ -75,7 +103,13 @@ export function Sidebar({ readMode }: { readMode?: string }) {
         })}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
+      {/* 하단 영역도 모바일에서는 메뉴와 함께 접습니다 — 본문이 먼저 보여야 합니다.
+          새로고침 버튼만은 접힌 상태에서도 쓸 수 있게 아래에 따로 둡니다. */}
+      <div
+        className={`mt-auto flex-col gap-2 border-t border-border pt-4 ${
+          menuOpen ? "flex" : "hidden"
+        } lg:flex`}
+      >
         <div className="text-[11px] text-muted">
           읽기 모드:{" "}
           <span className="font-semibold text-body">{readMode ?? "auto"}</span>
@@ -111,6 +145,18 @@ export function Sidebar({ readMode }: { readMode?: string }) {
           )}
         </p>
       </div>
+
+      {/* 메뉴를 접은 모바일 화면에서도 새로고침은 한 번에 닿아야 합니다. */}
+      {!menuOpen && (
+        <Button
+          className="lg:hidden"
+          variant="primary"
+          onClick={() => void requestRefresh()}
+          disabled={collecting}
+        >
+          {collecting ? "수집 중… 끝나면 자동 갱신" : "데이터 수동 새로고침 🚀"}
+        </Button>
+      )}
     </aside>
   );
 }

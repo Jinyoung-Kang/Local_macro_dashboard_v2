@@ -1,9 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { MarketClock } from "@/components/MarketClock";
-import { Sidebar } from "@/components/Sidebar";
+import { MENUS, Sidebar } from "@/components/Sidebar";
 import { useApi } from "@/hooks/useApi";
 import { RefreshProvider } from "@/hooks/useRefreshSignal";
 
@@ -25,10 +25,34 @@ export default function DashboardLayout({
   );
 }
 
+/**
+ * 브라우저 탭 제목을 현재 메뉴 이름으로 바꿉니다.
+ *
+ * <p>모든 화면이 클라이언트 컴포넌트라 Next의 정적 metadata를 페이지마다 둘 수
+ * 없습니다. 그대로 두면 탭 12개가 전부 같은 제목이라, 매크로·레이더·13F를 함께
+ * 띄워 두고 비교할 때 어느 탭이 무엇인지 구분할 수 없습니다.
+ */
+function useDocumentTitle(pathname: string) {
+  useEffect(() => {
+    const menu = MENUS.find(
+      (entry) => pathname === entry.href || pathname.startsWith(`${entry.href}/`),
+    );
+    // 이모지는 탭에서 잘리기 쉬워 떼고, 뒤에 앱 이름을 붙입니다.
+    // 🏛️처럼 이모지 뒤에 이형 선택자(U+FE0F)가 붙는 글자가 있어, 그림 문자만
+    // 지우면 보이지 않는 문자가 제목 앞에 남습니다. 함께 지웁니다.
+    const name = menu?.label
+      .replace(/^[\p{Extended_Pictographic}\u200d\ufe0f\s]+/u, "")
+      .trim();
+    document.title = name ? `${name} · 매크로 대시보드` : "매크로 대시보드";
+  }, [pathname]);
+}
+
 function DashboardShell({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
+  const pathname = usePathname();
+  useDocumentTitle(pathname);
   const { data, loading, unauthorized } = useApi<{ authenticated: boolean }>(
     "/api/auth/session",
   );

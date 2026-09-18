@@ -12,7 +12,7 @@ import {
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
+import { EMPTY, formatNumber, formatSigned, formatTrillionDelta } from "@/lib/format";
 import type { LiquidityResponse } from "@/lib/types";
 
 const PERIODS = [
@@ -108,9 +108,7 @@ export default function LiquidityPage() {
                 : `${formatNumber(latest.netLiquidityT, 3)} 조 달러`
             }
             delta={latest.deltaT}
-            deltaText={
-              latest.deltaT === null ? EMPTY : `${formatSigned(latest.deltaT, 3)} 조 달러`
-            }
+            deltaText={formatTrillionDelta(latest.deltaT)}
             caption={latest.date ? `기준일 ${latest.date}` : undefined}
           />
           <Metric
@@ -146,22 +144,14 @@ export default function LiquidityPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           <Metric
             label="4주 변화"
-            value={
-              data.momentum.change4w === null
-                ? EMPTY
-                : `${formatSigned(data.momentum.change4w, 3)} 조 달러`
-            }
+            value={formatTrillionDelta(data.momentum.change4w)}
             delta={data.momentum.change4w}
             deltaText=""
             caption="유동성은 방향과 속도가 함께 중요합니다."
           />
           <Metric
             label="12주 변화"
-            value={
-              data.momentum.change12w === null
-                ? EMPTY
-                : `${formatSigned(data.momentum.change12w, 3)} 조 달러`
-            }
+            value={formatTrillionDelta(data.momentum.change12w)}
             delta={data.momentum.change12w}
             deltaText=""
           />

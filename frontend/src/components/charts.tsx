@@ -8,6 +8,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -141,6 +142,56 @@ function CategoryTick({
   );
 }
 
+/**
+ * 막대 끝에 값을 적습니다.
+ *
+ * <p>값을 툴팁에만 두면 <b>마우스를 올려야</b> 숫자를 알 수 있습니다. 순위표
+ * 성격의 차트(수급 상위, 섹터 수익률)는 "얼마나"가 곧 내용이라, 막대 길이만
+ * 보여 주고 숫자를 감추면 그 자리에서 표로 다시 눈을 옮겨야 합니다.
+ *
+ * <p>음수 막대는 0선 왼쪽으로 자라므로 라벨도 왼쪽에 붙입니다.
+ */
+function BarValueLabel({
+  x,
+  y,
+  width,
+  height,
+  value,
+  unit,
+  digits,
+}: {
+  // Recharts는 LabelList content에 좌표를 문자열로 넘기는 경우가 있어
+  // 느슨하게 받고 숫자로 맞춥니다.
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+  value?: number | string;
+  unit: string;
+  digits: number;
+}) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+  const left = Number(x) || 0;
+  const barWidth = Number(width) || 0;
+  const positive = amount >= 0;
+
+  return (
+    <text
+      x={positive ? left + barWidth + 6 : left - 6}
+      y={(Number(y) || 0) + (Number(height) || 0) / 2}
+      dy={4}
+      textAnchor={positive ? "start" : "end"}
+      fill={AXIS.stroke}
+      fontSize={AXIS.fontSize}
+    >
+      {`${formatNumber(amount, digits)}${unit}`}
+    </text>
+  );
+}
+
 function tooltipStyle() {
   return {
     contentStyle: {
@@ -243,21 +294,55 @@ export function LineSeries({
   );
 }
 
-/** 여러 시계열 비교. */
+export type MultiSeries = {
+  key: string;
+  name: string;
+  color: string;
+  /**
+   * 어느 축에 그릴지. 단위나 자릿수가 다른 계열은 "right"로 분리하세요.
+   *
+   * <p><b>왜 필요한가</b> — KRX 화면은 선물 종가(약 1,100)와 미결제약정(약
+   * 300,000)을 한 축에 겹쳐 그렸습니다. 스케일이 300배 차이라 종가 선이 0에
+   * 눌려 완전히 납작해지고, 정작 읽어야 할 종가 흐름이 보이지 않았습니다.
+   * 이 프로젝트의 규칙(차트는 축부터 정직해야 합니다)에 맞춰 축을 나눕니다.
+   */
+  axis?: "left" | "right";
+};
+
+/** 여러 시계열 비교. 단위가 다른 계열은 축을 나눠 그립니다. */
 export function MultiLineSeries({
   data,
   series,
   height = 280,
   unit = "",
+  rightUnit = "",
+  precision = 1,
+  rightPrecision = 0,
+  zeroLine = false,
 }: {
   data: Record<string, unknown>[];
-  series: { key: string; name: string; color: string }[];
+  series: MultiSeries[];
   height?: number;
   unit?: string;
+  /** 오른쪽 축 단위 (axis: "right" 계열용). */
+  rightUnit?: string;
+  precision?: number;
+  rightPrecision?: number;
+  /**
+   * 0선을 그립니다 (순포지션처럼 부호가 곧 방향인 값).
+   *
+   * 롱·숏이 뒤집히는 지점이 격자선 하나로만 남으면, 어느 선이 언제 0을
+   * 넘었는지 눈으로 좇기 어렵습니다.
+   */
+  zeroLine?: boolean;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 시계열이 없습니다.</div>;
   }
+
+  const usesRight = series.some((entry) => entry.axis === "right");
+  const unitOf = (name: string) =>
+    series.find((entry) => entry.name === name)?.axis === "right" ? rightUnit : unit;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -265,22 +350,43 @@ export function MultiLineSeries({
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="date" tick={AXIS} minTickGap={40} tickLine={false} />
         <YAxis
+          yAxisId="left"
           tick={AXIS}
           tickLine={false}
           width={64}
-          tickFormatter={(value: number) => `${formatNumber(value, 1)}${unit}`}
+          domain={["auto", "auto"]}
+          tickFormatter={(value: number) => `${formatNumber(value, precision)}${unit}`}
+        />
+        {/*
+          오른쪽 축은 쓰는 계열이 있을 때만 보입니다(빈 축은 눈금만 늘립니다).
+          눈금에는 단위를 붙이지 않습니다 — "320,000 계약"처럼 길어지면 두 줄로
+          접히며 맨 위 눈금이 잘렸습니다. 단위는 범례와 툴팁이 말해 줍니다.
+        */}
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          hide={!usesRight}
+          tick={AXIS}
+          tickLine={false}
+          width={76}
+          domain={["auto", "auto"]}
+          tickFormatter={(value: number) => formatNumber(value, rightPrecision)}
         />
         <Tooltip
           {...tooltipStyle()}
           formatter={(value: number, name: string) => [
-            value === null || value === undefined ? EMPTY : `${formatNumber(value, 2)}${unit}`,
+            value === null || value === undefined
+              ? EMPTY
+              : `${formatNumber(value, 2)}${unitOf(name)}`,
             name,
           ]}
         />
         <Legend wrapperStyle={{ fontSize: 11, color: "#8B949E" }} />
+        {zeroLine && <ReferenceLine yAxisId="left" y={0} stroke="#8B949E" strokeWidth={1} />}
         {series.map((entry) => (
           <Line
             key={entry.key}
+            yAxisId={entry.axis ?? "left"}
             type="monotone"
             dataKey={entry.key}
             name={entry.name}
@@ -300,10 +406,16 @@ export function HorizontalBars({
   data,
   height = 360,
   unit = "",
+  digits = 1,
+  valueName = "값",
 }: {
   data: { name: string; value: number }[];
   height?: number;
   unit?: string;
+  /** 막대 끝 라벨의 소수 자릿수. */
+  digits?: number;
+  /** 툴팁에 표시할 값의 이름. "값"보다 무엇인지 말해 주는 편이 낫습니다. */
+  valueName?: string;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
@@ -318,7 +430,8 @@ export function HorizontalBars({
       <BarChart
         data={data}
         layout="vertical"
-        margin={{ top: 8, right: 16, bottom: 0, left: 8 }}
+        // 오른쪽 여백은 막대 끝 값 라벨이 잘리지 않을 만큼 둡니다.
+        margin={{ top: 8, right: 68, bottom: 0, left: 8 }}
       >
         <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis
@@ -337,14 +450,18 @@ export function HorizontalBars({
         />
         <Tooltip
           {...tooltipStyle()}
-          formatter={(value: number) => [`${formatNumber(value, 2)}${unit}`, "값"]}
+          formatter={(value: number) => [`${formatNumber(value, 2)}${unit}`, valueName]}
         />
         <ReferenceLine x={0} stroke="#8B949E" />
         {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 */}
-        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {data.map((entry) => (
             <Cell key={entry.name} fill={entry.value >= 0 ? "#F85149" : "#4493F8"} />
           ))}
+          <LabelList
+            dataKey="value"
+            content={(props) => <BarValueLabel {...props} unit={unit} digits={digits} />}
+          />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -356,10 +473,12 @@ export function SignedBars({
   data,
   height = 320,
   unit = "",
+  valueName = "순매수",
 }: {
   data: { name: string; value: number }[];
   height?: number;
   unit?: string;
+  valueName?: string;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
@@ -378,7 +497,7 @@ export function SignedBars({
         />
         <Tooltip
           {...tooltipStyle()}
-          formatter={(value: number) => [`${formatNumber(value, 0)}${unit}`, "순매수"]}
+          formatter={(value: number) => [`${formatNumber(value, 0)}${unit}`, valueName]}
         />
         <ReferenceLine y={0} stroke="#8B949E" />
         <Bar dataKey="value" radius={[4, 4, 0, 0]}>

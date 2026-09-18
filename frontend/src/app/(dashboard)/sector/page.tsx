@@ -97,15 +97,26 @@ export default function SectorPage() {
           </div>
         }
       >
-        <HorizontalBars data={chartData} unit="%" height={Math.max(260, chartData.length * 28)} />
+        <HorizontalBars
+          data={chartData}
+          unit={mode === "alpha" ? "%p" : "%"}
+          digits={2}
+          valueName={mode === "alpha" ? `${period} 초과성과` : `${period} 수익률`}
+          height={Math.max(260, chartData.length * 28)}
+        />
       </Card>
 
-      <Card title="섹터 상세" subtitle="표본이 부족한 기간은 —로 표시합니다.">
+      <Card
+        title="섹터 상세"
+        subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다.`}
+      >
         <ReturnsTable rows={sectors} period={period} kindLabel="유형" />
       </Card>
 
       <Card title="자산군 상세" subtitle="주식·채권·원자재·통화 전반의 상대 성과">
-        <ReturnsTable rows={assets} period={period} kindLabel="자산군" />
+        {/* 초과성과(α)는 S&P 500 대비 지표라 자산군에는 의미가 없습니다.
+            전부 "—"인 열을 남겨 두면 "계산이 실패했나?"로 읽힙니다. */}
+        <ReturnsTable rows={assets} period={period} kindLabel="자산군" showAlpha={false} />
       </Card>
     </div>
   );
@@ -115,10 +126,12 @@ function ReturnsTable({
   rows,
   period,
   kindLabel,
+  showAlpha = true,
 }: {
   rows: SectorRow[];
   period: string;
   kindLabel: string;
+  showAlpha?: boolean;
 }) {
   const sorted = [...rows].sort((a, b) => {
     const left = a.returns?.[period];
@@ -160,31 +173,42 @@ function ReturnsTable({
           align: "right",
           render: (row) => formatNumber(row.price, 2),
         },
+        // 순위를 매긴 기간 열을 밝게 둡니다. 어떤 기준으로 1위가 됐는지
+        // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다.
         ...["1W", "1M", "3M", "6M", "YTD", "1Y"].map((window) => ({
           key: window,
-          header: window,
+          header: window === period ? `${window} ▪` : window,
           align: "right" as const,
+          className: window === period ? "bg-surface-hover/50" : undefined,
           render: (row: SectorRow) => (
-            <span className={deltaColor(row.returns?.[window] ?? null)}>
+            <span
+              className={`${deltaColor(row.returns?.[window] ?? null)} ${
+                window === period ? "font-semibold" : ""
+              }`}
+            >
               {formatPercent(row.returns?.[window] ?? null)}
             </span>
           ),
         })),
-        {
-          key: "alpha",
-          header: `α (${period})`,
-          align: "right",
-          render: (row) =>
-            row.alpha ? (
-              <span className={deltaColor(row.alpha[period] ?? null)}>
-                {row.alpha[period] === null || row.alpha[period] === undefined
-                  ? EMPTY
-                  : `${formatNumber(row.alpha[period], 2)}%p`}
-              </span>
-            ) : (
-              EMPTY
-            ),
-        },
+        ...(showAlpha
+          ? [
+              {
+                key: "alpha",
+                header: `α (${period})`,
+                align: "right" as const,
+                render: (row: SectorRow) =>
+                  row.alpha ? (
+                    <span className={deltaColor(row.alpha[period] ?? null)}>
+                      {row.alpha[period] === null || row.alpha[period] === undefined
+                        ? EMPTY
+                        : `${formatNumber(row.alpha[period], 2)}%p`}
+                    </span>
+                  ) : (
+                    EMPTY
+                  ),
+              },
+            ]
+          : []),
       ]}
     />
   );

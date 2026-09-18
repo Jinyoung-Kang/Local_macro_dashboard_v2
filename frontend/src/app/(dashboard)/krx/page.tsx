@@ -1,6 +1,6 @@
 "use client";
 
-import { LineSeries, MultiLineSeries, SignedBars } from "@/components/charts";
+import { LineSeries, MultiLineSeries, SERIES_COLORS, SignedBars } from "@/components/charts";
 import {
   Banner,
   Card,
@@ -138,7 +138,15 @@ export default function KrxPage() {
         </>
       )}
 
-      <Card title="📈 선물 종가 및 미결제약정 추이">
+      {/*
+        두 계열은 자릿수가 다릅니다 — 종가는 1,100 내외, 미결제약정은 30만 내외.
+        한 축에 겹쳐 그리면 종가 선이 0에 눌려 완전히 납작해집니다(실제로 그렇게
+        보였습니다). 축을 나누고, 어느 선이 어느 축인지 부제에 적습니다.
+      */}
+      <Card
+        title="📈 선물 종가 및 미결제약정 추이"
+        subtitle="왼쪽 축: 선물 종가 · 오른쪽 축: 미결제약정(계약) — 자릿수가 달라 축을 나눠 그립니다."
+      >
         <MultiLineSeries
           data={rows.map((row) => ({
             date: row.date,
@@ -146,9 +154,17 @@ export default function KrxPage() {
             미결제약정: row.openInterest,
           }))}
           series={[
-            { key: "종가", name: "선물 종가", color: "#58A6FF" },
-            { key: "미결제약정", name: "미결제약정(계약)", color: "#D29922" },
+            { key: "종가", name: "선물 종가 (좌)", color: SERIES_COLORS.blue, axis: "left" },
+            {
+              key: "미결제약정",
+              name: "미결제약정(계약, 우)",
+              color: SERIES_COLORS.orange,
+              axis: "right",
+            },
           ]}
+          precision={1}
+          rightPrecision={0}
+          rightUnit=" 계약"
           height={300}
         />
       </Card>

@@ -45,9 +45,12 @@ export default function RadarPage() {
 
   const { data, loading, error, reload } = useApi<RadarResponse>(query, 60_000);
 
-  const chartData = (data?.rows ?? [])
-    .slice(0, 15)
-    .map((row) => ({ name: row.name, value: row.netAmountEok ?? 0 }));
+  // 사용자가 "상위 30개"를 골랐는데 차트만 15개를 그리면, 표와 개수가 어긋나
+  // 무엇이 빠졌는지 알 수 없습니다. 고른 만큼 그립니다(차트 높이가 늘어납니다).
+  const chartData = (data?.rows ?? []).map((row) => ({
+    name: row.name,
+    value: row.netAmountEok ?? 0,
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -131,7 +134,7 @@ export default function RadarPage() {
       {data?.available && (
         <>
           <Card
-            title={`${investor} ${tradeType} 상위`}
+            title={`${investor} ${tradeType} 상위 ${data.rows?.length ?? 0}개`}
             subtitle={data.source ?? undefined}
             actions={
               data.sourceKind ? <SourceBadge>출처: {data.sourceKind}</SourceBadge> : undefined
@@ -140,6 +143,8 @@ export default function RadarPage() {
             <HorizontalBars
               data={chartData}
               unit="억"
+              digits={0}
+              valueName={`${investor} ${tradeType} 금액`}
               height={Math.max(260, chartData.length * 26)}
             />
           </Card>

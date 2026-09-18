@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MultiLineSeries } from "@/components/charts";
+import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
 import {
   Banner,
   Card,
@@ -167,7 +167,15 @@ export default function CotPage() {
         {detail.loading && !detail.data && <Loading />}
         {detail.error && <ErrorState message={detail.error} onRetry={detail.reload} />}
         {detail.data && !detail.data.available && (
-          <Banner tone="warn">{detail.data.message ?? "해당 자산의 데이터가 없습니다."}</Banner>
+          // 위 요약표에는 값이 있는데 여기만 비는 경우가 있습니다(요약은 묶음
+          // 저장본, 추이는 계약별 저장본에서 옵니다). 그때 "저장본이 없습니다"만
+          // 띄우면 화면이 고장난 것처럼 보이므로, 무엇이 없는지 구분해 말합니다.
+          <Banner tone="warn">
+            {overview.data?.available
+              ? `이 자산의 주간 추이 저장본만 아직 없습니다 (위 요약은 다른 저장본에서 온 값입니다).
+                 🗄️ 데이터 저장소 상태에서 cot_history를 다시 실행해 보세요.`
+              : (detail.data.message ?? "해당 자산의 데이터가 없습니다.")}
+          </Banner>
         )}
         {detail.data?.available && (
           <>
@@ -207,10 +215,15 @@ export default function CotPage() {
                 소액: row.nrNet,
               }))}
               series={[
-                { key: "스마트머니", name: "비상업 (투기)", color: "#58A6FF" },
-                { key: "상업헤저", name: "상업 (헤저)", color: "#D29922" },
+                { key: "스마트머니", name: "비상업 (투기)", color: SERIES_COLORS.blue },
+                { key: "상업헤저", name: "상업 (헤저)", color: SERIES_COLORS.orange },
                 { key: "소액", name: "비보고 (소액)", color: "#8B949E" },
               ]}
+              // 순포지션은 부호가 곧 방향(롱/숏)입니다. 0선을 그려 언제 뒤집혔는지
+              // 눈으로 좇을 수 있게 합니다.
+              zeroLine
+              unit=" 계약"
+              precision={0}
               height={320}
             />
             <p className="mt-3 text-xs text-muted">

@@ -94,6 +94,23 @@ export function formatCurrency(value: number | null | undefined): string {
   return `$${value.toLocaleString("ko-KR", { maximumFractionDigits: 0 })}`;
 }
 
+/**
+ * 조 달러 단위 변화량.
+ *
+ * <p>순유동성의 하루 변화는 0.003조 달러처럼 작습니다. 소수 세 자리로 조
+ * 단위를 쓰면 "+0.000 조 달러"가 되어 <b>변화가 없는 것처럼</b> 보입니다.
+ * 조 단위로 유의미하지 않은 크기는 십억 달러로 바꿔 적습니다(같은 값입니다).
+ */
+export function formatTrillionDelta(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return EMPTY;
+  }
+  if (Math.abs(value) >= 0.01) {
+    return `${formatSigned(value, 3)} 조 달러`;
+  }
+  return `${formatSigned(value * 1000, 1)} 십억 달러`;
+}
+
 /** 수집 후 경과 시간을 사람이 읽는 문장으로. */
 export function formatAge(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) {

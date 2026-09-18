@@ -193,7 +193,9 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${palette} ${className}`}
+      // focus-visible 링 — 키보드로 조작할 때 지금 어디에 있는지 보여 줍니다.
+      // 브라우저 기본 외곽선은 이 어두운 배경에서 거의 보이지 않았습니다.
+      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-canvas ${palette} ${className}`}
     >
       {children}
     </button>
@@ -211,13 +213,20 @@ export function Select({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  /*
+    ⚠️ 폭을 반드시 묶어 둡니다.
+    select는 가장 긴 option에 맞춰 스스로 넓어집니다. AI 엔진 목록처럼 라벨이
+    긴 선택지가 들어오자 폭이 533px이 되어, 390px 화면에서 페이지 전체가
+    가로로 스크롤됐습니다. 좁은 화면에서는 한 줄을 다 쓰고, 넓은 화면에서는
+    내용만큼만 차지하되 화면을 넘지 않게 합니다.
+  */
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted">
+    <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-muted sm:w-auto">
       {label}
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-md border border-border bg-surface-hover px-2 py-1.5 text-sm text-body outline-none focus:border-accent"
+        className="w-full max-w-full rounded-md border border-border bg-surface-hover px-2 py-1.5 text-sm text-body outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent sm:max-w-[22rem]"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -252,43 +261,50 @@ export function Table<T>({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                className={`px-3 py-2 font-medium ${
-                  column.align === "right" ? "text-right" : "text-left"
-                }`}
-              >
-                {column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr
-              key={rowKey(row, index)}
-              className="border-b border-border/50 last:border-0 hover:bg-surface-hover/60"
-            >
+    <>
+      {/*
+        표는 좁은 화면에서 좌우로 스크롤됩니다. 스크롤바가 보이지 않는 기기에서는
+        오른쪽에 열이 더 있다는 사실을 알 수 없어, 폰에서만 안내를 한 줄 띄웁니다.
+      */}
+      <p className="mb-1 text-[11px] text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
               {columns.map((column) => (
-                <td
+                <th
                   key={column.key}
-                  className={`px-3 py-2 tabular-nums ${
+                  className={`px-3 py-2 font-medium ${
                     column.align === "right" ? "text-right" : "text-left"
                   } ${column.className ?? ""}`}
                 >
-                  {column.render(row, index)}
-                </td>
+                  {column.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr
+                key={rowKey(row, index)}
+                className="border-b border-border/50 last:border-0 hover:bg-surface-hover/60"
+              >
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    className={`px-3 py-2 tabular-nums ${
+                      column.align === "right" ? "text-right" : "text-left"
+                    } ${column.className ?? ""}`}
+                  >
+                    {column.render(row, index)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

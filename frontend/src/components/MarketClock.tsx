@@ -137,10 +137,11 @@ export function MarketClock() {
   const estStatus = statusFor("NASDAQ", est.minutes, est.weekday, holidays.us.has(est.date));
 
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-surface px-4 py-2 text-sm">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
       <ClockEntry
         flag="🇰🇷"
         label="한국 (KOSPI)"
+        shortLabel="KOSPI"
         date={kst.date}
         time={kst.time}
         status={kstStatus}
@@ -148,6 +149,7 @@ export function MarketClock() {
       <ClockEntry
         flag="🗽"
         label="뉴욕 (NASDAQ)"
+        shortLabel="NASDAQ"
         date={est.date}
         time={est.time}
         status={estStatus}
@@ -156,15 +158,22 @@ export function MarketClock() {
   );
 }
 
+/*
+  좁은 화면에서는 한 줄에 다 들어가지 않습니다. 예전에는 그대로 접혀서
+  "장 마 감"처럼 배지 글자가 세 줄로 쪼개졌습니다. 줄바꿈을 막고, 라벨만
+  짧게 바꿉니다(날짜는 시장마다 다를 수 있어 그대로 둡니다).
+*/
 function ClockEntry({
   flag,
   label,
+  shortLabel,
   date,
   time,
   status,
 }: {
   flag: string;
   label: string;
+  shortLabel: string;
   date: string;
   time: string;
   status: MarketStatus;
@@ -172,11 +181,16 @@ function ClockEntry({
   return (
     <div className="flex items-center gap-2">
       <span>{flag}</span>
-      <span className="text-muted">{label}</span>
-      <span className="font-mono tabular-nums text-bright">
+      <span className="whitespace-nowrap text-muted">
+        <span className="sm:hidden">{shortLabel}</span>
+        <span className="hidden sm:inline">{label}</span>
+      </span>
+      <span className="whitespace-nowrap font-mono tabular-nums text-bright">
         {date} {time}
       </span>
-      <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}>
+      <span
+        className={`shrink-0 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}
+      >
         {status.text}
       </span>
     </div>
