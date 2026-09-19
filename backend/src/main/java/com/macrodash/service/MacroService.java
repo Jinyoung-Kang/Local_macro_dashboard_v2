@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.AdvancedIndicators;
 import com.macrodash.analytics.Json;
@@ -297,7 +298,7 @@ public class MacroService {
 
         List<JsonNode> points = Json.array(snapshot.get().payload(), "points");
         if (years != null && years > 0) {
-            LocalDate cutoff = LocalDate.now().minusYears(years);
+            LocalDate cutoff = Kst.today().minusYears(years);
             points = points.stream()
                     .filter(p -> {
                         LocalDate date = Json.parseDate(Json.asText(p, "date"));
@@ -320,7 +321,7 @@ public class MacroService {
 
         Map<LocalDate, Double> series = resolvedSeries(seriesId);
         LocalDate cutoff = (years != null && years > 0)
-                ? LocalDate.now().minusYears(years) : null;
+                ? Kst.today().minusYears(years) : null;
 
         List<Map<String, Object>> points = new ArrayList<>();
         for (Map.Entry<LocalDate, Double> entry : series.entrySet()) {

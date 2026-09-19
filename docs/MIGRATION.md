@@ -134,5 +134,22 @@ psql "$DATABASE_URL" -c "\copy observations(dataset, obs_date, entity, payload, 
 | `services/browser_pool.py`<br>헤드리스 Chromium 렌더링 | 없음 (의도적) | Naver iframe은 서버가 완성된 HTML을 줍니다. 브라우저 의존성을 없애 이미지가 가벼워집니다. 다만 Naver가 비면 원인을 구분해 보여 줍니다 — "표가 없습니다"(차단·JS 요구)면 이 판단을 다시 봐야 한다는 신호입니다 |
 | `services/kis_websocket_service.py` | 없음 (의도적) | 구버전에서도 어디에서도 호출되지 않는 죽은 코드였습니다 |
 
-11개 수집 태스크는 이름·주기·의미가 모두 동일합니다.
+구버전의 11개 수집 태스크는 이름·주기·의미가 모두 동일합니다.
 
+---
+
+## v2에서 새로 생긴 것 (구버전에 대응이 없음)
+
+| 화면 / 기능 | 어디에 |
+|---|---|
+| 🧭 시장 국면 판정 | `analytics/Regime.java` |
+| 🔗 지표 상관관계 | `analytics/Correlation.java` |
+| 🧬 구루 포트폴리오 분석 | `analytics/GuruStyle.java` · `PortfolioRisk.java` |
+| 🩺 종목 스코어카드 | `analytics/Scorecard.java` |
+| COT 극단 포지션 백테스트 | `analytics/CotExtremes.java` |
+| 환율 겹쳐 보기 | `analytics/FxIndex.java` · 수집 태스크 `fx_history` |
+| 외국인·기관 공통 수급 | `analytics/SupplyConsensus.java` |
+| 13F 종목명 → 티커 매핑 | `collector/app/equities.py` · 수집 태스크 `equity_history` |
+| 전체 원본 데이터 복사 | `service/SnapshotTextService.java` |
+
+수집 태스크는 `fx_history`·`equity_history` 둘이 늘어 **13개**입니다.

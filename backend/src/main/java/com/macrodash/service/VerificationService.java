@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
 import com.macrodash.analytics.Verification;
@@ -9,7 +10,6 @@ import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreReader;
 import org.springframework.stereotype.Service;
 
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -41,7 +41,6 @@ import java.util.Optional;
 @Service
 public class VerificationService {
 
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final StoreReader store;
     private final CollectorClient collector;
@@ -52,7 +51,7 @@ public class VerificationService {
     }
 
     public Map<String, Object> run() {
-        ZonedDateTime now = ZonedDateTime.now(KST);
+        ZonedDateTime now = ZonedDateTime.now(Kst.ZONE);
         Optional<JsonNode> readings = collector.verificationReadings("KOSPI", "외국인", "순매수");
 
         if (readings.isEmpty()) {

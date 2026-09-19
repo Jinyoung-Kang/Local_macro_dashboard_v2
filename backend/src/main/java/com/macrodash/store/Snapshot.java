@@ -1,10 +1,10 @@
 package com.macrodash.store;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.Map;
 import java.time.format.DateTimeFormatter;
 
@@ -27,9 +27,8 @@ public record Snapshot(
         Instant collectedAt
 ) {
 
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter KST_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(KST);
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(Kst.ZONE);
 
     public long ageSeconds() {
         if (collectedAt == null) {

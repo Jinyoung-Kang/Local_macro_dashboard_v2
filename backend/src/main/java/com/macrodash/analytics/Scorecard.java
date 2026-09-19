@@ -34,8 +34,9 @@ public final class Scorecard {
     /**
      * 가격 시계열에서 측정값을 뽑습니다.
      *
-     * @param series    종목 일별 종가
-     * @param benchmark 베타를 재는 기준 (없으면 베타는 null)
+     * @param series    종목 일별 종가 (날짜 오름차순)
+     * @param benchmark 베타를 재는 기준 계열. null이면 베타만 null이 됩니다
+     * @return 측정값 묶음. <b>표본이 30 거래일 미만이면 모든 값이 null</b>입니다
      */
     public static Raw measure(NavigableMap<LocalDate, Double> series,
                               NavigableMap<LocalDate, Double> benchmark) {
@@ -67,10 +68,11 @@ public final class Scorecard {
     }
 
     /**
-     * 최근 n 거래일 수익률 (%).
+     * 최근 n 거래일 수익률.
      *
-     * <p>달력 기준이 아니라 <b>거래일 기준</b>입니다. 휴장이 낀 구간에서 달력으로
-     * 세면 실제보다 짧은 기간을 재게 됩니다.
+     * @param series      일별 종가
+     * @param tradingDays 며칠 전과 비교할지 (<b>달력이 아니라 거래일</b>)
+     * @return 수익률(%). 표본이 부족하거나 과거 가격이 0 이하면 null
      */
     static Double momentum(NavigableMap<LocalDate, Double> series, int tradingDays) {
         List<Double> values = new ArrayList<>(series.values());
@@ -83,10 +85,11 @@ public final class Scorecard {
     }
 
     /**
-     * 이동평균 대비 위치 (%) — 종가가 n일 이동평균보다 몇 % 위/아래인가.
+     * 이동평균 대비 위치 — 종가가 이동평균보다 몇 % 위/아래인가.
      *
-     * <p>추세의 방향을 하나의 숫자로 보는 흔한 방법입니다. 0보다 크면 장기
-     * 추세 위에 있습니다.
+     * @param series 일별 종가
+     * @param window 이동평균 구간 (거래일)
+     * @return 위치(%). 0보다 크면 추세 위. 표본이 {@code window}보다 짧으면 null
      */
     static Double trendPosition(NavigableMap<LocalDate, Double> series, int window) {
         List<Double> values = new ArrayList<>(series.values());
@@ -149,9 +152,15 @@ public final class Scorecard {
     }
 
     /**
-     * 유니버스 안에서의 백분위 점수 (0~100).
+     * 유니버스 안에서의 백분위 점수.
      *
-     * @param higherIsBetter 큰 값이 좋은 지표인가 (모멘텀=true, 변동성·낙폭=false)
+     * @param value          점수를 낼 값
+     * @param universe       비교 대상 값들 (같은 방식으로 측정한 것이어야 합니다)
+     * @param higherIsBetter 큰 값이 좋은 지표인가 (모멘텀 true, 변동성·낙폭 false)
+     * @return 0~100점. <b>비교 대상이 10개 미만이거나 값이 없으면 null</b>
+     *
+     * <p>10개 미만에서 점수를 내지 않는 이유 — 3개로 낸 "67점"은 숫자만 그럴듯하고
+     * 아무것도 말하지 않습니다.
      */
     public static Double percentileScore(Double value, List<Double> universe,
                                          boolean higherIsBetter) {

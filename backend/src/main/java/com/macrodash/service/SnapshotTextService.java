@@ -1,10 +1,10 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
 import org.springframework.stereotype.Service;
 
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -26,7 +26,6 @@ public class SnapshotTextService {
 
     private static final DateTimeFormatter KST_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     /** 원본 텍스트가 담는 영역 (화면 안내 문구가 실제 내용과 어긋나지 않도록 여기서 정의합니다). */
     static final List<String> SECTIONS = List.of(
@@ -57,7 +56,7 @@ public class SnapshotTextService {
 
     /** 전체 대시보드 원본 텍스트. */
     public String fullText() {
-        return fullText(ZonedDateTime.now(KST));
+        return fullText(ZonedDateTime.now(Kst.ZONE));
     }
 
     /**
@@ -68,7 +67,7 @@ public class SnapshotTextService {
      * 원본이 달라질 수 있습니다. 여기서 한 번 만들어 둘 다에게 넘깁니다.
      */
     public Map<String, Object> payload() {
-        ZonedDateTime now = ZonedDateTime.now(KST);
+        ZonedDateTime now = ZonedDateTime.now(Kst.ZONE);
         String text = fullText(now);
 
         Map<String, Object> out = new LinkedHashMap<>();

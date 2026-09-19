@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.FxIndex;
 import com.macrodash.analytics.Json;
@@ -103,7 +104,7 @@ public class FxService {
         List<String> selected = parseIds(ids, catalog);
         out.put("selected", selected);
 
-        LocalDate cutoff = LocalDate.now().minusMonths(PERIOD_MONTHS.getOrDefault(resolvedPeriod, 12));
+        LocalDate cutoff = Kst.today().minusMonths(PERIOD_MONTHS.getOrDefault(resolvedPeriod, 12));
 
         List<Map<String, Object>> series = new ArrayList<>();
         for (String id : selected) {

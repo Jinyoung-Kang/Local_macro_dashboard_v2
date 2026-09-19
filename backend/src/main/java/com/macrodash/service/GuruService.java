@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.GuruStyle;
 import com.macrodash.analytics.Json;
@@ -316,7 +317,7 @@ public class GuruService {
         }
 
         // ── 가격을 붙이고 포트폴리오 수익률을 재구성합니다 ──────────────
-        LocalDate cutoff = LocalDate.now().minusYears(window);
+        LocalDate cutoff = Kst.today().minusYears(window);
         Map<String, NavigableMap<LocalDate, Double>> prices = new LinkedHashMap<>();
         for (String ticker : weights.keySet()) {
             NavigableMap<LocalDate, Double> series = closes(tickers.get(ticker), cutoff);

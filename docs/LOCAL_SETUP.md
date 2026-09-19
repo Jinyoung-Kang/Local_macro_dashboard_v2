@@ -446,7 +446,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 | 포트를 바꿨는데 화면이 API를 못 찾음 | `NEXT_PUBLIC_API_BASE`는 **빌드 시점**에 번들에 들어갑니다. 바꾼 뒤 `make up`(재빌드)이 필요합니다 |
 | `make setup`이 포트 5개를 전부 "사용 중"이라고 함 | **이미 `make up`으로 이 프로젝트가 떠 있는 상태입니다.** 정상입니다. 최신 버전은 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 구분해 표시합니다 |
 | 휴대폰 등 다른 기기에서 화면이 안 열림 | `.env`의 `WEB_BIND_HOST`가 `127.0.0.1`이면 이 맥에서만 열립니다. `0.0.0.0`으로 바꾸고 `make up`. `APP_PASSWORD`는 반드시 기본값이 아니어야 합니다 |
-| 다른 기기에서 DB(5432)·수집기(8000)에 붙지 못함 | 의도된 제한입니다. 이 둘은 로그인이 없어 `127.0.0.1`에만 열립니다 (README 4-11) |
+| 다른 기기에서 DB(5432)·수집기(8000)에 붙지 못함 | 의도된 제한입니다. 이 둘은 로그인이 없어 `127.0.0.1`에만 열립니다 ([PRINCIPLES.md](PRINCIPLES.md)) |
 | `command not found: psql` / `mvn` | Docker로 실행 중이라면 **설치할 필요가 없습니다.** DB 셸은 `make db`를 쓰세요 |
 | `No module named pytest` / `apscheduler` | conda·pyenv의 다른 파이썬이 잡혔습니다. `collector/.venv`를 만들고 `make dev-collector` / `make test-collector`를 쓰세요 (§6) |
 | `release version 21 not supported` | 로컬 Java가 17입니다. `brew install --cask temurin@21` 후 `export JAVA_HOME=$(/usr/libexec/java_home -v 21)` |

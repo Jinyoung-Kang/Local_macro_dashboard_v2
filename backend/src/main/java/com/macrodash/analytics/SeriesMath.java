@@ -5,20 +5,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 시계열 계산 헬퍼.
+ * 시계열 공통 계산 (기간 수익률 · 백분위 · 변화량).
  *
- * <p><b>0.0과 "데이터 없음"을 절대 섞지 않습니다.</b> 구버전 섹터 화면은 표본이
- * 부족하면 수익률을 0.0으로 돌려줬는데, 화면에서 "0.00%"는 '데이터 없음'이
- * 아니라 '보합'으로 읽힙니다. 신규 상장 ETF의 1년 수익률이 실제로 보합인 것처럼
- * 표시되고 순위 계산에도 섞여 들어갔습니다. 여기서는 그런 경우 {@code null}을
- * 돌려주고 화면이 "—"로 표시합니다.
+ * <p><b>0.0과 "데이터 없음"을 절대 섞지 않습니다.</b> 표본이 부족하면 0이 아니라
+ * {@code null}을 돌려주고 화면이 {@code —}로 그립니다. 구버전 섹터 화면은 이럴 때
+ * 0.0을 돌려줬는데, "0.00%"는 '데이터 없음'이 아니라 '보합'으로 읽힙니다. 신규
+ * 상장 ETF의 1년 수익률이 보합인 것처럼 표시되고 순위 계산에도 섞여 들어갔습니다.
+ *
+ * <p><b>입력에 null이 없어야 합니다.</b> 여기 있는 함수들은 {@code List<Double>}의
+ * 원소가 모두 채워져 있다고 가정합니다. 저장본에서 읽을 때 {@link Json#pointValues}나
+ * 호출부에서 미리 걸러 주세요.
  */
 public final class SeriesMath {
 
     private SeriesMath() {
     }
 
-    /** n거래일 전 대비 수익률(%). 표본이 부족하거나 과거 가격이 0이면 null. */
+    /**
+     * n거래일 전 대비 수익률.
+     *
+     * @param closes 종가 (오름차순, 마지막이 최근)
+     * @param days   며칠 전과 비교할지 (<b>달력이 아니라 거래일 수</b>)
+     * @return 수익률(%). 표본이 {@code days}보다 짧거나 과거 가격이 0이면 null
+     */
     public static Double periodReturn(List<Double> closes, int days) {
         if (closes == null || closes.size() <= days || days < 0) {
             return null;
@@ -31,7 +40,14 @@ public final class SeriesMath {
         return (current / past - 1.0) * 100.0;
     }
 
-    /** 연초 대비 수익률(%). 해당 연도 표본이 없으면 null. */
+    /**
+     * 연초 대비 수익률 — 해당 연도의 <b>첫 관측</b>과 마지막 값을 비교합니다.
+     *
+     * @param dates  날짜 (오름차순)
+     * @param closes 같은 길이의 종가
+     * @param year   기준 연도 (한국 기준 연도를 넘기세요 — {@code Kst.today().getYear()})
+     * @return 수익률(%). 길이가 다르거나 그 해 표본이 없거나 첫 값이 0이면 null
+     */
     public static Double yearToDateReturn(List<LocalDate> dates, List<Double> closes, int year) {
         if (dates == null || closes == null || dates.size() != closes.size() || closes.isEmpty()) {
             return null;
@@ -49,7 +65,15 @@ public final class SeriesMath {
         return (closes.get(closes.size() - 1) / first - 1.0) * 100.0;
     }
 
-    /** 표본 내 백분위(0~100). "지금이 역사적으로 어디쯤인지"를 봅니다. */
+    /**
+     * 표본 안에서 <b>마지막 값</b>의 백분위 — "지금이 역사적으로 어디쯤인가".
+     *
+     * @param values 비교 대상 표본. 마지막 원소가 판정 대상입니다
+     * @return 0~100. 비어 있으면 null
+     *
+     * <p>마지막 값 자신도 세므로 표본이 1개면 항상 100입니다. 화면은 표본 수를
+     * 함께 보여 줘야 이 값을 제대로 읽을 수 있습니다.
+     */
     public static Double percentile(List<Double> values) {
         if (values == null || values.isEmpty()) {
             return null;
@@ -59,22 +83,32 @@ public final class SeriesMath {
         return (double) lessOrEqual / values.size() * 100.0;
     }
 
-    /** 마지막 값. 없으면 null. */
+    /** 마지막 값. 비어 있으면 null. */
     public static Double last(List<Double> values) {
         return values == null || values.isEmpty() ? null : values.get(values.size() - 1);
     }
 
-    /** 끝에서 두 번째 값. 없으면 null. */
+    /** 끝에서 두 번째 값. 표본이 2개 미만이면 null. */
     public static Double previous(List<Double> values) {
         return values == null || values.size() < 2 ? null : values.get(values.size() - 2);
     }
 
-    /** a - b. 둘 중 하나라도 없으면 null (0으로 메우지 않습니다). */
+    /**
+     * a − b.
+     *
+     * @return 둘 중 하나라도 null이면 null (0으로 메우지 않습니다)
+     */
     public static Double difference(Double a, Double b) {
         return (a == null || b == null) ? null : a - b;
     }
 
-    /** 변화율(%). 기준값이 0이거나 없으면 null. */
+    /**
+     * 변화율.
+     *
+     * @param current  현재값
+     * @param previous 기준값
+     * @return 변화율(%). 기준값이 없거나 0이면 null
+     */
     public static Double percentChange(Double current, Double previous) {
         if (current == null || previous == null || previous == 0.0) {
             return null;
@@ -82,7 +116,16 @@ public final class SeriesMath {
         return (current - previous) / previous * 100.0;
     }
 
-    /** 이동 구간 최소/최대 사이에서의 위치(0~100). */
+    /**
+     * 구간 최소~최대 사이에서 값의 위치.
+     *
+     * @param window 비교 구간
+     * @param value  위치를 잴 값
+     * @return 0(최소)~100(최대). 구간이 비어 있으면 null
+     *
+     * <p>구간의 최소와 최대가 같으면(값이 전부 같으면) 0으로 나누는 것을 피하려고
+     * 분모를 1로 둡니다. 이때 결과는 0이며, 표본이 무의미하다는 뜻입니다.
+     */
     public static Double rangePosition(List<Double> window, double value) {
         if (window == null || window.isEmpty()) {
             return null;
@@ -93,7 +136,12 @@ public final class SeriesMath {
         return (value - min) / span * 100.0;
     }
 
-    /** 기간 문자열("1mo","1y"…)에 해당하는 일수. 모르면 null. */
+    /**
+     * 기간 문자열을 일수로.
+     *
+     * @param period yfinance 표기 ("1d","5d","1mo","3mo","6mo","1y","2y","5y")
+     * @return 달력 일수. 모르는 표기면 null
+     */
     public static Integer periodDays(String period) {
         if (period == null) {
             return null;
@@ -111,7 +159,18 @@ public final class SeriesMath {
         };
     }
 
-    /** 최근 n일 구간만 남깁니다. 남는 표본이 2개 미만이면 원본을 그대로 돌려줍니다. */
+    /**
+     * 마지막 날짜 기준으로 최근 n일 구간만 남깁니다.
+     *
+     * @param dates  날짜 (오름차순)
+     * @param values 같은 길이의 값
+     * @param days   남길 일수. null이면 자르지 않습니다
+     * @return 잘린 목록.
+     *
+     * <p><b>주의</b> — 남는 표본이 2개 미만이면 <b>원본을 그대로</b> 돌려줍니다.
+     * 한 점짜리 차트를 그리느니 넓은 구간을 보여 주는 편이 낫다는 선택입니다.
+     * 호출부가 "정확히 n일치"를 기대하면 안 됩니다.
+     */
     public static <T> List<T> tailByDays(List<LocalDate> dates, List<T> values, Integer days) {
         if (days == null || dates == null || values == null
                 || dates.size() != values.size() || dates.isEmpty()) {

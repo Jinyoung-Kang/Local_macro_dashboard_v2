@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.CotExtremes;
 import com.macrodash.analytics.Json;
@@ -316,7 +317,7 @@ public class CotService {
 
         LocalDate reportDate = Json.parseDate(Json.asText(latest, "date"));
         out.put("ageDays", reportDate == null
-                ? null : ChronoUnit.DAYS.between(reportDate, LocalDate.now()));
+                ? null : ChronoUnit.DAYS.between(reportDate, Kst.today()));
         return out;
     }
 

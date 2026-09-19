@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
 import com.macrodash.analytics.SeriesMath;
@@ -49,7 +50,7 @@ public class LiquidityService {
         List<JsonNode> rows = Json.array(payload, "rows");
 
         if (years != null && years > 0) {
-            LocalDate cutoff = LocalDate.now().minusYears(years);
+            LocalDate cutoff = Kst.today().minusYears(years);
             rows = rows.stream()
                     .filter(row -> {
                         LocalDate date = Json.parseDate(Json.asText(row, "date"));

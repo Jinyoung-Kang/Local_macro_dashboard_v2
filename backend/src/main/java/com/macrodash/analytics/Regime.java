@@ -53,6 +53,9 @@ public final class Regime {
      * @param nfci       시카고 연준 금융상황지수 — 0보다 크면 평균보다 긴축적
      * @param hyOas      하이일드 스프레드 (%p)
      * @param liquidity4w 순유동성 4주 변화 (조 달러) — 양수면 유입
+     * @return 국면 코드·라벨·근거 신호. <b>입력이 하나라도 null이면 "판정 불가"</b>이며
+     *         {@code missing}에 빠진 지표 이름이 담깁니다 — 빠진 값을 0으로 메우면
+     *         "중립"이라는 틀린 판정이 됩니다
      */
     public static Verdict classify(Double curve10y3m, Double nfci, Double hyOas,
                                    Double liquidity4w) {

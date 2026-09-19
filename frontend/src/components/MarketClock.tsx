@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  hasLunarHolidays,
+  krMarketHolidays,
+  usMarketHolidays,
+} from "@/lib/marketCalendar";
 
 /**
  * 실시간 거래소 시계 + 장 상태 배지.
  *
- * 구버전은 base64로 인코딩한 HTML을 iframe에 넣어 표시했습니다. React에서는
- * 컴포넌트로 직접 그립니다. 공휴일은 공개 API(date.nager.at)에서 연 1회
- * 받아 캐시하고, 실패하면 주말만 판정합니다(있는 정보로만 판단).
+ * 휴장 판정은 `lib/marketCalendar`가 맡습니다. 예전에는 브라우저가 공개
+ * 공휴일 API를 호출했는데, 공휴일과 거래소 휴장일이 달라 잘못된 배지가
+ * 떴습니다(그 이유는 marketCalendar에 적어 두었습니다).
  */
 
 type MarketStatus = {
@@ -87,10 +92,6 @@ function statusFor(
 
 export function MarketClock() {
   const [now, setNow] = useState<Date | null>(null);
-  const [holidays, setHolidays] = useState<{ kr: Set<string>; us: Set<string> }>({
-    kr: new Set(),
-    us: new Set(),
-  });
 
   useEffect(() => {
     // 서버 렌더 시각과 클라이언트 시각이 달라 하이드레이션 경고가 나는 것을
@@ -100,41 +101,30 @@ export function MarketClock() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const year = new Date().getFullYear();
-    const load = async () => {
-      try {
-        const [kr, us] = await Promise.all([
-          fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/KR`),
-          fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/US`),
-        ]);
-        const krDates = kr.ok
-          ? new Set<string>((await kr.json()).map((item: { date: string }) => item.date))
-          : new Set<string>();
-        const usDates = us.ok
-          ? new Set<string>((await us.json()).map((item: { date: string }) => item.date))
-          : new Set<string>();
+  // 시각을 먼저 각 시장의 현지 날짜로 바꿉니다. 브라우저 로컬 연도를 쓰면
+  // 12월 31일처럼 시장마다 해가 갈리는 날 엉뚱한 해의 휴장일을 보게 됩니다.
+  const kst = now ? partsFor("Asia/Seoul", now) : null;
+  const est = now ? partsFor("America/New_York", now) : null;
 
-        // 한국 거래소는 근로자의 날과 연말 폐장일도 휴장입니다.
-        krDates.add(`${year}-05-01`);
-        krDates.add(`${year}-12-31`);
+  // 휴장 판정은 계산과 표 조회뿐이라 네트워크가 필요 없습니다.
+  // 해가 바뀔 때만 다시 만들면 되므로 연도를 키로 캐시합니다.
+  const krYear = kst ? Number(kst.date.slice(0, 4)) : null;
+  const usYear = est ? Number(est.date.slice(0, 4)) : null;
+  const krHolidays = useMemo(
+    () => (krYear === null ? new Set<string>() : krMarketHolidays(krYear)),
+    [krYear],
+  );
+  const usHolidays = useMemo(
+    () => (usYear === null ? new Set<string>() : usMarketHolidays(usYear)),
+    [usYear],
+  );
 
-        setHolidays({ kr: krDates, us: usDates });
-      } catch {
-        // 공휴일 정보를 못 받으면 주말만 판정합니다. 추측하지 않습니다.
-      }
-    };
-    void load();
-  }, []);
-
-  if (!now) {
+  if (!now || !kst || !est) {
     return <div className="h-[46px] rounded-lg border border-border bg-surface" />;
   }
 
-  const kst = partsFor("Asia/Seoul", now);
-  const est = partsFor("America/New_York", now);
-  const kstStatus = statusFor("KOSPI", kst.minutes, kst.weekday, holidays.kr.has(kst.date));
-  const estStatus = statusFor("NASDAQ", est.minutes, est.weekday, holidays.us.has(est.date));
+  const kstStatus = statusFor("KOSPI", kst.minutes, kst.weekday, krHolidays.has(kst.date));
+  const estStatus = statusFor("NASDAQ", est.minutes, est.weekday, usHolidays.has(est.date));
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
@@ -145,6 +135,11 @@ export function MarketClock() {
         date={kst.date}
         time={kst.time}
         status={kstStatus}
+        note={
+          krYear !== null && !hasLunarHolidays(krYear)
+            ? `${krYear}년 설날·추석 휴장일이 표에 없습니다 (주말·양력 공휴일만 반영)`
+            : undefined
+        }
       />
       <ClockEntry
         flag="🗽"
@@ -170,6 +165,7 @@ function ClockEntry({
   date,
   time,
   status,
+  note,
 }: {
   flag: string;
   label: string;
@@ -177,6 +173,8 @@ function ClockEntry({
   date: string;
   time: string;
   status: MarketStatus;
+  /** 판정에 빠진 정보가 있을 때의 안내. 배지에 마우스를 올리면 보입니다. */
+  note?: string;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -190,8 +188,10 @@ function ClockEntry({
       </span>
       <span
         className={`shrink-0 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-semibold ${status.className}`}
+        title={note}
       >
         {status.text}
+        {note && <span className="ml-1 font-normal opacity-70">ⓘ</span>}
       </span>
     </div>
   );

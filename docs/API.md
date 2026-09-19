@@ -18,11 +18,42 @@
 로그인·세션·헬스체크를 제외한 모든 `/api/**`는 유효한 세션 쿠키를 요구합니다
 (없으면 401).
 
+### 모든 응답에 공통인 것
+
+읽기 엔드포인트는 **같은 모양의 봉투**를 씁니다. 화면이 한 가지 방식으로만
+처리하면 되도록 맞춰 둔 것입니다.
+
+| 필드 | 뜻 |
+|---|---|
+| `available` | 보여 줄 값이 있는가. `false`면 `message`에 이유가 있습니다 |
+| `message` | 왜 값이 없는지 (사람이 읽는 문장) |
+| `collectedAtKst` | 이 값을 **언제 수집했는지** (`"2026-09-17 04:08:11 KST"`) |
+| `ageSeconds` | 수집 후 경과 초 |
+| `stale` | 신선도 기준을 넘겼는가. 화면이 경고색으로 바꿉니다 |
+
+숫자 필드는 **값이 없으면 `null`입니다.** 0으로 채우지 않습니다 — 화면에서
+"0.00%"는 '데이터 없음'이 아니라 '보합'으로 읽히기 때문입니다
+([PRINCIPLES.md](PRINCIPLES.md)).
+
+추정치·대용값에는 플래그가 함께 옵니다.
+
+| 플래그 | 뜻 |
+|---|---|
+| `isEstimated` | 공식 확정치가 아닌 추정치 (예: KRX 키 없을 때의 선물) |
+| `isProxy` | 실제 지표가 아닌 **대용값** (예: MOVE) |
+| `coverage` | 일부만 계산에 반영됐을 때 덮은 비중 (13F 위험 분석) |
+| `missing` | 이 응답에 **없는** 항목 (종목 스코어카드의 재무·성장) |
+| `isHistorical` · `historyDate` · `warning` | 수급 랭킹이 누적 이력으로 대체됐을 때 |
+
+**저장본이 없어도 HTTP 200입니다.** `{"available": false, "message": "..."}`를
+돌려줍니다 — 화면이 500 에러 페이지 대신 "수집기를 먼저 실행하세요" 같은 안내를
+띄울 수 있어야 하기 때문입니다.
+
 ### 📊 매크로
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/macro/overview?live=` | 카드 + 스프레드 + 신선도. `live=true`면 저장본을 다시 받을 기준이 15분 → **60초**로 내려갑니다(화면의 자동 갱신이 1분 이하일 때). 60초보다 낮추지 않는 이유는 README 4-12 |
+| `GET /api/macro/overview?live=` | 카드 + 스프레드 + 신선도. `live=true`면 저장본을 다시 받을 기준이 15분 → **60초**로 내려갑니다(화면의 자동 갱신이 1분 이하일 때). 60초보다 낮추지 않는 이유는 [PRINCIPLES.md](PRINCIPLES.md) |
 | `GET /api/macro/risk` | VIX·MOVE·HY OAS·CP 스프레드·STLFSI4 |
 | `GET /api/macro/advanced` | 심화 지표 6종 (해석·백분위 포함) |
 | `GET /api/macro/usdkrw` | 원/달러 환율 (달러 금액의 원화 병기용, 매크로 카드와 같은 값) |
@@ -53,6 +84,7 @@
 | `GET /api/cot/assets`, `/api/cot/overview`, `/api/cot/asset?name=` | CFTC COT |
 | `GET /api/cot/extremes?name=&percentile=95&lookbackWeeks=52` | 극단 포지션 이후 4·13주 수익률 (가격은 ETF 대용) |
 | `GET /api/krx/futures?days=60` | KOSPI200 선물 시계열 + 최신 판정 |
+| `GET /api/krx/oi-trend` | 미결제약정 증감 (최신·직전·변화) |
 | `GET /api/krx/investor-trend` | Daum 투자주체별 수급 (계약수) |
 | `GET /api/krx/intraday?minutes=30` | 장중 수급 가속도 |
 | `GET /api/radar/options` | 선택지 목록 |
@@ -111,7 +143,7 @@
 때문입니다(키는 설정 여부만 `true/false`로 알립니다).
 
 토큰을 설정하지 않으면(로컬 기본값) 아무것도 막지 않습니다. 대신 수집기 포트는
-`127.0.0.1`에만 열립니다(README 4-11).
+`127.0.0.1`에만 열립니다([PRINCIPLES.md](PRINCIPLES.md)).
 
 | 경로 | 설명 |
 |---|---|
@@ -133,13 +165,3 @@
 | `GET /catalog` | 지표·기관·ETF·COT 정의 |
 
 FastAPI 자동 문서: <http://localhost:8000/docs>
-
-## 3. 공통 응답 규칙
-
-- 값이 없으면 `null`입니다. **0으로 채우지 않습니다.**
-- 저장본이 없으면 HTTP 200 + `{"available": false, "message": "..."}` 입니다.
-  화면이 500 에러 페이지 대신 안내를 띄울 수 있어야 하기 때문입니다.
-- 추정치는 `isEstimated` / `isProxy`로 표시되며, 화면은 이를 반드시 경고로
-  노출해야 합니다.
-- 수급 랭킹이 누적 이력으로 대체된 경우 `isHistorical=true`와 `historyDate`,
-  `warning`이 함께 옵니다.

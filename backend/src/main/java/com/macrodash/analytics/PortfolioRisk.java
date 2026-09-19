@@ -40,12 +40,21 @@ public final class PortfolioRisk {
     /**
      * 비중 가중 일별 수익률을 만듭니다.
      *
-     * <p><b>비중은 매일 재조정된다고 가정합니다</b>(고정 비중). 13F는 분기에 한
-     * 번 찍힌 사진이라 그사이 실제 비중이 어떻게 흘렀는지는 알 수 없습니다.
-     * 모르는 것을 지어내는 대신, 가정을 하나 두고 그 가정을 화면에 적습니다.
+     * @param weights 종목 키 → 비중(%). 합이 100이 아니어도 됩니다
+     * @param prices  종목 키 → 일별 종가. 비중에 있어도 여기 없으면 <b>제외</b>됩니다
+     * @return 날짜와 수익률(소수, 0.01 = 1%). 쓸 수 있는 종목이 없으면 크기 0
      *
-     * <p>날짜는 <b>모든 종목에 값이 있는 날</b>만 씁니다. 한 종목이 쉰 날을
-     * 0% 수익률로 채우면 그날 포트폴리오가 실제보다 덜 움직인 것이 됩니다.
+     * <p>두 가지 가정이 있고 화면이 이를 적어야 합니다.
+     * <ul>
+     *   <li><b>매일 재조정(고정 비중)</b> — 13F는 분기에 한 번 찍힌 사진이라
+     *       그사이 실제 비중이 어떻게 흘렀는지 알 수 없습니다.</li>
+     *   <li><b>가격을 찾은 종목만으로 100%</b> — 커버하지 못한 몫까지 들고 계산하면
+     *       "현금을 들고 있었다"는 다른 포트폴리오가 됩니다. 커버리지는 호출부가
+     *       따로 표시합니다.</li>
+     * </ul>
+     *
+     * <p>날짜는 <b>모든 종목에 값이 있는 날</b>만 씁니다. 한 종목이 쉰 날을 0%로
+     * 채우면 그날 포트폴리오가 실제보다 덜 움직인 것이 됩니다.
      */
     public static Returns weightedReturns(Map<String, Double> weights,
                                           Map<String, NavigableMap<LocalDate, Double>> prices) {
@@ -104,7 +113,12 @@ public final class PortfolioRisk {
         return out;
     }
 
-    /** 연율 변동성 (%) = 일별 표준편차 × √252 × 100. 표본이 2개 미만이면 null. */
+    /**
+     * 연율 변동성.
+     *
+     * @param returns 일별 수익률 (소수)
+     * @return 연율 변동성(%) = 일별 표준편차 × √252 × 100. 표본 2개 미만이면 null
+     */
     public static Double annualizedVolatility(double[] returns) {
         Double daily = standardDeviation(returns);
         return daily == null ? null : daily * Math.sqrt(TRADING_DAYS) * 100.0;
@@ -124,11 +138,17 @@ public final class PortfolioRisk {
     }
 
     /**
-     * 역사적 VaR (%) — 하위 (1-confidence) 분위수. 음수로 돌려줍니다.
+     * 역사적 VaR — 하위 (1−confidence) 분위수.
      *
-     * <p>정규분포를 가정하지 않습니다. 실제로 있었던 날들을 줄 세워 자릅니다 —
-     * 시장 수익률은 정규분포보다 꼬리가 두껍고, 그 차이가 나오는 곳이 바로
-     * 이 값입니다.
+     * @param returns    일별 수익률 (소수)
+     * @param confidence 신뢰수준 (0.95, 0.99)
+     * @return 손실을 <b>음수</b>로 돌려준 값(%). 표본 20개 미만이면 null
+     *
+     * <p>정규분포를 가정하지 않고 실제로 있었던 날들을 줄 세워 자릅니다 — 시장
+     * 수익률은 정규분포보다 꼬리가 두껍습니다.
+     *
+     * <p><b>VaR는 손실의 상한이 아닙니다.</b> "이보다 나쁜 날이 5%는 있었다"는
+     * 과거의 기록일 뿐입니다.
      */
     public static Double historicalVar(double[] returns, double confidence) {
         if (returns == null || returns.length < 20) {
@@ -142,10 +162,14 @@ public final class PortfolioRisk {
     }
 
     /**
-     * 기대손실 ES/CVaR (%) — VaR를 넘어선 날들의 평균.
+     * 기대손실(ES · CVaR) — VaR를 넘어선 날들의 평균.
      *
-     * <p>VaR는 "얼마나 자주"만 말하고 "넘으면 얼마나"는 말하지 않습니다.
-     * 꼬리가 두꺼운 자산일수록 둘의 차이가 벌어집니다.
+     * @param returns    일별 수익률 (소수)
+     * @param confidence 신뢰수준 (0.95, 0.99)
+     * @return 음수(%). 표본 20개 미만이면 null. 항상 같은 신뢰수준의 VaR 이하입니다
+     *
+     * <p>VaR는 "얼마나 자주"만 말하고 "넘으면 얼마나"는 말하지 않습니다. 꼬리가
+     * 두꺼운 자산일수록 둘의 차이가 벌어집니다.
      */
     public static Double expectedShortfall(double[] returns, double confidence) {
         if (returns == null || returns.length < 20) {
@@ -162,7 +186,12 @@ public final class PortfolioRisk {
         return sum / cutoff * 100.0;
     }
 
-    /** 최대낙폭 (%) — 누적 수익 곡선의 고점 대비 최대 하락. 양수로 돌려줍니다. */
+    /**
+     * 최대낙폭(MDD) — 누적 수익 곡선의 고점 대비 최대 하락.
+     *
+     * @param returns 일별 수익률 (소수)
+     * @return <b>양수</b>(%). 표본 2개 미만이면 null
+     */
     public static Double maxDrawdown(double[] returns) {
         if (returns == null || returns.length < 2) {
             return null;
@@ -181,7 +210,10 @@ public final class PortfolioRisk {
     /**
      * 베타 — 벤치마크가 1% 움직일 때 포트폴리오가 몇 % 움직였나.
      *
-     * <p>공분산 ÷ 벤치마크 분산. 벤치마크가 움직이지 않았으면(분산 0) null.
+     * @param portfolio 포트폴리오 일별 수익률
+     * @param benchmark 같은 날짜의 벤치마크 수익률. 길이가 같아야 합니다
+     * @return 베타. 길이가 다르거나 표본 20개 미만이거나 벤치마크가 전혀 움직이지
+     *         않았으면(분산 0) null
      */
     public static Double beta(double[] portfolio, double[] benchmark) {
         if (portfolio == null || benchmark == null
@@ -200,10 +232,13 @@ public final class PortfolioRisk {
     }
 
     /**
-     * 추적오차 (%) — 포트폴리오와 벤치마크 수익률 <b>차이</b>의 연율 변동성.
+     * 추적오차 — 포트폴리오와 벤치마크 수익률 <b>차이</b>의 연율 변동성.
      *
-     * <p>0이면 벤치마크를 그대로 따라간 것이고, 클수록 다른 길을 간 것입니다.
-     * 수익이 좋았는지 나빴는지는 말하지 않습니다 — 얼마나 <b>달랐는지</b>만 봅니다.
+     * @param portfolio 포트폴리오 일별 수익률
+     * @param benchmark 같은 날짜의 벤치마크 수익률
+     * @return 연율(%). 0이면 벤치마크를 그대로 따라간 것. 표본 20개 미만이면 null
+     *
+     * <p>수익이 좋았는지 나빴는지는 말하지 않습니다 — 얼마나 <b>달랐는지</b>만 봅니다.
      */
     public static Double trackingError(double[] portfolio, double[] benchmark) {
         if (portfolio == null || benchmark == null
@@ -226,14 +261,19 @@ public final class PortfolioRisk {
     /**
      * 종목별 위험 기여도.
      *
-     * <p>한계기여 = 그 종목 비중을 조금 늘렸을 때 포트폴리오 변동성이 얼마나
-     * 오르는가. 기여 = 비중 × 한계기여. <b>기여의 합은 포트폴리오 변동성과
-     * 같습니다</b> — 개별 변동성을 그냥 더하면 분산 효과가 사라져 합이 맞지
-     * 않습니다.
+     * @param weights   종목 키 → 비중(%)
+     * @param labels    종목 키 → 화면에 보일 이름 (없으면 키를 그대로 씁니다)
+     * @param prices    종목 키 → 일별 종가
+     * @param portfolio {@link #weightedReturns}의 결과
+     * @return 기여가 큰 순. 포트폴리오 표본이 20개 미만이면 빈 목록
      *
-     * <p>비중이 큰 종목이 곧 위험이 큰 종목은 아닙니다. 조용한 대형주 20%와
-     * 널뛰는 소형주 5%의 기여가 뒤집히는 일이 흔합니다 — 그것을 보라고 있는
-     * 표입니다.
+     * <p>한계기여 = cov(종목, 포트폴리오) ÷ 포트폴리오 표준편차, 기여 = 비중 ×
+     * 한계기여입니다. 이렇게 하면 <b>기여의 합이 포트폴리오 변동성과 정확히
+     * 일치</b>합니다 (테스트가 이 항등식을 고정합니다). 개별 변동성을 비중으로
+     * 가중해 더하면 분산 효과가 사라져 합이 맞지 않습니다.
+     *
+     * <p>이 표를 두는 이유 — <b>비중이 큰 종목이 곧 위험이 큰 종목은 아닙니다.</b>
+     * 조용한 대형주 20%와 널뛰는 종목 5%의 기여가 뒤집히는 일이 흔합니다.
      */
     public static List<Contribution> contributions(
             Map<String, Double> weights,
@@ -289,7 +329,14 @@ public final class PortfolioRisk {
         return out;
     }
 
-    /** 포트폴리오 수익률과 같은 날짜에 맞춘 종목 수익률. 날짜가 빠지면 null. */
+    /**
+     * 포트폴리오 수익률과 같은 날짜에 맞춘 종목 수익률.
+     *
+     * @param series 종목 일별 종가
+     * @param dates  맞출 날짜 (포트폴리오 수익률의 날짜)
+     * @return 같은 길이의 수익률 배열. 날짜 하나라도 직전 가격을 찾지 못하면
+     *         <b>배열 전체가 null</b>입니다 — 일부만 채우면 길이가 어긋납니다
+     */
     public static double[] alignedReturns(NavigableMap<LocalDate, Double> series, List<LocalDate> dates) {
         double[] out = new double[dates.size()];
         for (int i = 0; i < dates.size(); i++) {

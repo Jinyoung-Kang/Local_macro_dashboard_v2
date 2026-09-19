@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
 import com.macrodash.analytics.SeriesMath;
@@ -136,7 +137,7 @@ public class SectorService {
                 continue;
             }
 
-            List<Double> closes = doubles(series, "close");
+            List<Double> closes = alignedSeries(series, "close").closes();
             if (closes.size() < 20) {
                 // 표본이 20일도 안 되면 어떤 기간 수익률도 신뢰할 수 없습니다.
                 continue;
@@ -161,14 +162,15 @@ public class SectorService {
     }
 
     private Map<String, Double> returnsFrom(JsonNode series) {
-        List<Double> closes = doubles(series, "close");
-        List<LocalDate> dates = dates(series);
+        Series aligned = alignedSeries(series, "close");
+        List<Double> closes = aligned.closes();
+        List<LocalDate> dates = aligned.dates();
 
         Map<String, Double> returns = new LinkedHashMap<>();
         for (String window : List.of("1W", "1M", "3M", "6M", "1Y")) {
             returns.put(window, SeriesMath.periodReturn(closes, WINDOWS.get(window)));
         }
-        returns.put("YTD", SeriesMath.yearToDateReturn(dates, closes, LocalDate.now().getYear()));
+        returns.put("YTD", SeriesMath.yearToDateReturn(dates, closes, Kst.today().getYear()));
         return returns;
     }
 
@@ -197,33 +199,42 @@ public class SectorService {
         return value instanceof Double d ? d : null;
     }
 
-    private List<Double> doubles(JsonNode series, String field) {
-        List<Double> out = new ArrayList<>();
-        JsonNode array = Json.child(series, field);
-        if (array == null || !array.isArray()) {
-            return out;
+    /**
+     * 날짜와 종가를 <b>짝지어</b> 읽습니다.
+     *
+     * <p>둘을 따로 걸러 내면 안 됩니다. 종가 한 칸이 null이라 그 칸만 빠지면
+     * 이후의 모든 날짜가 한 칸씩 밀려, "21 거래일 전"이 실제로는 22일 전이
+     * 됩니다. 값도 예외도 없이 조용히 틀린 수익률이 나옵니다.
+     *
+     * @param series {"dates": [...], "close": [...]} 형태의 저장본 조각
+     * @param field  값 배열의 이름 (보통 "close")
+     * @return 같은 길이의 (날짜, 값) 목록. 한쪽이라도 비면 그 칸은 통째로 버립니다.
+     */
+    private Series alignedSeries(JsonNode series, String field) {
+        List<LocalDate> dates = new ArrayList<>();
+        List<Double> values = new ArrayList<>();
+
+        JsonNode dateArray = Json.child(series, "dates");
+        JsonNode valueArray = Json.child(series, field);
+        if (dateArray == null || valueArray == null
+                || !dateArray.isArray() || !valueArray.isArray()) {
+            return new Series(dates, values);
         }
-        array.forEach(node -> {
-            if (node != null && node.isNumber()) {
-                out.add(node.asDouble());
+
+        int size = Math.min(dateArray.size(), valueArray.size());
+        for (int i = 0; i < size; i++) {
+            LocalDate date = Json.parseDate(dateArray.get(i).asText());
+            JsonNode value = valueArray.get(i);
+            if (date != null && value != null && value.isNumber()) {
+                dates.add(date);
+                values.add(value.asDouble());
             }
-        });
-        return out;
+        }
+        return new Series(dates, values);
     }
 
-    private List<LocalDate> dates(JsonNode series) {
-        List<LocalDate> out = new ArrayList<>();
-        JsonNode array = Json.child(series, "dates");
-        if (array == null || !array.isArray()) {
-            return out;
-        }
-        array.forEach(node -> {
-            LocalDate date = Json.parseDate(node.asText());
-            if (date != null) {
-                out.add(date);
-            }
-        });
-        return out;
+    /** 길이가 같음이 보장된 (날짜, 종가) 한 쌍. */
+    private record Series(List<LocalDate> dates, List<Double> closes) {
     }
 
     private static Map<String, Map<String, String>> sectorEtfs() {

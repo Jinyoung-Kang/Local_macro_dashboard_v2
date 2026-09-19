@@ -238,7 +238,7 @@ FRED_BASE_SERIES = (
     "CPF3M",          # 3M 금융 CP
 )
 
-# 심화 지표 5종 (구버전 services/advanced_macro_service.py)
+# 심화 지표. 30Y-3M은 FRED에 시리즈가 없어 DGS30 − DGS3MO로 백엔드가 계산합니다.
 FRED_ADVANCED_SERIES = (
     "T10Y3M",       # 장단기 금리차 10Y-3M — 뉴욕 연준 침체확률 모델의 스프레드
     "DFII10",       # 10년 실질금리 (TIPS)

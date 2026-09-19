@@ -1,5 +1,6 @@
 package com.macrodash.service;
 
+import com.macrodash.Kst;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.analytics.Json;
 import com.macrodash.analytics.Scorecard;
@@ -123,7 +124,7 @@ public class ScorecardService {
             return out;
         }
 
-        LocalDate cutoff = LocalDate.now().minusYears(window);
+        LocalDate cutoff = Kst.today().minusYears(window);
         NavigableMap<LocalDate, Double> series = GuruService.closes(tickers.get(symbol), cutoff);
         NavigableMap<LocalDate, Double> benchmarkSeries =
                 GuruService.closes(tickers.get(benchmarkTicker), cutoff);

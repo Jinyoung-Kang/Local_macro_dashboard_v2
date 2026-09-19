@@ -686,7 +686,7 @@ function AdvancedSection({
   return (
     <Card
       title="🧭 심화 매크로 지표"
-      subtitle="명목금리·하이일드만으로는 보이지 않는 구조를 메우는 5종 (모두 FRED 공식 시계열)"
+      subtitle="명목금리·하이일드만으로는 보이지 않는 구조를 메우는 6종 (30Y-3M은 DGS30−DGS3MO로 계산, 나머지는 FRED 공식 시계열)"
       actions={<RangeTabs value={range} onChange={setRange} />}
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

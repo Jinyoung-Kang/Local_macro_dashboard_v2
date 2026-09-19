@@ -54,6 +54,8 @@ public final class CotExtremes {
      * @param upper          상단 백분위 임계치(예: 95)
      * @param lower          하단 백분위 임계치(예: 5)
      * @param horizonWeeks   이후 몇 주 뒤를 볼지 (예: 4, 13)
+     * @return 극단 신호와 각 신호의 이후 수익률. 구간을 채우지 못한 앞부분과
+     *         임계치를 넘지 않은 시점은 포함되지 않습니다
      */
     public static List<Event> findEvents(List<LocalDate> dates, List<Double> net,
                                          NavigableMap<LocalDate, Double> prices,
@@ -102,9 +104,14 @@ public final class CotExtremes {
     /**
      * 기준일로부터 N주 뒤 수익률(%).
      *
+     * @param prices 일별 가격 (대용 ETF 종가)
+     * @param from   기준일 (COT 공시 기준일)
+     * @param weeks  몇 주 뒤를 볼지
+     * @return 수익률(%). 아직 N주가 지나지 않은 최근 신호는 null입니다 —
+     *         없는 미래를 0으로 채우지 않습니다
+     *
      * <p>공시 기준일이 휴장일일 수 있으므로 <b>그 날 이후 첫 거래일</b>의 종가를
-     * 씁니다. 목표일 뒤에 가격이 없으면(아직 N주가 지나지 않은 최근 신호) null을
-     * 돌려줍니다 — 없는 미래를 0으로 채우지 않습니다.
+     * 씁니다.
      */
     public static Double forwardReturn(NavigableMap<LocalDate, Double> prices,
                                        LocalDate from, int weeks) {
@@ -122,7 +129,12 @@ public final class CotExtremes {
         return (end.getValue() / start.getValue() - 1.0) * 100.0;
     }
 
-    /** 수익률 묶음 요약 (표본 수·평균·중앙값·승률·최고·최저). */
+    /**
+     * 수익률 묶음 요약.
+     *
+     * @param returns 수익률 목록 (null·무한대는 걸러집니다)
+     * @return 표본 수·평균·중앙값·승률(%)·최고·최저. 쓸 값이 없으면 모든 항목 null
+     */
     public static Summary summarize(List<Double> returns) {
         List<Double> values = new ArrayList<>();
         if (returns != null) {
@@ -151,8 +163,13 @@ public final class CotExtremes {
     /**
      * 비교 기준: 모든 주간 시점의 이후 수익률.
      *
-     * <p>극단 이후 성적만 보여 주면 잘한 것처럼 보입니다. 아무 때나 들어갔을 때의
-     * 성적과 나란히 놓아야 신호에 의미가 있는지 알 수 있습니다.
+     * @param dates  모든 주간 공시 기준일
+     * @param prices 일별 가격
+     * @param weeks  몇 주 뒤를 볼지
+     * @return 같은 방식으로 요약한 "아무 때나 들어갔을 때"의 성적
+     *
+     * <p>극단 이후 성적만 보여 주면 잘한 것처럼 보입니다. 비교 기준과 나란히
+     * 놓아야 신호에 의미가 있는지 알 수 있습니다.
      */
     public static Summary baseline(List<LocalDate> dates, NavigableMap<LocalDate, Double> prices,
                                    int weeks) {

@@ -1,11 +1,11 @@
 """
-app/settings.py
 수집기 설정과 외부 API 키 로더.
 
-구버전(config.py)은 Streamlit Secrets(.streamlit/secrets.toml)를 읽었습니다.
-지금은 Streamlit이 없으므로 **환경변수 + 선택적 TOML 파일** 두 경로만 씁니다.
-키가 없어도 수집기는 정상 기동해야 하며, 키가 필요한 소스만 건너뜁니다.
-(구버전 README의 "키가 없을 때의 동작" 표를 그대로 유지합니다.)
+키는 **환경변수 + 선택적 TOML 파일** 두 경로에서 읽습니다.
+
+**키가 없어도 수집기는 정상 기동해야 합니다.** 키가 필요한 소스만 건너뛰고,
+무엇이 왜 빠졌는지 /status가 알려 줍니다. 어떤 키가 없으면 무엇이 안 되는지는
+README의 "설정" 표에 있습니다.
 """
 from __future__ import annotations
 
@@ -45,8 +45,9 @@ def get_secret(key_path: str, default: str = "") -> str:
       2) 환경변수 key_path 그대로
       3) secrets.toml의 [fred] api_key
 
-    구버전은 Streamlit Secrets를 먼저 봤지만, 컨테이너 환경에서는 환경변수가
-    1차 수단이므로 순서를 뒤집었습니다.
+    컨테이너 환경에서는 환경변수가 1차 수단이라 TOML 파일보다 먼저 봅니다.
+
+    :returns: 값의 앞뒤 공백을 제거한 문자열. 어디에도 없으면 빈 문자열
     """
     env_name = key_path.replace(".", "_").upper()
     for candidate in (env_name, key_path):
@@ -79,7 +80,7 @@ def scheduler_enabled() -> bool:
     """
     상주 스케줄러 사용 여부.
 
-    구버전의 `python collector.py --loop`에 해당합니다. 끄면 수집기는
+    끄면 수집기는
     REST 요청(POST /collect)으로만 동작합니다.
     """
     return os.environ.get("COLLECTOR_SCHEDULER", "true").lower() in (
@@ -88,7 +89,7 @@ def scheduler_enabled() -> bool:
 
 
 def interval_seconds(group: str) -> int:
-    """작업군별 수집 주기. 구버전 기본값(5분 / 1시간 / 12시간)과 같습니다."""
+    """작업군별 수집 주기 (기본 5분 / 1시간 / 12시간)."""
     defaults = {"fast": 5 * 60, "slow": 60 * 60, "weekly": 12 * 60 * 60}
     env_key = f"COLLECTOR_{group.upper()}_INTERVAL"
     try:
@@ -133,9 +134,11 @@ def sec_user_agent() -> str:
     SEC EDGAR가 요구하는 연락처 포함 User-Agent.
 
     SEC는 "Declare your user agent in request headers"를 의무로 두고, 연락처가
-    없거나 예시 값이면 403을 돌려줍니다. 구버전은 .streamlit/secrets.toml의
-    [sec] user_agent 를 읽었으므로, 같은 키 경로("sec.user_agent")를 유지하고
-    환경변수 SEC_USER_AGENT도 함께 받습니다.
+    없거나 예시 값이면 403을 돌려줍니다. 키가 아니라 **연락 가능한 이메일**입니다.
+
+    ``sec.user_agent``(TOML)와 ``SEC_USER_AGENT``(환경변수) 둘 다 받습니다.
+
+    :returns: User-Agent 문자열. 설정하지 않았으면 빈 문자열이고 13F 수집만 멈춥니다
     """
     return get_secret("sec.user_agent") or get_secret("SEC_USER_AGENT")
 
@@ -148,6 +151,6 @@ KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 # LS OPEN API 주소.
 # 문서에는 오랫동안 :8080이 적혀 있었지만 서버가 그 포트를 더 이상 열어두지
 # 않습니다(즉시 connection refused). 표준 443을 먼저 쓰고 8080은 보조로만
-# 남깁니다. 구버전 README의 "포트 주의" 항목과 같은 판단입니다.
+# 남깁니다.
 LS_BASE_URL = "https://openapi.ls-sec.co.kr"
 LS_ALT_BASE_URLS = ("https://openapi.ls-sec.co.kr:8080",)

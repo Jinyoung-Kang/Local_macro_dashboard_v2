@@ -39,9 +39,12 @@ public final class FxIndex {
     /**
      * 창의 첫 유효값을 100으로 놓고 다시 매깁니다.
      *
-     * <p>기준값이 0이면 재기준화가 불가능합니다(나눌 수 없습니다). 그때는
-     * 0을 채우거나 1로 바꾸지 않고 <b>빈 결과</b>를 돌려줍니다 — 없는 값을
-     * 그럴듯한 숫자로 만들지 않습니다.
+     * @param series 날짜 → 값 (이미 원하는 구간으로 잘라서 넘기세요)
+     * @return 기준일·기준값과 재기준화된 계열. 유효값(0도 NaN도 아닌 값)이 하나도
+     *         없으면 기준값 null + 빈 계열입니다.
+     *
+     * <p>기준일 <b>앞쪽</b>의 결측은 결측으로 남습니다. 100으로 채우면 없던 관측이
+     * 생기고 차트가 그 자리에서 시작하는 선을 그립니다.
      */
     public static Rebased rebase(NavigableMap<LocalDate, Double> series) {
         LocalDate baseDate = null;
@@ -67,12 +70,14 @@ public final class FxIndex {
     }
 
     /**
-     * 여러 계열의 날짜를 합친 정렬된 목록.
+     * 여러 계열의 날짜를 합칩니다.
      *
-     * <p><b>교집합이 아니라 합집합</b>입니다. 환율 시장은 나라마다 휴일이
-     * 달라, 교집합을 쓰면 한 계열이 쉰 날의 다른 계열 값까지 버리게 됩니다.
-     * 값이 없는 날은 null로 남고, 차트는 그 자리를 잇지 않습니다(없는 거래를
-     * 선으로 이으면 실제로는 없던 흐름이 생깁니다).
+     * @param series 합칠 계열들
+     * @return 오름차순 날짜 목록 (<b>합집합</b>, 중복 제거)
+     *
+     * <p>교집합이 아닌 이유 — 환율 시장은 나라마다 휴일이 달라, 교집합을 쓰면
+     * 한 계열이 쉰 날의 다른 계열 값까지 버리게 됩니다. 값이 없는 날은 차트에서
+     * 비어 있어야 합니다(없는 거래를 선으로 이으면 없던 흐름이 생깁니다).
      */
     @SafeVarargs
     public static List<LocalDate> unionDates(NavigableMap<LocalDate, Double>... series) {
@@ -85,7 +90,12 @@ public final class FxIndex {
         return new ArrayList<>(merged.keySet());
     }
 
-    /** 변화율(%) — 창의 첫 값 대비 마지막 값. 둘 중 하나가 없으면 null. */
+    /**
+     * 구간 변화율 — 창의 첫 값 대비 마지막 값.
+     *
+     * @param series 날짜 → 값
+     * @return 변화율(%). 유효값이 없으면 null
+     */
     public static Double changePct(NavigableMap<LocalDate, Double> series) {
         Rebased rebased = rebase(series);
         if (rebased.baseValue() == null || rebased.values().isEmpty()) {

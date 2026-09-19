@@ -1,21 +1,12 @@
 """
-app/services/scraper.py
 비공식 참고 시세 수집 (TradingView Scanner + Yahoo chart JSON).
 
-[구버전과 달라진 점 — 의도한 개선]
-구버전은 TradingView **HTML 본문을 정규식으로** 긁는 경로를 여러 개 갖고
-있었습니다(_parse_tradingview, _parse_tradingview_hsi,
-_extract_tradingview_current_price …). HTML 구조가 바뀌면 예외 없이 조용히
-틀린 숫자를 주기 시작하는 방식이라, 이 프로젝트가 교차 검증 계층을 따로
-만들어야 했던 원인이기도 합니다.
+⚠️ TradingView·Yahoo는 **비공식 참고 시세**입니다. 화면은 공식 확정치와 나란히
+놓되 반드시 "참고"라고 표시해야 합니다.
 
-같은 값을 JSON으로 주는 공개 엔드포인트가 이미 있고 구버전도 일부는 그것을
-썼습니다(bonds scanner, Symbol Scanner, Yahoo chart). 이 버전은 전부 JSON
-경로만 씁니다. 수집되는 항목과 의미는 동일하고, 실패는 조용히 틀린 값이
-아니라 status="fail"로 드러납니다.
-
-⚠️ 출처의 성격은 그대로입니다. TradingView/Yahoo는 **비공식 참고 시세**이며,
-화면은 반드시 그렇게 표시해야 합니다.
+**HTML을 정규식으로 긁지 마세요.** 같은 값을 JSON으로 주는 공개 엔드포인트가
+있고 이 파일은 그것만 씁니다. HTML 파싱은 구조가 바뀌면 예외 없이 조용히 틀린
+숫자를 주기 시작합니다 — 실패가 status="fail"로 드러나지 않는 방식입니다.
 """
 from __future__ import annotations
 
