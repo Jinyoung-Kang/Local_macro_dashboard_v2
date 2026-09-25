@@ -64,4 +64,20 @@ class KrFundamentalsTest {
         assertThat(m.get("revenueGrowth")).isNull();
         assertThat((List<String>) m.get("missing")).contains("부채총계", "자본총계", "매출액");
     }
+
+    @Test
+    @DisplayName("PER·PBR — 적자·자본잠식·외화 보고는 배수를 내지 않는다")
+    void valuation() {
+        Map<String, Object> ok = KrFundamentals.valuation(1000.0, 100.0, 500.0, "KRW");
+        assertThat((Double) ok.get("per")).isCloseTo(10.0, within(1e-9));
+        assertThat((Double) ok.get("pbr")).isCloseTo(2.0, within(1e-9));
+
+        Map<String, Object> loss = KrFundamentals.valuation(1000.0, -5.0, -1.0, null);
+        assertThat(loss.get("per")).isNull();
+        assertThat(loss.get("pbr")).isNull();
+
+        Map<String, Object> usd = KrFundamentals.valuation(1000.0, 100.0, 500.0, "USD");
+        assertThat(usd.get("per")).isNull();
+        assertThat(usd.get("valuationNote")).asString().contains("USD");
+    }
 }

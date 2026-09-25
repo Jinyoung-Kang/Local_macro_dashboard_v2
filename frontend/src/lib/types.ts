@@ -831,13 +831,36 @@ export interface KrFundamentalsCompany {
   operatingTurn?: string | null;
   missing?: string[];
   notes?: string[];
+  /** 금융위 공식 시세 (원) */
+  officialClose?: number | null;
+  marketCap?: number | null;
+  market?: string | null;
+  /** 시가총액 ÷ 직전 사업연도 순이익·자본 (배) */
+  per?: number | null;
+  pbr?: number | null;
+  valuationNote?: string;
 }
 
 export interface KrFundamentalsResponse {
   available: boolean;
+  /** 금융위 공식 시세 기준일 (시가총액·PER·PBR의 시점) */
+  priceDate?: string | null;
+  priceSource?: string | null;
   message?: string;
   source?: string;
   companies: KrFundamentalsCompany[];
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+}
+
+/** GET /api/kr/market-totals — 시장별 시가총액·거래대금 합계 (원). */
+export interface KrMarketTotalsResponse {
+  available: boolean;
+  message?: string;
+  source?: string;
+  latestBasDt?: string;
+  markets: { market: string; marketCap: { date: string; value: number }[]; tradingValue: { date: string; value: number }[] }[];
   collectedAtKst?: string;
   ageSeconds?: number;
   stale?: boolean;

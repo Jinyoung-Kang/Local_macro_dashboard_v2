@@ -6,8 +6,10 @@ import com.macrodash.analytics.KrFundamentals;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreReader;
+import com.macrodash.store.StoreRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -34,9 +36,11 @@ public class KrFundamentalsService {
     private static final String VIEWER = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=";
 
     private final StoreReader store;
+    private final StoreRepository repository;
 
-    public KrFundamentalsService(StoreReader store) {
+    public KrFundamentalsService(StoreReader store, StoreRepository repository) {
         this.store = store;
+        this.repository = repository;
     }
 
     /**
@@ -54,25 +58,59 @@ public class KrFundamentalsService {
 
         Optional<Snapshot> snapshot = store.read(
                 Datasets.SNAP_DART_FUNDAMENTALS, Datasets.MAX_AGE_WEEKLY, "dart_fundamentals");
+        Map<String, JsonNode> prices = officialPrices(requested, out);
+
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
-            out.put("companies", List.of());
             out.put("message", "DART 재무 저장본이 없습니다. DART_API_KEY를 설정하고 "
                     + "'dart_fundamentals' 수집을 실행하세요.");
-            return out;
+        } else {
+            snapshot.get().putFreshness(out);
+            out.put("available", true);
+            out.put("source", Json.asText(snapshot.get().payload(), "source"));
         }
-        snapshot.get().putFreshness(out);
-        out.put("available", true);
-        out.put("source", Json.asText(snapshot.get().payload(), "source"));
 
-        JsonNode stored = Json.child(snapshot.get().payload(), "companies");
+        JsonNode stored = snapshot.isEmpty() ? null : Json.child(snapshot.get().payload(), "companies");
         List<Map<String, Object>> companies = new ArrayList<>();
         for (String code : requested) {
             JsonNode company = stored == null ? null : stored.get(code);
-            companies.add(company == null ? Map.of("code", code, "available", false) : describe(code, company));
+            Map<String, Object> one = company == null
+                    ? new LinkedHashMap<>(Map.of("code", code, "available", false))
+                    : describe(code, company);
+            attachPrice(one, company, prices.get(code));
+            companies.add(one);
         }
         out.put("companies", companies);
         return out;
+    }
+
+    /**
+     * 금융위 공식 시세의 최신 기준일 행. 저장본이 없으면 빈 맵(재무만 보여 줌).
+     * 기준일을 응답에 적어 둡니다 — 시가총액이 "언제" 값인지가 PER 해석에 필요합니다.
+     */
+    private Map<String, JsonNode> officialPrices(Set<String> codes, Map<String, Object> out) {
+        LocalDate latest = repository.latestObservationDate(Datasets.OBS_FSC_PRICE);
+        out.put("priceDate", latest == null ? null : latest.toString());
+        out.put("priceSource", latest == null ? null : "금융위원회 주식시세정보 (거래소 확정 종가)");
+        return latest == null ? Map.of() : repository.readObservationsFor(Datasets.OBS_FSC_PRICE, latest, codes);
+    }
+
+    /** 종가·시가총액을 붙이고, 재무가 있으면 PER·PBR을 계산합니다. */
+    static void attachPrice(Map<String, Object> one, JsonNode company, JsonNode price) {
+        Double marketCap = price == null ? null : Json.asDouble(price, "marketCap");
+        one.put("officialClose", price == null ? null : Json.asDouble(price, "close"));
+        one.put("marketCap", marketCap);
+        one.put("market", price == null ? null : Json.asText(price, "market"));
+        if (price != null && one.get("name") == null) {
+            one.put("name", Json.asText(price, "name"));
+        }
+        if (company != null) {
+            JsonNode accounts = Json.child(company, "accounts");
+            one.putAll(KrFundamentals.valuation(marketCap,
+                    Json.asDouble(Json.child(accounts, KrFundamentals.NET_INCOME), "current"),
+                    Json.asDouble(Json.child(accounts, KrFundamentals.EQUITY), "current"),
+                    Json.asText(company, "currency")));
+        }
     }
 
     static Map<String, Object> describe(String code, JsonNode company) {

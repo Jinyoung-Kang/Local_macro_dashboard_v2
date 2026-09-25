@@ -5,7 +5,7 @@ app/tasks.py
 [작업군과 주기 — 구버전과 동일]
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
-                  volatility_history · cot_history · daum_futures_trend
+                  volatility_history · cot_history · daum_futures_trend · fsc_prices
   weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
 
 [규칙]
@@ -34,6 +34,7 @@ from .services import (
     cot as cot_service,
     dart as dart_service,
     fred as fred_service,
+    fsc as fsc_service,
     kasi as kasi_service,
     krx as krx_service,
     liquidity as liquidity_service,
@@ -538,6 +539,80 @@ def task_kr_holidays() -> str:
     return counts + (f" (유지: {', '.join(map(str, kept))})" if kept else "")
 
 
+FSC_CALL_BUDGET = 12
+FSC_LOOKBACK_DAYS = 7
+FSC_RETENTION_DAYS = 400
+
+
+def _kr_holiday_dates() -> set[str]:
+    """저장된 공휴일(천문연) — 없으면 빈 집합(주말만 건너뜀)."""
+    snap = store.read_snapshot(catalog.SNAP_KR_HOLIDAYS)
+    years = ((snap.payload or {}).get("years") or {}) if snap else {}
+    return {day["date"] for year in years.values() for day in (year.get("holidays") or [])}
+
+
+def _fsc_candidate_dates(today) -> list:
+    """어제부터 거슬러 올라가며 평일·비공휴일만. 오늘은 아직 발표 전이라 넣지 않습니다."""
+    holidays = _kr_holiday_dates()
+    out = []
+    for back in range(1, FSC_LOOKBACK_DAYS + 1):
+        day = today - timedelta(days=back)
+        if day.weekday() < 5 and day.isoformat() not in holidays:
+            out.append(day)
+    return out
+
+
+def task_fsc_prices() -> str:
+    """
+    🏛️ 금융위 공식 일별 시세 — 전 종목 종가·시가총액 + 시장별 합계.
+
+    규칙
+      - 가장 최근 기준일부터 확인하고, 이미 저장된 날을 만나면 멈춥니다.
+        최신 상태면 호출 0회로 끝납니다(1시간마다 돌아도 한도를 쓰지 않음).
+      - 종목별 값은 observations(종목코드 = entity)에 쌓습니다. 한 스냅샷에 3천 행을
+        넣으면 화면 요청마다 그 전체를 읽어야 합니다. 인덱스로 필요한 종목만 읽습니다.
+      - 400일이 지난 행은 정리합니다.
+    """
+    today = datetime.now(KST).date()
+    stored_latest = store.latest_observation_date(catalog.OBS_FSC_PRICE)
+    budget = publicapi.CallBudget(FSC_CALL_BUDGET)
+    reasons: list[str] = []
+
+    for day in _fsc_candidate_dates(today):
+        if stored_latest and day.isoformat() <= stored_latest:
+            return f"최신 상태 (기준일 {stored_latest}, 호출 {budget.used}회)"
+        try:
+            rows, url = fsc_service.fetch_day(day.strftime("%Y%m%d"), budget)
+        except publicapi.MissingKey:
+            raise EmptyResult("DATA_GO_KR_SERVICE_KEY 미설정 — .env에 공공데이터포털 인증키를 넣으세요") from None
+        except publicapi.PublicApiError as exc:
+            reasons.append(f"{day}: {exc}")
+            if budget.exhausted:
+                break
+            continue
+        if not rows:
+            continue  # 아직 발표 전이거나 휴장일 — 하루 더 거슬러 올라감
+
+        obs_date = day.isoformat()
+        saved = store.put_observations(catalog.OBS_FSC_PRICE, obs_date, rows, entity_key="code")
+        totals = fsc_service.market_totals(rows)
+        for market, agg in totals.items():
+            store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.marketCap", [(obs_date, agg["marketCap"])])
+            store.put_timeseries(catalog.TS_FSC_MARKET, f"{market}.tradingValue", [(obs_date, agg["tradingValue"])])
+        store.put_snapshot(catalog.SNAP_FSC_PRICES_META, {
+            "source": "금융위원회 주식시세정보 (거래소 확정치, 기준일 다음 영업일 13시 이후 갱신)",
+            "latestBasDt": obs_date,
+            "rows": saved,
+            "markets": totals,
+            "endpoint": url,
+        })
+        cutoff = (today - timedelta(days=FSC_RETENTION_DAYS)).isoformat()
+        store.delete_observations_before(catalog.OBS_FSC_PRICE, cutoff)
+        return f"{obs_date} {saved}종목 · 시장 {len(totals)}개 (호출 {budget.used}회)"
+
+    raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + _reason_suffix(reasons))
+
+
 # DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
 DART_UNIVERSE_LIMIT = 150
 DART_UNIVERSE_DAYS = 30
@@ -858,6 +933,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열"),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),
+    Task("fsc_prices", "slow", task_fsc_prices, "국내 공식 일별 시세 (금융위)"),
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),
     Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
     Task("dart_fundamentals", "weekly", task_dart_fundamentals, "국내 종목 재무 (DART 사업보고서)"),

@@ -77,6 +77,8 @@ services:
       # 국내 공공 API — 공공데이터포털 키 하나로 특일정보·주식시세·실거래가를 씁니다.
       DATA_GO_KR_SERVICE_KEY: "${DATA_GO_KR_SERVICE_KEY:-}"
       DART_API_KEY: "${DART_API_KEY:-}"
+      # (선택) 금융위 주식시세 주소 직접 지정 — 기본은 V2 → 이전 주소 순으로 시도
+      FSC_STOCK_PRICE_URL: "${FSC_STOCK_PRICE_URL:-}"
     volumes:
       - ./db/migrations:/app/db/migrations:ro
     ports:

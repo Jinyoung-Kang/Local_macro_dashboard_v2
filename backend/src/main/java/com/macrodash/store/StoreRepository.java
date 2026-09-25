@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
@@ -15,6 +16,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -159,6 +162,38 @@ public class StoreRepository {
             }
             return node;
         }, params.toArray());
+    }
+
+    /**
+     * 특정 날짜의 특정 개체만 읽습니다.
+     *
+     * <p>하루치 전 종목(약 3천 행)을 읽어 걸러 내지 않고, 기본키
+     * (dataset, obs_date, entity) 인덱스로 필요한 행만 가져옵니다.
+     *
+     * @param entities 개체 키 목록 (호출하는 쪽이 형식을 검증해서 넘길 것)
+     * @return entity → payload. 없는 개체는 키가 없습니다
+     */
+    public Map<String, JsonNode> readObservationsFor(String dataset, LocalDate obsDate,
+                                                     Collection<String> entities) {
+        Map<String, JsonNode> out = new LinkedHashMap<>();
+        if (entities.isEmpty()) {
+            return out;
+        }
+        String placeholders = String.join(",", Collections.nCopies(entities.size(), "?"));
+        List<Object> params = new ArrayList<>(List.of(dataset, java.sql.Date.valueOf(obsDate)));
+        params.addAll(entities);
+        jdbc.query("SELECT entity, payload FROM observations WHERE dataset = ? AND obs_date = ? "
+                        + "AND entity IN (" + placeholders + ")",
+                (RowCallbackHandler) rs -> out.put(rs.getString("entity"), parseJson(rs.getString("payload"))),
+                params.toArray());
+        return out;
+    }
+
+    /** 그 데이터셋의 가장 최근 obs_date. 없으면 null. */
+    public LocalDate latestObservationDate(String dataset) {
+        java.sql.Date date = jdbc.queryForObject(
+                "SELECT MAX(obs_date) FROM observations WHERE dataset = ?", java.sql.Date.class, dataset);
+        return date == null ? null : date.toLocalDate();
     }
 
     public List<String> listObservationDates(String dataset) {

@@ -2,6 +2,7 @@ package com.macrodash.web;
 
 import com.macrodash.service.CalendarService;
 import com.macrodash.service.KrFundamentalsService;
+import com.macrodash.service.KrMarketService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,10 +23,13 @@ public class PublicDataController {
 
     private final CalendarService calendar;
     private final KrFundamentalsService fundamentals;
+    private final KrMarketService market;
 
-    public PublicDataController(CalendarService calendar, KrFundamentalsService fundamentals) {
+    public PublicDataController(CalendarService calendar, KrFundamentalsService fundamentals,
+                                KrMarketService market) {
         this.calendar = calendar;
         this.fundamentals = fundamentals;
+        this.market = market;
     }
 
     /** 📅 한국 공휴일 (천문연 특일정보) — 시계의 KRX 휴장 판정용. */
@@ -42,5 +46,15 @@ public class PublicDataController {
     @GetMapping("/kr/fundamentals")
     public Map<String, Object> krFundamentals(@RequestParam(defaultValue = "") String codes) {
         return fundamentals.fundamentals(codes);
+    }
+
+    /**
+     * 🏛️ 시장별 시가총액·거래대금 합계 (금융위 공식 시세).
+     *
+     * @param days 조회 기간(일, 20~400)
+     */
+    @GetMapping("/kr/market-totals")
+    public Map<String, Object> krMarketTotals(@RequestParam(defaultValue = "180") int days) {
+        return market.totals(days);
     }
 }

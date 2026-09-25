@@ -89,6 +89,40 @@ public final class KrFundamentals {
         return out;
     }
 
+    /**
+     * 공식 시가총액(금융위)과 공시 재무(DART)를 합친 밸류에이션.
+     *
+     * <ul>
+     *   <li>PER = 시가총액 ÷ 당기순이익 (직전 사업연도, 배)</li>
+     *   <li>PBR = 시가총액 ÷ 자본총계 (직전 사업연도 말, 배)</li>
+     * </ul>
+     *
+     * <p>주의사항
+     * <ul>
+     *   <li>시점이 다릅니다 — 시가총액은 최근 기준일, 재무는 직전 사업보고서입니다.
+     *       분기 실적을 반영한 증권사 PER과 다를 수 있습니다.</li>
+     *   <li>연결 순이익에는 비지배지분 몫이 섞여 있어 지배주주 기준 PER보다 약간 낮게 나옵니다.</li>
+     *   <li>순이익·자본이 0 이하면 배수가 의미 없어 null입니다(음수 PER을 내지 않습니다).</li>
+     *   <li>통화가 원화가 아니면(외화 보고 회사) 단위가 달라 계산하지 않습니다.</li>
+     * </ul>
+     *
+     * @param marketCap 시가총액(원)
+     * @param netIncome 당기순이익(원)
+     * @param equity    자본총계(원)
+     * @param currency  DART 통화 단위 (null이면 원화로 간주)
+     */
+    public static Map<String, Object> valuation(Double marketCap, Double netIncome, Double equity, String currency) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        boolean won = currency == null || currency.isBlank() || "KRW".equalsIgnoreCase(currency.trim());
+        boolean usable = won && marketCap != null && marketCap > 0;
+        out.put("per", usable && netIncome != null && netIncome > 0 ? marketCap / netIncome : null);
+        out.put("pbr", usable && equity != null && equity > 0 ? marketCap / equity : null);
+        if (!won) {
+            out.put("valuationNote", "재무 통화가 원화가 아니어서(" + currency + ") PER·PBR을 계산하지 않았습니다");
+        }
+        return out;
+    }
+
     /** 분자 ÷ 분모 × 100. 어느 쪽이든 없거나 분모가 0이면 null. */
     static Double ratio(Double numerator, Double denominator) {
         if (numerator == null || denominator == null || denominator == 0) {

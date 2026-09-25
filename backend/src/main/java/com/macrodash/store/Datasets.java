@@ -26,6 +26,8 @@ public final class Datasets {
     public static final String SNAP_KR_HOLIDAYS = "calendar.kr_holidays";
     /** DART 사업보고서 주요계정 (수급 레이더 종목). */
     public static final String SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals";
+    /** 금융위 시세 최신 기준일·시장 합계. 종목별 값은 {@link #OBS_FSC_PRICE}. */
+    public static final String SNAP_FSC_PRICES_META = "kr.fsc_prices_meta";
 
     /** 변동성 지수는 가장 긴 기간으로 한 번 저장하고 짧은 기간은 잘라 씁니다. */
     public static final String VOLATILITY_STORE_PERIOD = "5y";
@@ -69,6 +71,10 @@ public final class Datasets {
     public static final String TS_KRX_FUTURES = "krx_futures";
     public static final String TS_LIQUIDITY = "fed_liquidity";
     public static final String OBS_RADAR = "radar_ranking";
+    /** 금융위 공식 일별 시세 (entity = 6자리 종목코드). */
+    public static final String OBS_FSC_PRICE = "fsc_price";
+    /** 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등). */
+    public static final String TS_FSC_MARKET = "fsc_market";
 
     // ------------------------------------------------------------- 신선도(초)
     /** 장중 시세성 데이터 (수집 주기 5분의 3배). */

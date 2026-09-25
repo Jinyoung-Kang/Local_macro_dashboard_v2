@@ -355,6 +355,24 @@ def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
     return [r["code"] for r in rows if r["code"]]
 
 
+def latest_observation_date(dataset: str) -> str | None:
+    """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(obs_date) AS d FROM observations WHERE dataset = %s", (dataset,),
+        ).fetchone()
+    return row["d"].isoformat() if row and row["d"] else None
+
+
+def delete_observations_before(dataset: str, before: str) -> int:
+    """오래된 누적 레코드 정리. 지운 행 수."""
+    with connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM observations WHERE dataset = %s AND obs_date < %s", (dataset, before),
+        )
+        return cur.rowcount or 0
+
+
 def list_observation_dates(dataset: str) -> list[str]:
     with connection() as conn:
         rows = conn.execute(
@@ -652,6 +670,8 @@ def missing_datasets() -> list[dict]:
     from . import settings
     if settings.data_go_kr_key():
         expected.append((catalog.SNAP_KR_HOLIDAYS, "한국 공휴일 (천문연)"))
+    if settings.data_go_kr_key():
+        expected.append((catalog.SNAP_FSC_PRICES_META, "국내 공식 시세 (금융위)"))
     if settings.dart_key():
         expected.append((catalog.SNAP_DART_FUNDAMENTALS, "국내 종목 재무 (DART)"))
 

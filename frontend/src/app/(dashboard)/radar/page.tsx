@@ -15,7 +15,7 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
+import { deltaColor, EMPTY, formatKrw, formatNumber, formatPercent } from "@/lib/format";
 import type {
   DiagnosticsResponse,
   KrFundamentalsResponse,
@@ -321,11 +321,13 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
 
   const percent = (value: number | null | undefined) =>
     value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}%`;
+  const multiple = (value: number | null | undefined) =>
+    value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}배`;
 
   return (
     <Card
-      title="📑 재무 체크 (DART 사업보고서)"
-      subtitle="부채비율 = 부채총계÷자본총계 · 증가율은 전년 대비 · ROE = 순이익÷기말 자본"
+      title="📑 재무·밸류에이션 체크 (DART 사업보고서 + 금융위 공식 시세)"
+      subtitle="부채비율 = 부채총계÷자본총계 · 증가율은 전년 대비 · ROE = 순이익÷기말 자본 · PER·PBR = 시가총액÷직전 사업연도 순이익·자본"
       actions={
         <Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} stale={data?.stale} />
       }
@@ -334,11 +336,12 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && <Banner tone="info">{data.message}</Banner>}
 
-      {data?.available && (
+      {(data?.available || data?.priceDate) && (
         <>
           <p className="mb-2 text-xs text-muted">
             {covered}/{rows.length}개 종목 재무 확보 · ETF·ETN·스팩은 DART 재무 대상이 아닙니다 ·
             이자보상배율은 주요계정에 이자비용이 없어 표시하지 않습니다
+            {data.priceDate ? ` · 시가총액 기준일 ${data.priceDate} (재무와 시점이 다름)` : " · 공식 시세 없음 → PER·PBR 생략"}
           </p>
           <Table
             rows={rows}
@@ -375,6 +378,9 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
               },
               { key: "margin", header: "영업이익률", align: "right", render: (row) => percent(row.operatingMargin) },
               { key: "roe", header: "ROE", align: "right", render: (row) => percent(row.roe) },
+              { key: "cap", header: "시가총액", align: "right", render: (row) => formatKrw(row.marketCap) },
+              { key: "per", header: "PER", align: "right", render: (row) => multiple(row.per) },
+              { key: "pbr", header: "PBR", align: "right", render: (row) => multiple(row.pbr) },
               {
                 key: "link",
                 header: "공시",

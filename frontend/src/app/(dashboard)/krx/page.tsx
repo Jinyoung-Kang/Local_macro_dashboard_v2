@@ -12,8 +12,8 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned } from "@/lib/format";
-import type { InvestorTrendResponse, KrxFuturesResponse } from "@/lib/types";
+import { deltaColor, EMPTY, formatKrw, formatNumber, formatPercent, formatSigned } from "@/lib/format";
+import type { InvestorTrendResponse, KrMarketTotalsResponse, KrxFuturesResponse } from "@/lib/types";
 
 /**
  * 🇰🇷 국내 파생 & 투기세력 (KRX).
@@ -280,6 +280,72 @@ export default function KrxPage() {
           </div>
         )}
       </Card>
+
+      <MarketTotalsCard />
     </div>
+  );
+}
+
+/**
+ * 🏛️ 증시 규모 — 시장별 시가총액·거래대금 합계 (금융위 공식 시세, 조 원).
+ *
+ * 지수는 가격만 보여 줍니다. 시가총액 합계는 신규 상장·증자까지 반영한 시장의
+ * 크기이고, 거래대금은 참여 강도입니다. 거래소 확정치라 기준일 다음 영업일
+ * 오후에 갱신됩니다(오늘 값은 없습니다).
+ */
+function MarketTotalsCard() {
+  const { data, loading, error, reload } = useApi<KrMarketTotalsResponse>("/api/kr/market-totals?days=180");
+  const markets = data?.markets ?? [];
+
+  // 두 시장의 날짜를 합쳐 한 표로 만듭니다(날짜별로 값을 짝지음 — 배열 순서에 기대지 않음).
+  const rows = new Map<string, Record<string, unknown>>();
+  markets.forEach((market) => {
+    market.marketCap.forEach((point) => {
+      const row = rows.get(point.date) ?? { date: point.date };
+      row[`${market.market}_cap`] = point.value / 1e12;
+      rows.set(point.date, row);
+    });
+  });
+  const chart = [...rows.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const latest = (market: string, key: "marketCap" | "tradingValue") =>
+    markets.find((m) => m.market === market)?.[key].at(-1)?.value ?? null;
+
+  return (
+    <Card
+      title="🏛️ 증시 규모 — 시가총액 추이·거래대금 (금융위 공식)"
+      subtitle={data?.latestBasDt ? `기준일 ${data.latestBasDt} · 거래소 확정치, 다음 영업일 13시 이후 갱신` : undefined}
+      actions={<Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} stale={data?.stale} />}
+    >
+      {loading && !data && <Loading label="공식 시세를 불러오는 중…" />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+      {data && !data.available && <Banner tone="info">{data.message}</Banner>}
+      {data?.available && (
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="KOSPI 시가총액" value={formatKrw(latest("KOSPI", "marketCap"))} />
+            <Metric label="KOSDAQ 시가총액" value={formatKrw(latest("KOSDAQ", "marketCap"))} />
+            <Metric label="KOSPI 거래대금" value={formatKrw(latest("KOSPI", "tradingValue"))} />
+            <Metric label="KOSDAQ 거래대금" value={formatKrw(latest("KOSDAQ", "tradingValue"))} />
+          </div>
+          {chart.length > 1 ? (
+            // 한 차트에는 한 가지 이야기만: 시장 크기(시가총액). 거래대금은 위 수치로 봅니다.
+            // 두 시장의 규모 차이가 커서(약 5배) 코스닥을 오른쪽 축에 둡니다.
+            <MultiLineSeries
+              data={chart}
+              unit="조"
+              rightUnit="조"
+              precision={0}
+              rightPrecision={0}
+              series={[
+                { key: "KOSPI_cap", name: "KOSPI 시가총액", color: SERIES_COLORS.blue },
+                { key: "KOSDAQ_cap", name: "KOSDAQ 시가총액 (오른쪽)", color: SERIES_COLORS.orange, axis: "right" },
+              ]}
+            />
+          ) : (
+            <p className="text-xs text-muted">기준일이 하루뿐이라 추이는 이틀째부터 그려집니다.</p>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
