@@ -129,6 +129,28 @@ def toss_credentials() -> tuple[str, str]:
     return get_secret("toss.client_id"), get_secret("toss.client_secret")
 
 
+# ---- 국내 공공 API --------------------------------------------------------------
+# 공공데이터포털(data.go.kr)은 계정 하나에 인증키 하나이고, 활용 신청한 서비스마다
+# 같은 키를 씁니다. 그래서 특일정보·주식시세·실거래가가 한 값을 공유합니다.
+def data_go_kr_key() -> str:
+    """
+    공공데이터포털 일반 인증키.
+
+    Encoding 키(``%``가 들어 있음)와 Decoding 키 어느 쪽을 넣어도 됩니다.
+    보내기 직전에 ``publicapi.encoded_key``가 한 가지 형태로 맞춥니다.
+
+    :returns: 키 문자열. 없으면 빈 문자열이고 해당 수집만 멈춥니다
+    """
+    # 환경변수 DATA_GO_KR_SERVICE_KEY 또는 secrets.toml [data_go_kr] service_key
+    return get_secret("data_go_kr.service_key")
+
+
+def dart_key() -> str:
+    """금융감독원 Open DART 인증키(40자리). 없으면 빈 문자열."""
+    # 환경변수 DART_API_KEY 또는 secrets.toml [dart] api_key
+    return get_secret("dart.api_key")
+
+
 def sec_user_agent() -> str:
     """
     SEC EDGAR가 요구하는 연락처 포함 User-Agent.

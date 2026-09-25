@@ -22,6 +22,8 @@ public final class Datasets {
     public static final String SNAP_FX_HISTORY = "macro.fx_history";
     public static final String SNAP_EQUITY_HISTORY = "equity.price_history";
     public static final String SNAP_COT_HISTORY = "cot.multi_asset";
+    /** 한국 공휴일 (천문연 특일정보). 거래소 휴장 판정에 씁니다. */
+    public static final String SNAP_KR_HOLIDAYS = "calendar.kr_holidays";
 
     /** 변동성 지수는 가장 긴 기간으로 한 번 저장하고 짧은 기간은 잘라 씁니다. */
     public static final String VOLATILITY_STORE_PERIOD = "5y";
@@ -91,6 +93,8 @@ public final class Datasets {
     public static final long MAX_AGE_DAILY = 6 * 60 * 60L;
     /** 분기 공시(13F) 등 거의 변하지 않는 데이터. */
     public static final long MAX_AGE_SLOW = 24 * 60 * 60L;
+    /** 주 단위로 바뀌는 데이터 (공휴일 발표·분기 공시 기반 재무). */
+    public static final long MAX_AGE_WEEKLY = 7 * 24 * 60 * 60L;
 
     /**
      * 수동 새로고침이라도 이 간격 안에는 다시 받지 않습니다.

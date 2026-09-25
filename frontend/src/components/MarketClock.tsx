@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useApi } from "@/hooks/useApi";
+import type { KrHolidaysResponse } from "@/lib/types";
 import {
-  hasLunarHolidays,
+  krHolidayCoverage,
   krMarketHolidays,
   usMarketHolidays,
 } from "@/lib/marketCalendar";
@@ -106,13 +108,20 @@ export function MarketClock() {
   const kst = now ? partsFor("Asia/Seoul", now) : null;
   const est = now ? partsFor("America/New_York", now) : null;
 
-  // 휴장 판정은 계산과 표 조회뿐이라 네트워크가 필요 없습니다.
+  // 휴장 판정은 계산과 표 조회라 네트워크 없이도 됩니다(공식 목록은 보탬일 뿐).
   // 해가 바뀔 때만 다시 만들면 되므로 연도를 키로 캐시합니다.
   const krYear = kst ? Number(kst.date.slice(0, 4)) : null;
   const usYear = est ? Number(est.date.slice(0, 4)) : null;
+  // 공식 공휴일(천문연)을 백엔드에서 한 번 받아 둡니다. 실패해도 시계는 내장 표로
+  // 동작합니다 — 응답이 없다고 "거래 중"을 멈추면 안 됩니다.
+  const { data: official } = useApi<KrHolidaysResponse>("/api/calendar/kr-holidays");
+  const officialDays = useMemo(
+    () => (krYear === null ? null : official?.years?.[String(krYear)]?.holidays.map((day) => day.date) ?? null),
+    [official, krYear],
+  );
   const krHolidays = useMemo(
-    () => (krYear === null ? new Set<string>() : krMarketHolidays(krYear)),
-    [krYear],
+    () => (krYear === null ? new Set<string>() : krMarketHolidays(krYear, officialDays)),
+    [krYear, officialDays],
   );
   const usHolidays = useMemo(
     () => (usYear === null ? new Set<string>() : usMarketHolidays(usYear)),
@@ -136,8 +145,8 @@ export function MarketClock() {
         time={kst.time}
         status={kstStatus}
         note={
-          krYear !== null && !hasLunarHolidays(krYear)
-            ? `${krYear}년 설날·추석 휴장일이 표에 없습니다 (주말·양력 공휴일만 반영)`
+          krYear !== null && krHolidayCoverage(krYear, officialDays) === "rules"
+            ? `${krYear}년 공휴일 목록이 없어 양력 고정 휴일만 반영했습니다 (설날·추석·대체공휴일 제외). DATA_GO_KR_SERVICE_KEY를 설정하면 천문연 공식 목록을 씁니다`
             : undefined
         }
       />

@@ -11,7 +11,7 @@
  * 주말에 걸린 고정 휴일의 대체 규칙(토→전 금, 일→익 월)까지 맞아야 합니다.
  * 아래 4개 연도는 그 규칙이 모두 걸리도록 고른 표본입니다.
  */
-import { usMarketHolidays, krMarketHolidays, hasLunarHolidays } from "../marketCalendar.ts";
+import { usMarketHolidays, krMarketHolidays, krHolidayCoverage } from "../marketCalendar.ts";
 
 /** 실제 NYSE·NASDAQ 정규장 휴장일. */
 const EXPECTED_US: Record<number, string[]> = {
@@ -58,10 +58,28 @@ check("2026-05-01 근로자의 날", krMarketHolidays(2026).has("2026-05-01"), t
 check("2026-12-31 연말 폐장", krMarketHolidays(2026).has("2026-12-31"), true);
 check("2026-10-09 한글날", krMarketHolidays(2026).has("2026-10-09"), true);
 
-console.log("\nKRX 음력 휴일 — 표에 없는 해는 '모른다'고 말해야 합니다");
-check("2026년 표 있음", hasLunarHolidays(2026), true);
-check("2099년 표 없음", hasLunarHolidays(2099), false);
-// 표가 없어도 양력 휴일은 그대로 나와야 합니다(빈 집합이 아님).
+console.log("\nKRX — 예전 규칙이 놓쳤던 평일 공휴일 14일 (천문연 실제 응답 기준)");
+const MISSED_BEFORE = [
+  "2025-01-27", "2025-03-03", "2025-06-03",                                   // 임시공휴일·대체공휴일·대선
+  "2026-03-02", "2026-06-03", "2026-07-17", "2026-08-17", "2026-10-05",       // 대체공휴일·지방선거·제헌절
+  "2027-05-03", "2027-07-19", "2027-08-16", "2027-10-04", "2027-10-11", "2027-12-27",
+];
+for (const day of MISSED_BEFORE) {
+  check(`${day} 휴장`, krMarketHolidays(Number(day.slice(0, 4))).has(day), true);
+}
+check("2026-09-25 추석 휴장", krMarketHolidays(2026).has("2026-09-25"), true);
+check("2026-09-28 추석 다음 월요일은 개장", krMarketHolidays(2026).has("2026-09-28"), false);
+
+console.log("\nKRX — 공식 목록이 오면 그것이 우선");
+// 표에 없는 해라도 백엔드가 공식 목록을 주면 그대로 씁니다(임시공휴일 발표 대응).
+check("2099 공식 목록 반영", krMarketHolidays(2099, ["2099-02-03"]).has("2099-02-03"), true);
+check("2099 공식 목록 + 연말 폐장", krMarketHolidays(2099, ["2099-02-03"]).has("2099-12-31"), true);
+check("출처 표시: official", krHolidayCoverage(2099, ["2099-02-03"]), "official");
+check("출처 표시: builtin", krHolidayCoverage(2026, null), "builtin");
+
+console.log("\nKRX — 목록이 전혀 없는 해는 '모른다'고 말해야 합니다");
+check("출처 표시: rules", krHolidayCoverage(2099, []), "rules");
+// 목록이 없어도 양력 휴일은 그대로 나와야 합니다(빈 집합이 아님).
 check("2099년에도 양력 휴일은 나옴", krMarketHolidays(2099).has("2099-01-01"), true);
 
 console.log(failed === 0 ? "\n통과" : `\n실패 ${failed}건`);

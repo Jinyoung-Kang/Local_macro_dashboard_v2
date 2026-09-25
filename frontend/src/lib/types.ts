@@ -803,3 +803,11 @@ export interface UsdKrwResponse {
   collectedAtKst?: string;
   message?: string;
 }
+
+/** GET /api/calendar/kr-holidays — 천문연 특일정보 공휴일 (시계의 KRX 휴장 판정용). */
+export interface KrHolidaysResponse {
+  available: boolean;
+  source?: string;
+  message?: string;
+  years: Record<string, { announced: boolean; fetchedAt?: string; holidays: { date: string; name: string }[] }>;
+}

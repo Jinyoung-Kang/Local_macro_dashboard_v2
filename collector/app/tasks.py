@@ -6,7 +6,7 @@ app/tasks.py
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend
-  weekly (12시간): sec_13f
+  weekly (12시간): sec_13f · kr_holidays
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
@@ -29,10 +29,11 @@ from datetime import datetime, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from . import catalog, equities, http, indicators, store
+from . import catalog, equities, http, indicators, publicapi, store
 from .services import (
     cot as cot_service,
     fred as fred_service,
+    kasi as kasi_service,
     krx as krx_service,
     liquidity as liquidity_service,
     market as market_service,
@@ -484,6 +485,58 @@ def task_sec_13f() -> str:
 # ==============================================================================
 # 매크로 카드 보정
 # ==============================================================================
+def task_kr_holidays() -> str:
+    """
+    📅 한국 공휴일 (천문연 특일정보) — 올해·내년.
+
+    저장 규칙
+      - 연도별로 합칩니다. 이번에 받지 못한 해는 이전 저장본을 그대로 둡니다.
+      - **0건 응답이 기존 목록을 지우지 않게** 합니다. 아직 발표되지 않은 해는
+        정상적으로 0건이 오지만, 이미 받아 둔 해가 0건으로 바뀌는 것은 데이터가
+        아니라 부재(서비스 만료·일시 오류)일 가능성이 큽니다.
+      - 지난해까지만 남깁니다. 시계는 올해·내년만 봅니다.
+    """
+    now = datetime.now(KST)
+    years = (now.year, now.year + 1)
+
+    previous = store.read_snapshot(catalog.SNAP_KR_HOLIDAYS)
+    stored: dict = dict(((previous.payload or {}).get("years") or {}) if previous else {})
+
+    fetched, kept, reasons = [], [], []
+    for year in years:
+        try:
+            holidays = kasi_service.fetch_year(year)
+        except publicapi.MissingKey:
+            raise EmptyResult("DATA_GO_KR_SERVICE_KEY 미설정 — .env에 공공데이터포털 인증키를 넣으세요") from None
+        except publicapi.PublicApiError as exc:
+            reasons.append(f"{year}: {exc}")
+            continue
+
+        old = (stored.get(str(year)) or {}).get("holidays") or []
+        if not holidays and old:
+            kept.append(year)
+            reasons.append(f"{year}: 0건 응답 — 기존 {len(old)}건 유지")
+            continue
+        stored[str(year)] = {
+            "holidays": holidays,
+            # 0건은 "휴일이 없다"가 아니라 "아직 발표 전"입니다. 화면이 구분할 수 있게 적습니다.
+            "announced": bool(holidays),
+            "fetchedAt": now.isoformat(),
+        }
+        fetched.append(year)
+
+    if not fetched:
+        raise EmptyResult("0/2 연도 — 기존 저장본 유지" + _reason_suffix(reasons))
+
+    stored = {y: v for y, v in stored.items() if y.isdigit() and int(y) >= now.year - 1}
+    store.put_snapshot(catalog.SNAP_KR_HOLIDAYS, {
+        "source": "한국천문연구원 특일정보 (getRestDeInfo, isHoliday=Y)",
+        "years": stored,
+    })
+    counts = ", ".join(f"{y} {len(stored[str(y)]['holidays'])}건" for y in fetched)
+    return counts + (f" (유지: {', '.join(map(str, kept))})" if kept else "")
+
+
 def _apply_bond_override(payload: dict) -> dict:
     """
     미국채 카드를 TradingView Scanner의 실제 수익률로 보정합니다.
@@ -702,6 +755,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),
+    Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
 )
 
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}

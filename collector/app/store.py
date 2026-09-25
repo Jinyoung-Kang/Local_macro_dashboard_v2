@@ -626,6 +626,12 @@ def missing_datasets() -> list[dict]:
         (catalog.snap_daum_futures_trend(25), "Daum 선물 수급 (계약수)"),
     ]
 
+    # 키가 있어야 받을 수 있는 데이터셋은 키가 설정된 경우에만 "누락"으로 봅니다.
+    # 키를 넣지 않은 사람에게 매번 누락 경고를 띄우면 진짜 누락이 묻힙니다.
+    from . import settings
+    if settings.data_go_kr_key():
+        expected.append((catalog.SNAP_KR_HOLIDAYS, "한국 공휴일 (천문연)"))
+
     for sid in indicators.FRED_ALL_SERIES:
         expected.append((catalog.snap_fred_series(sid), f"FRED {sid}"))
 
