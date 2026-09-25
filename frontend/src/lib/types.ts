@@ -811,3 +811,34 @@ export interface KrHolidaysResponse {
   message?: string;
   years: Record<string, { announced: boolean; fetchedAt?: string; holidays: { date: string; name: string }[] }>;
 }
+
+/** GET /api/kr/fundamentals — DART 사업보고서 기반 재무 안정성·성장성 (단위 %). */
+export interface KrFundamentalsCompany {
+  code: string;
+  available: boolean;
+  name?: string | null;
+  bsnsYear?: string | null;
+  fsDiv?: string | null;
+  fsLabel?: string;
+  dartUrl?: string | null;
+  capitalImpaired?: boolean;
+  debtRatio?: number | null;
+  roe?: number | null;
+  operatingMargin?: number | null;
+  revenueGrowth?: number | null;
+  operatingIncomeGrowth?: number | null;
+  /** 흑자전환 · 적자전환 · 적자지속 — 이때 증가율은 null */
+  operatingTurn?: string | null;
+  missing?: string[];
+  notes?: string[];
+}
+
+export interface KrFundamentalsResponse {
+  available: boolean;
+  message?: string;
+  source?: string;
+  companies: KrFundamentalsCompany[];
+  collectedAtKst?: string;
+  ageSeconds?: number;
+  stale?: boolean;
+}

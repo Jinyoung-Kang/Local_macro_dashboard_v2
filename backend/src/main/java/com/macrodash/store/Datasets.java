@@ -24,6 +24,8 @@ public final class Datasets {
     public static final String SNAP_COT_HISTORY = "cot.multi_asset";
     /** 한국 공휴일 (천문연 특일정보). 거래소 휴장 판정에 씁니다. */
     public static final String SNAP_KR_HOLIDAYS = "calendar.kr_holidays";
+    /** DART 사업보고서 주요계정 (수급 레이더 종목). */
+    public static final String SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals";
 
     /** 변동성 지수는 가장 긴 기간으로 한 번 저장하고 짧은 기간은 잘라 씁니다. */
     public static final String VOLATILITY_STORE_PERIOD = "5y";

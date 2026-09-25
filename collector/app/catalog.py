@@ -23,6 +23,8 @@ SNAP_FX_HISTORY = "macro.fx_history"            # 환율·달러인덱스 일별
 SNAP_EQUITY_HISTORY = "equity.price_history"    # 13F 매핑 종목 일별 종가 + 이름→티커 매핑표
 SNAP_COT_HISTORY = "cot.multi_asset"            # CFTC COT 통합
 SNAP_KR_HOLIDAYS = "calendar.kr_holidays"       # 한국 공휴일 (천문연 특일정보) — 거래소 휴장 판정
+SNAP_DART_CORP_CODES = "kr.dart_corp_codes"     # DART 고유번호 ↔ 종목코드 (상장사만)
+SNAP_DART_FUNDAMENTALS = "kr.dart_fundamentals" # DART 사업보고서 주요계정 (수급 레이더 종목)
 
 # 변동성 지수(^VIX / ^MOVE)는 가장 긴 기간으로 한 번 저장하고, 짧은 기간
 # 요청은 잘라 씁니다 (13F에서 q1을 q8에서 유도하는 것과 같은 방식).

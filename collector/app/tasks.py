@@ -6,7 +6,7 @@ app/tasks.py
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend
-  weekly (12시간): sec_13f · kr_holidays
+  weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
@@ -25,13 +25,14 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import catalog, equities, http, indicators, publicapi, store
 from .services import (
     cot as cot_service,
+    dart as dart_service,
     fred as fred_service,
     kasi as kasi_service,
     krx as krx_service,
@@ -537,6 +538,109 @@ def task_kr_holidays() -> str:
     return counts + (f" (유지: {', '.join(map(str, kept))})" if kept else "")
 
 
+# DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
+DART_UNIVERSE_LIMIT = 150
+DART_UNIVERSE_DAYS = 30
+DART_CALL_BUDGET = 40
+_CORP_CODES_MAX_AGE = timedelta(days=7)
+
+
+def _dart_universe() -> list[str]:
+    """최근 30일 수급 레이더에 등장한 종목 + 지금 화면에 걸린 종목."""
+    since = (datetime.now(KST).date() - timedelta(days=DART_UNIVERSE_DAYS)).isoformat()
+    codes = store.recent_observation_codes(catalog.OBS_RADAR, since, DART_UNIVERSE_LIMIT)
+    for market, investor, trade_type, interval in RADAR_COMBINATIONS:
+        snap = store.read_snapshot(catalog.snap_radar_scanner(market, investor, trade_type, interval))
+        for row in ((snap.payload or {}).get("rows") or []) if snap else []:
+            code = str(row.get("code") or "")
+            if code and code not in codes:
+                codes.append(code)
+    return codes[:DART_UNIVERSE_LIMIT]
+
+
+def _dart_corp_codes() -> dict[str, dict]:
+    """고유번호 표. 일주일 안에 받은 것이 있으면 다시 받지 않습니다(수십 MB 파일)."""
+    snap = store.read_snapshot(catalog.SNAP_DART_CORP_CODES)
+    if snap and snap.payload and snap.collected_at and \
+            datetime.now(timezone.utc) - snap.collected_at < _CORP_CODES_MAX_AGE:
+        return snap.payload.get("codes") or {}
+    codes = dart_service.fetch_corp_codes()
+    store.put_snapshot(catalog.SNAP_DART_CORP_CODES, {"codes": codes, "count": len(codes)})
+    return codes
+
+
+def _latest_annual_year(today) -> int:
+    """
+    사업보고서가 나와 있을 가장 최근 사업연도.
+
+    12월 결산 법인의 사업보고서 제출 기한은 다음 해 3월 말입니다. 4월 전에는
+    작년 보고서가 없는 회사가 많으므로 재작년을 봅니다.
+    """
+    return today.year - 1 if today.month >= 4 else today.year - 2
+
+
+def task_dart_fundamentals() -> str:
+    """
+    📑 DART 사업보고서 주요계정 — 수급 레이더에 오른 국내 종목.
+
+    규칙
+      - 최신 사업연도로 받고, 보고서가 없는 회사만 한 해 전으로 다시 받습니다.
+      - 호출 예산(DART_CALL_BUDGET) 안에서만 진행합니다. 남은 종목은 다음 주기.
+      - 이번에 받지 못한 종목은 이전 저장본을 유지합니다(부분 실패로 지우지 않음).
+    """
+    universe = _dart_universe()
+    if not universe:
+        raise EmptyResult("대상 종목이 없습니다 — 수급 레이더(radar_rankings)가 먼저 쌓여야 합니다")
+
+    try:
+        corp_map = _dart_corp_codes()
+    except publicapi.MissingKey:
+        raise EmptyResult("DART_API_KEY 미설정 — .env에 Open DART 인증키를 넣으세요") from None
+    except publicapi.PublicApiError as exc:
+        raise EmptyResult(f"고유번호 표를 받지 못했습니다 — {exc}") from None
+
+    targets = {code: corp_map[code] for code in universe if code in corp_map}
+    unmapped = [code for code in universe if code not in corp_map]  # ETF·ETN 등은 DART 대상이 아님
+
+    budget = publicapi.CallBudget(DART_CALL_BUDGET)
+    year = _latest_annual_year(datetime.now(KST).date())
+    fetched: dict[str, dict] = {}
+    reasons: list[str] = []
+
+    for attempt_year in (year, year - 1):
+        pending = [code for code in targets if code not in fetched]
+        for start in range(0, len(pending), dart_service.BATCH):
+            if not budget.take():
+                reasons.append("호출 예산 소진 — 나머지는 다음 주기")
+                break
+            chunk = pending[start:start + dart_service.BATCH]
+            try:
+                rows = dart_service.fetch_accounts([targets[c]["corpCode"] for c in chunk], attempt_year)
+            except publicapi.PublicApiError as exc:
+                reasons.append(str(exc))
+                continue
+            for code, company in dart_service.group_by_company(rows).items():
+                if code in targets and code not in fetched:
+                    company["name"] = targets[code]["name"]
+                    company["corpCode"] = targets[code]["corpCode"]
+                    fetched[code] = company
+
+    if not fetched:
+        raise EmptyResult(f"0/{len(targets)} 종목 — 기존 저장본 유지" + _reason_suffix(reasons))
+
+    previous = store.read_snapshot(catalog.SNAP_DART_FUNDAMENTALS)
+    companies = dict(((previous.payload or {}).get("companies") or {}) if previous else {})
+    companies.update(fetched)
+    store.put_snapshot(catalog.SNAP_DART_FUNDAMENTALS, {
+        "source": "금융감독원 Open DART 다중회사 주요계정 (사업보고서)",
+        "companies": companies,
+        "universe": len(universe),
+        "unmapped": unmapped[:50],
+    })
+    return (f"{len(fetched)}/{len(targets)} 종목 ({year}년 기준, 호출 {budget.used}회)"
+            + (f" · DART 대상 아님 {len(unmapped)}" if unmapped else "") + _reason_suffix(reasons))
+
+
 def _apply_bond_override(payload: dict) -> dict:
     """
     미국채 카드를 TradingView Scanner의 실제 수익률로 보정합니다.
@@ -756,6 +860,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),
     Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
+    Task("dart_fundamentals", "weekly", task_dart_fundamentals, "국내 종목 재무 (DART 사업보고서)"),
 )
 
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}

@@ -18,6 +18,7 @@ import { useApi } from "@/hooks/useApi";
 import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
 import type {
   DiagnosticsResponse,
+  KrFundamentalsResponse,
   RadarConsensusResponse,
   RadarResponse,
 } from "@/lib/types";
@@ -236,6 +237,10 @@ export default function RadarPage() {
         </>
       )}
 
+      {data?.available && (data.rows?.length ?? 0) > 0 && (
+        <FundamentalsPanel codes={(data.rows ?? []).map((row) => row.code)} />
+      )}
+
       {/* 표 둘을 눈으로 대조하지 않아도 되게, 겹치는 종목만 따로 모읍니다.
           위 선택(시장·매매 구분·기간·표시 종목 수)을 그대로 따릅니다 —
           여기만 다른 조건으로 계산하면 같은 화면에서 숫자가 어긋납니다. */}
@@ -297,6 +302,100 @@ function DiagnosticsPanel() {
  * 상위 N 밖에서 사들인 종목은 기관이 1위로 샀더라도 여기 나오지 않습니다.
  * 표시 종목 수를 늘리면 그만큼 넓게 봅니다. 이 한계는 카드에도 적습니다.
  */
+/**
+ * 📑 순매수 종목의 재무 체크 (DART 사업보고서).
+ *
+ * 수급은 "누가 샀나"만 말합니다. 같은 순매수라도 부채가 많거나 이익이 줄고
+ * 있는 회사라면 해석이 달라지므로 공시 재무를 옆에 둡니다. 비율은 백엔드가
+ * 계산하고(analytics/KrFundamentals), 화면은 그대로 보여 주기만 합니다.
+ */
+function FundamentalsPanel({ codes }: { codes: string[] }) {
+  // 순서를 정렬해 키를 고정합니다. 랭킹 순서만 바뀌어도 다시 요청하지 않게.
+  const key = [...new Set(codes)].sort().join(",");
+  const { data, loading, error, reload } = useApi<KrFundamentalsResponse>(
+    key ? `/api/kr/fundamentals?codes=${key}` : null,
+  );
+  const byCode = new Map((data?.companies ?? []).map((company) => [company.code, company]));
+  const rows = codes.map((code) => byCode.get(code) ?? { code, available: false });
+  const covered = rows.filter((row) => row.available).length;
+
+  const percent = (value: number | null | undefined) =>
+    value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}%`;
+
+  return (
+    <Card
+      title="📑 재무 체크 (DART 사업보고서)"
+      subtitle="부채비율 = 부채총계÷자본총계 · 증가율은 전년 대비 · ROE = 순이익÷기말 자본"
+      actions={
+        <Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} stale={data?.stale} />
+      }
+    >
+      {loading && !data && <Loading label="공시 재무를 불러오는 중…" />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+      {data && !data.available && <Banner tone="info">{data.message}</Banner>}
+
+      {data?.available && (
+        <>
+          <p className="mb-2 text-xs text-muted">
+            {covered}/{rows.length}개 종목 재무 확보 · ETF·ETN·스팩은 DART 재무 대상이 아닙니다 ·
+            이자보상배율은 주요계정에 이자비용이 없어 표시하지 않습니다
+          </p>
+          <Table
+            rows={rows}
+            rowKey={(row) => row.code}
+            columns={[
+              {
+                key: "name",
+                header: "종목",
+                render: (row) => (
+                  <span className="flex flex-col">
+                    <span className="text-body">{row.name ?? row.code}</span>
+                    <span className="text-[11px] text-muted">
+                      {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
+                    </span>
+                  </span>
+                ),
+              },
+              {
+                key: "debt",
+                header: "부채비율",
+                align: "right",
+                render: (row) =>
+                  row.capitalImpaired ? <span className="text-down">자본잠식</span> : percent(row.debtRatio),
+              },
+              { key: "rev", header: "매출 증가", align: "right", render: (row) => (
+                <span className={deltaColor(row.revenueGrowth)}>{percent(row.revenueGrowth)}</span>
+              ) },
+              { key: "op", header: "영업이익 증가", align: "right", render: (row) =>
+                row.operatingTurn ? (
+                  <span className={row.operatingTurn === "흑자전환" ? "text-up" : "text-down"}>{row.operatingTurn}</span>
+                ) : (
+                  <span className={deltaColor(row.operatingIncomeGrowth)}>{percent(row.operatingIncomeGrowth)}</span>
+                ),
+              },
+              { key: "margin", header: "영업이익률", align: "right", render: (row) => percent(row.operatingMargin) },
+              { key: "roe", header: "ROE", align: "right", render: (row) => percent(row.roe) },
+              {
+                key: "link",
+                header: "공시",
+                align: "right",
+                render: (row) =>
+                  row.dartUrl ? (
+                    <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                      원문
+                    </a>
+                  ) : (
+                    EMPTY
+                  ),
+              },
+            ]}
+          />
+        </>
+      )}
+    </Card>
+  );
+}
+
 function ConsensusPanel({
   market,
   tradeType,

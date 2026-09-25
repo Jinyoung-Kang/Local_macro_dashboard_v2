@@ -334,6 +334,27 @@ def read_observations(
     return out
 
 
+def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
+    """
+    최근 누적 레코드에 등장한 종목코드(payload.code), 등장 횟수 많은 순.
+
+    :param dataset: 누적 데이터셋 이름 (예: radar_ranking)
+    :param since: 이 날짜(YYYY-MM-DD) 이후만
+    :param limit: 최대 개수 — 외부 API 호출 수가 여기에 비례합니다
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT payload->>'code' AS code, COUNT(*) AS n
+            FROM observations
+            WHERE dataset = %s AND obs_date >= %s AND payload ? 'code'
+            GROUP BY 1 ORDER BY n DESC, code LIMIT %s
+            """,
+            (dataset, since, limit),
+        ).fetchall()
+    return [r["code"] for r in rows if r["code"]]
+
+
 def list_observation_dates(dataset: str) -> list[str]:
     with connection() as conn:
         rows = conn.execute(
@@ -631,6 +652,8 @@ def missing_datasets() -> list[dict]:
     from . import settings
     if settings.data_go_kr_key():
         expected.append((catalog.SNAP_KR_HOLIDAYS, "한국 공휴일 (천문연)"))
+    if settings.dart_key():
+        expected.append((catalog.SNAP_DART_FUNDAMENTALS, "국내 종목 재무 (DART)"))
 
     for sid in indicators.FRED_ALL_SERIES:
         expected.append((catalog.snap_fred_series(sid), f"FRED {sid}"))

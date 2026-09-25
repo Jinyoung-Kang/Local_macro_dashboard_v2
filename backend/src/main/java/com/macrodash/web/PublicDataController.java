@@ -1,8 +1,10 @@
 package com.macrodash.web;
 
 import com.macrodash.service.CalendarService;
+import com.macrodash.service.KrFundamentalsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -19,14 +21,26 @@ import java.util.Map;
 public class PublicDataController {
 
     private final CalendarService calendar;
+    private final KrFundamentalsService fundamentals;
 
-    public PublicDataController(CalendarService calendar) {
+    public PublicDataController(CalendarService calendar, KrFundamentalsService fundamentals) {
         this.calendar = calendar;
+        this.fundamentals = fundamentals;
     }
 
     /** 📅 한국 공휴일 (천문연 특일정보) — 시계의 KRX 휴장 판정용. */
     @GetMapping("/calendar/kr-holidays")
     public Map<String, Object> krHolidays() {
         return calendar.krHolidays();
+    }
+
+    /**
+     * 📑 국내 종목 재무 안정성·성장성 (DART 사업보고서).
+     *
+     * @param codes 쉼표로 구분한 6자리 종목코드 (최대 60개, 형식이 틀린 코드는 무시)
+     */
+    @GetMapping("/kr/fundamentals")
+    public Map<String, Object> krFundamentals(@RequestParam(defaultValue = "") String codes) {
+        return fundamentals.fundamentals(codes);
     }
 }
