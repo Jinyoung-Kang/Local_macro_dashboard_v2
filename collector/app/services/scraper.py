@@ -10,9 +10,10 @@
 """
 from __future__ import annotations
 
+from .. import kst
+
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
@@ -143,7 +144,7 @@ def collect_scraped_markets() -> dict:
     results.sort(key=lambda item: order.get(item["key"], 999))
 
     return {
-        "updatedAt": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST"),
+        "updatedAt": kst.stamp(),
         "items": results,
     }
 

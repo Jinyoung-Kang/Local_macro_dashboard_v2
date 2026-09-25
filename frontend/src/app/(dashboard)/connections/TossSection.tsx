@@ -6,14 +6,18 @@ import { useApi } from "@/hooks/useApi";
 import { apiGet } from "@/lib/api";
 
 /**
- * 🔌 토스증권 API 테스트.
+ * 🔌 토스증권 — 연결 진단·조회 테스트.
  *
  * 이 프로젝트에서 토스는 <b>연결 진단 전용</b>입니다. 대시보드 수치는 토스에서
- * 가져오지 않습니다. 키가 없으면 이 메뉴만 비활성화됩니다.
+ * 가져오지 않습니다. 키가 없으면 이 영역만 비활성화됩니다.
+ *
+ * 주의사항 — 진단은 토스 서버를 실제로 부릅니다. 메뉴를 열 때마다 자동으로 부르면
+ * 보지도 않는 호출이 쌓이므로 버튼을 눌렀을 때만 실행합니다.
  */
-export default function TossPage() {
+export function TossSection() {
+  const [runId, setRunId] = useState<number | null>(null);
   const diagnostics = useApi<{ ok: boolean; stage?: string; message?: string; sample?: unknown }>(
-    "/api/ai/toss/diagnostics",
+    runId === null ? null : `/api/ai/toss/diagnostics?run=${runId}`,
   );
   const [result, setResult] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -32,15 +36,19 @@ export default function TossPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">🔌 토스증권 API 테스트</h1>
-        <p className="mt-1 text-xs text-muted">
-          연결 진단 전용 메뉴입니다. 대시보드 수치는 토스에서 가져오지 않습니다.
-        </p>
-      </header>
+    <section className="flex flex-col gap-4">
+      <h2 className="text-base font-semibold text-bright">🔌 토스증권</h2>
 
-      <Card title="연결 상태" actions={<Button onClick={diagnostics.reload}>다시 검사</Button>}>
+      <Card
+        title="연결 상태"
+        subtitle="연결 진단 전용입니다. 대시보드 수치는 토스에서 가져오지 않습니다"
+        actions={
+          <Button onClick={() => setRunId(Date.now())} disabled={diagnostics.loading}>
+            {diagnostics.loading ? "검사 중…" : "진단 실행"}
+          </Button>
+        }
+      >
+        {runId === null && <p className="text-sm text-muted">버튼을 누르면 토스 서버에 한 번 연결해 봅니다.</p>}
         {diagnostics.loading && !diagnostics.data && <Loading />}
         {diagnostics.data && (
           <div className="flex flex-col gap-2">
@@ -86,9 +94,9 @@ export default function TossPage() {
         <ul className="list-disc pl-5 text-xs leading-relaxed text-muted">
           <li>토스 Open API는 허용 IP 목록을 사용합니다. HTTP 403이면 IP 등록을 확인하세요.</li>
           <li>키는 수집기 쪽에만 설정합니다(백엔드·프런트는 키를 보관하지 않습니다).</li>
-          <li>키가 없으면 이 메뉴만 비활성화되고 다른 메뉴는 정상 동작합니다.</li>
+          <li>키가 없으면 이 영역만 비활성화되고 다른 메뉴는 정상 동작합니다.</li>
         </ul>
       </Card>
-    </div>
+    </section>
   );
 }

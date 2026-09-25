@@ -26,6 +26,15 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080",
   },
+  // 합쳐진 메뉴의 옛 주소. 즐겨찾기·공유 링크가 404가 되지 않게 새 화면으로 보냅니다.
+  async redirects() {
+    return [
+      { source: "/ai/test", destination: "/connections", permanent: true },
+      { source: "/toss", destination: "/connections", permanent: true },
+      // 🧬 구루 포트폴리오 분석 → 🧬 기관 13F 스타일·위험 (메뉴 이름에 맞춰 주소도 변경)
+      { source: "/guru", destination: "/style", permanent: true },
+    ];
+  },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from .. import settings
+from .. import kst
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ def fetch_deal_ranking(
     if not rows:
         return []
 
-    collected_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    collected_at = kst.stamp()
     records: list[dict] = []
 
     for row in rows:

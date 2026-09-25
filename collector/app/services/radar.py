@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 
 from .. import catalog, store
+from .. import kst
 from ..http import get_session
 from . import kis, ls
 
@@ -374,7 +375,7 @@ def fetch_daum_ranking(
     source = (
         f"Daum API ({investor}, {INTERVAL_LABELS.get(interval_type, interval_type)}, {period})"
     )
-    collected_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    collected_at = kst.stamp()
 
     records: list[dict] = []
     for row in rows[:top_n]:
@@ -478,7 +479,7 @@ def fetch_naver_ranking(
         ),
     )
 
-    collected_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    collected_at = kst.stamp()
     records: list[dict] = []
 
     for row in table.find_all("tr"):
@@ -578,7 +579,7 @@ def fetch_pykrx_ranking(
     except Exception:  # noqa: BLE001
         prices = None
 
-    collected_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    collected_at = kst.stamp()
     records: list[dict] = []
 
     for _, row in frame.iterrows():

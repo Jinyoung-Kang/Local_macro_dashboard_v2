@@ -6,7 +6,7 @@ app/tasks.py
   fast   (5분)  : scraper_markets · macro_collected · radar_rankings
   slow   (1시간): fred_series · fed_liquidity · krx_futures · sector_history · fx_history ·
                   volatility_history · cot_history · daum_futures_trend · fsc_prices
-  weekly (12시간): sec_13f · kr_holidays · dart_fundamentals · seoul_apartments
+  weekly (12시간): sec_13f · kr_holidays · dart_fundamentals
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
@@ -39,7 +39,6 @@ from .services import (
     krx as krx_service,
     liquidity as liquidity_service,
     market as market_service,
-    molit as molit_service,
     radar as radar_service,
     scraper as scraper_service,
     sec13f as sec_service,
@@ -614,72 +613,6 @@ def task_fsc_prices() -> str:
     raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + _reason_suffix(reasons))
 
 
-# 화면의 기준월은 잠정(최근 2개월)이 아닌 가장 최근 달, 즉 두 달 전입니다. 그 달의
-# 전년 동월까지 있으려면 이번 달부터 14개월 전까지, 모두 15개월이 필요합니다.
-# (13개월로 두었더니 전년 대비 열이 항상 비었습니다 — 로컬 실행으로 발견)
-APT_MONTHS = 15
-APT_REFRESH_MONTHS = 2     # 신고 기한(계약 후 30일)·해제 반영 때문에 최근 두 달은 매번 다시 받음
-APT_CALL_BUDGET = 80       # 1회 실행 한도. 첫 백필(25구×15개월=375회)은 몇 번에 나눠 끝납니다
-
-
-def _recent_months(today, count: int) -> list[str]:
-    """이번 달부터 거슬러 count개월 (YYYY-MM-01), 최신이 앞."""
-    year, month = today.year, today.month
-    out = []
-    for _ in range(count):
-        out.append(f"{year:04d}-{month:02d}-01")
-        month -= 1
-        if month == 0:
-            year, month = year - 1, 12
-    return out
-
-
-def task_seoul_apartments() -> str:
-    """
-    🏠 서울 아파트 매매 실거래 — 25개 구 × 최근 15개월.
-
-    규칙
-      - 최근 두 달은 매번 다시 받습니다(신고 지연·해제 반영). 그 이전 달은 한 번
-        받으면 확정으로 보고 다시 부르지 않습니다.
-      - 호출 예산(APT_CALL_BUDGET) 안에서 최근 달부터 채웁니다. 남은 것은 다음 주기.
-      - 받은 구·달마다 바로 저장합니다. 중간에 멈춰도 받은 것은 남습니다.
-    """
-    today = datetime.now(KST).date()
-    months = _recent_months(today, APT_MONTHS)
-    refresh = set(months[:APT_REFRESH_MONTHS])
-    have = store.observation_keys(catalog.OBS_MOLIT_APT, months[-1])
-
-    budget = publicapi.CallBudget(APT_CALL_BUDGET)
-    saved: set[tuple[str, str]] = set()
-    reasons: list[str] = []
-    for month in months:
-        for lawd, name in molit_service.SEOUL_GU.items():
-            if month not in refresh and (month, lawd) in have:
-                continue
-            if budget.exhausted:
-                break
-            try:
-                summary = molit_service.fetch_month(lawd, month[:7].replace("-", ""), budget)
-            except publicapi.MissingKey:
-                raise EmptyResult("DATA_GO_KR_SERVICE_KEY 미설정 — .env에 공공데이터포털 인증키를 넣으세요") from None
-            except publicapi.PublicApiError as exc:
-                reasons.append(f"{name} {month[:7]}: {exc}")
-                continue
-            summary.update({"lawd": lawd, "name": name, "fetchedAt": datetime.now(KST).isoformat()})
-            store.put_observations(catalog.OBS_MOLIT_APT, month, [summary], entity_key="lawd")
-            saved.add((month, lawd))
-
-    # 아직 한 번도 받지 못한 구·월 (다음 주기에 이어서 받음)
-    pending = sum(
-        1 for month in months for lawd in molit_service.SEOUL_GU
-        if (month, lawd) not in have and (month, lawd) not in saved
-    )
-    if not saved:
-        raise EmptyResult("0건 저장 — 기존 저장본 유지" + _reason_suffix(reasons))
-    return (f"{len(saved)}개 구·월 저장 (호출 {budget.used}회)"
-            + (f" · 백필 남음 약 {pending}건" if pending > 0 else "") + _reason_suffix(reasons))
-
-
 # DART 재무를 받을 종목 수 상한과 대상 기간. 호출 수 = 상한 / BATCH (+ 이전 연도 재시도).
 DART_UNIVERSE_LIMIT = 150
 DART_UNIVERSE_DAYS = 30
@@ -1004,7 +937,6 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("sec_13f", "weekly", task_sec_13f, "SEC 13F 기관 포트폴리오 (분기 공시)"),
     Task("kr_holidays", "weekly", task_kr_holidays, "한국 공휴일 (천문연 특일정보)"),
     Task("dart_fundamentals", "weekly", task_dart_fundamentals, "국내 종목 재무 (DART 사업보고서)"),
-    Task("seoul_apartments", "weekly", task_seoul_apartments, "서울 아파트 매매 실거래 (국토부)"),
 )
 
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}

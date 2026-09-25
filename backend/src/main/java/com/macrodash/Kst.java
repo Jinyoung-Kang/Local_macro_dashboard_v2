@@ -2,6 +2,8 @@ package com.macrodash;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAccessor;
 
 /**
  * 이 대시보드의 기준 시간대 (한국 표준시).
@@ -34,5 +36,24 @@ public final class Kst {
      */
     public static LocalDate today() {
         return LocalDate.now(ZONE);
+    }
+
+    /**
+     * 화면에 나가는 시각 형식 — {@code "yyyy-MM-dd HH:mm"} (초 없음, 날짜 항상 포함).
+     *
+     * <p>수집기({@code collector/app/kst.py})와 화면({@code lib/format.ts formatKst})도
+     * 같은 형식입니다. 바꿀 때는 세 곳을 함께 바꾸세요.
+     */
+    public static final DateTimeFormatter DISPLAY =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZONE);
+
+    /**
+     * 사람이 읽는 KST 시각 문자열.
+     *
+     * @param moment Instant·ZonedDateTime 등 시점 (시간대가 있으면 KST로 바꿉니다)
+     * @return 예 {@code "2026-09-25 23:43 KST"}
+     */
+    public static String stamp(TemporalAccessor moment) {
+        return DISPLAY.format(moment) + " KST";
     }
 }

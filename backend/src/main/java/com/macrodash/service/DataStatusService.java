@@ -91,6 +91,49 @@ public class DataStatusService {
         return rows;
     }
 
+    /** 오류·경고 모음이 되돌아보는 기간과, 그 기간을 찾으려고 살펴볼 최근 실행 기록 수. */
+    static final java.time.Duration ISSUE_LOOKBACK = java.time.Duration.ofHours(24);
+    static final int ISSUE_WINDOW = 3000;
+
+    /**
+     * ⚠️ 수집 오류·경고 모음 (복사용 텍스트 포함). {@link StatusIssues} 참고.
+     *
+     * <p>실행 기록은 DB에서 직접 읽습니다 — 수집기가 죽어 있을 때가 가장 로그가 필요한
+     * 때입니다. 수집기에 닿으면 등록된 태스크 목록과 누락 데이터셋을 더합니다.
+     */
+    public Map<String, Object> issues() {
+        Optional<JsonNode> collectorStatus = collector.status();
+        List<Map<String, Object>> latest = repository.readTaskSummary();
+        List<Map<String, Object>> history =
+                repository.readRecentTaskIssues(Instant.now().minus(ISSUE_LOOKBACK), ISSUE_WINDOW);
+
+        List<String> missing = new ArrayList<>();
+        String lastRunStatus = null;
+        java.util.Set<String> registered = null;
+        if (collectorStatus.isPresent()) {
+            JsonNode payload = collectorStatus.get();
+            lastRunStatus = Json.asText(payload, "lastRunStatus");
+            for (JsonNode entry : Json.array(payload, "missingDatasets")) {
+                missing.add(Json.asText(entry, "label") + " (" + Json.asText(entry, "name") + ")");
+            }
+        }
+        // 없앤 태스크의 옛 기록을 거르려면 지금 등록된 목록이 필요합니다(수집기만 압니다).
+        // 수집기에 닿지 않으면 거르지 않습니다 — 모르는 것을 숨기는 것보다 낫습니다.
+        Optional<JsonNode> tasks = collector.tasks();
+        if (tasks.isPresent()) {
+            registered = new java.util.HashSet<>();
+            for (JsonNode task : Json.array(tasks.get(), "tasks")) {
+                registered.add(Json.asText(task, "name"));
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>(
+                StatusIssues.build(latest, history, missing, lastRunStatus, registered, Instant.now()));
+        out.put("collectorReachable", collectorStatus.isPresent());
+        out.put("lookbackHours", ISSUE_LOOKBACK.toHours());
+        return out;
+    }
+
     public Map<String, Object> taskHistory(String task, int limit) {
         Optional<JsonNode> payload = collector.taskHistory(task, limit);
         if (payload.isPresent()) {

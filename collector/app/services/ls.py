@@ -21,12 +21,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
 
 from .. import settings
+from .. import kst
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ def fetch_deal_ranking(
         rows = _call_t1452(market_code, order_code, top_n, investor)
 
     records: list[dict] = []
-    collected_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    collected_at = kst.stamp()
 
     for index, row in enumerate(rows[:top_n], start=1):
         code = str(row.get("shcode", "")).strip().zfill(6)

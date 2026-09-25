@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
 import {
   Banner,
   Button,
@@ -15,8 +16,13 @@ import {
 import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { apiPost } from "@/lib/api";
-import { EMPTY, formatAge, formatDateTimeKst, formatNumber } from "@/lib/format";
-import type { PublicApiDiagnosticsResponse, StatusResponse, VerificationResponse } from "@/lib/types";
+import { EMPTY, formatAge, formatKst, formatNumber } from "@/lib/format";
+import type {
+  PublicApiDiagnosticsResponse,
+  StatusIssuesResponse,
+  StatusResponse,
+  VerificationResponse,
+} from "@/lib/types";
 
 const TASK_ICONS: Record<string, string> = { ok: "✅", empty: "⚠️", error: "❌" };
 
@@ -94,7 +100,7 @@ export default function StatusPage() {
           value={RUN_STATUS_LABEL[resolvedStatus] ?? resolvedStatus}
           caption={
             lastRun?.startedAt
-              ? `${formatDateTimeKst(lastRun.startedAt)} 시작 · 대상 ${lastRun.groupName ?? EMPTY}`
+              ? `${formatKst(lastRun.startedAt)} 시작 · 대상 ${lastRun.groupName ?? EMPTY}`
               : undefined
           }
           tone={resolvedStatus === "interrupted" ? "text-warn" : undefined}
@@ -114,6 +120,10 @@ export default function StatusPage() {
           caption={`이력 거래일 ${data?.radarHistoryDates?.length ?? 0}일`}
         />
       </div>
+
+
+      {/* 문제만 모은 로그를 위에 둡니다 — 이 화면을 여는 이유의 대부분이 "무엇이 안 되나"입니다. */}
+      <IssuesPanel />
 
       {data?.keys && (
         <Card title="🔑 외부 API 키 보유 현황" subtitle="키가 없는 소스는 해당 기능만 비활성화됩니다.">
@@ -158,7 +168,7 @@ export default function StatusPage() {
             {
               key: "startedAt",
               header: "실행 시각",
-              render: (row) => formatDateTimeKst(row.startedAt),
+              render: (row) => formatKst(row.startedAt),
             },
             {
               key: "duration",
@@ -233,7 +243,7 @@ export default function StatusPage() {
             {
               key: "collectedAt",
               header: "수집 시각",
-              render: (row) => formatDateTimeKst(row.collectedAt),
+              render: (row) => formatKst(row.collectedAt),
             },
           ]}
         />
@@ -283,7 +293,7 @@ function PublicApiPanel() {
   return (
     <Card
       title="🔌 국내 공공 API 연결 진단"
-      subtitle="공공데이터포털(특일정보·주식시세·실거래가) · Open DART — 누를 때마다 API당 1회 호출"
+      subtitle="공공데이터포털(특일정보·주식시세) · Open DART — 누를 때마다 API당 1회 호출"
       actions={
         <Button onClick={() => setRunId(Date.now())} disabled={loading}>
           {loading ? "확인 중…" : "진단 실행"}
@@ -373,7 +383,7 @@ function VerificationPanel() {
       {result?.available && (
         <>
           <p className="mb-3 text-sm text-body">
-            {result.headline} · 검증 시각 {formatDateTimeKst(result.checkedAt)}
+            {result.headline} · 검증 시각 {formatKst(result.checkedAt)}
           </p>
           <div className="flex flex-col gap-3">
             {result.results?.map((entry) => (
@@ -407,6 +417,58 @@ function VerificationPanel() {
               </div>
             ))}
           </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * ⚠️ 수집 오류·경고 로그 — 문제만 모아 한 덩어리 텍스트로.
+ *
+ * 표는 태스크별 "최근 결과"만 보여 주고 긴 사유는 잘립니다. 문제를 누군가에게 보여
+ * 주려면 스크린샷 여러 장이 필요했습니다. 여기서는 백엔드가 만든 텍스트를 그대로
+ * 보여 주고 한 번에 복사합니다(비밀값은 백엔드에서 가려져 옵니다).
+ */
+function IssuesPanel() {
+  const { data, loading, error, reload } = useApi<StatusIssuesResponse>("/api/status/issues", 60_000);
+  const counts = data?.counts;
+  const hasIssues =
+    !!counts && counts.errors + counts.warnings + counts.recentGroups + counts.missingDatasets > 0;
+
+  return (
+    <Card
+      title="⚠️ 수집 오류·경고 로그"
+      subtitle={`지금 실패 중인 태스크 · 최근 ${data?.lookbackHours ?? 24}시간 실패 이력(같은 사유는 묶음) · 누락 데이터셋`}
+      actions={
+        <div className="flex gap-2">
+          <Button onClick={reload} disabled={loading}>
+            새로고침
+          </Button>
+          <CopyButton text={data?.text} label="로그 복사" variant="primary" disabled={!data?.text} />
+        </div>
+      }
+    >
+      {loading && !data && <Loading label="실행 기록을 모으는 중…" />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+      {data && (
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="현재 오류" value={`${counts?.errors ?? 0}건`} tone={counts?.errors ? "text-danger" : undefined} />
+            <Metric label="현재 경고" value={`${counts?.warnings ?? 0}건`} tone={counts?.warnings ? "text-warn" : undefined} />
+            <Metric label="최근 실패 유형" value={`${counts?.recentGroups ?? 0}개`} />
+            <Metric label="누락 데이터셋" value={`${counts?.missingDatasets ?? 0}개`} />
+          </div>
+          {!data.collectorReachable && (
+            <Banner tone="warn">수집기에 연결하지 못해 DB 기록만으로 만들었습니다(누락 데이터셋·없앤 태스크 거르기 제외).</Banner>
+          )}
+          {hasIssues ? (
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-canvas p-3 text-[11px] leading-relaxed text-body">
+              {data.text}
+            </pre>
+          ) : (
+            <p className="text-sm text-ok">✅ 최근 {data.lookbackHours}시간 동안 오류·경고가 없습니다.</p>
+          )}
         </>
       )}
     </Card>

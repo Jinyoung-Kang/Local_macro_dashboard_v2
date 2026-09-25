@@ -170,3 +170,27 @@ def test_purge_removes_old_history_only(store):
 
     assert removed["timeseries"] == 1
     assert [row["date"] for row in store.read_timeseries("demo", "S")] == ["2026-01-03"]
+
+
+def test_task_summary_hides_removed_tasks(store):
+    """없앤 태스크의 옛 실행 기록이 상태 화면에 남지 않아야 합니다(다시 실행할 수 없는 버튼)."""
+    run_id = store.start_run("weekly")
+    for name in ("kr_holidays", "seoul_apartments"):
+        store.record_task_run(
+            run_id, name, speed="weekly", status="ok",
+            started_at=datetime.now(timezone.utc), duration_ms=10, detail="x",
+        )
+
+    names = [row["task"] for row in store.read_task_summary(["kr_holidays", "fsc_prices"])]
+    assert names == ["kr_holidays"]
+    # 거르지 않으면 둘 다 보입니다(이전 동작).
+    assert {row["task"] for row in store.read_task_summary()} == {"kr_holidays", "seoul_apartments"}
+
+
+def test_purge_retired_datasets(store):
+    store.put_observations("molit_apt", "2026-08-01", [{"lawd": "11680"}], entity_key="lawd")
+    store.put_observations(catalog.OBS_RADAR, "2026-09-23", [{"code": "005930"}], entity_key="code")
+
+    assert store.purge_retired_datasets() == 1
+    assert store.read_observations("molit_apt") == []
+    assert len(store.read_observations(catalog.OBS_RADAR)) == 1

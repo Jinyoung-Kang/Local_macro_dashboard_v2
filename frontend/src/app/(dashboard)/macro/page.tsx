@@ -22,7 +22,7 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned, statusColor } from "@/lib/format";
+import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatSigned, statusColor } from "@/lib/format";
 import type {
   AdvancedIndicators,
   FxSeriesResponse,
@@ -183,7 +183,7 @@ export default function MacroPage() {
                 caption={
                   <span className="flex flex-col gap-0.5">
                     <span>직전: {item.prevStr ?? EMPTY}</span>
-                    {item.lastTs && <span>{item.lastTs}</span>}
+                    {item.lastTs && <span>{formatKst(item.lastTs)}</span>}
                     {item.prevSource && <span>전일값 출처: {item.prevSource}</span>}
                     {item.source && <span>{item.source}</span>}
                   </span>
@@ -890,7 +890,7 @@ function ScrapedSection() {
     <Card
       title="🔎 비공식 스크래핑 시세 비교"
       subtitle="TradingView·Yahoo 공개 엔드포인트에서 받은 참고 시세입니다. 공식 확정치가 아닙니다."
-      actions={data?.updatedAt ? <SourceBadge>{data.updatedAt}</SourceBadge> : undefined}
+      actions={data?.updatedAt ? <SourceBadge>{formatKst(data.updatedAt)}</SourceBadge> : undefined}
     >
       {loading && !data && <Loading />}
       {data && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatKst } from "@/lib/format";
 
 /**
  * 자동 갱신 간격 선택기.
@@ -72,8 +73,13 @@ export function useAutoRefreshSeconds(): [number, (seconds: number) => void] {
   return [seconds, update];
 }
 
+/**
+ * 이 브라우저가 마지막으로 다시 읽은 시각 (한국 시간, 분 단위).
+ *
+ * 수집 시각이 아니라 "화면을 갱신한 시각"이라 항상 오늘입니다 — 날짜는 생략합니다.
+ */
 function formatClock(date: Date): string {
-  return date.toLocaleTimeString("ko-KR", { hour12: false });
+  return formatKst(date).slice(11);
 }
 
 export function AutoRefreshControl({

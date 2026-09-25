@@ -866,31 +866,6 @@ export interface KrMarketTotalsResponse {
   stale?: boolean;
 }
 
-/** GET /api/housing/seoul — 서울 아파트 매매 실거래 통계. 금액은 만 원, 평당가는 만 원/평. */
-export interface SeoulHousingResponse {
-  available: boolean;
-  message?: string;
-  source?: string;
-  note?: string;
-  referenceMonth?: string | null;
-  months: {
-    month: string;
-    count: number;
-    medianPricePerPyeong: number | null;
-    medianAmount: number | null;
-    coverage: number;
-    provisional: boolean;
-  }[];
-  districts: {
-    lawd: string;
-    name: string | null;
-    count: number;
-    medianPricePerPyeong: number | null;
-    medianAmount: number | null;
-    countYearAgo: number | null;
-    priceYoyPct: number | null;
-  }[];
-}
 
 /** GET /api/status/public-apis — 국내 공공 API 연결 진단 (키 값은 들어 있지 않음). */
 export interface PublicApiDiagnosticsResponse {
@@ -899,4 +874,17 @@ export interface PublicApiDiagnosticsResponse {
   checkedAt?: string;
   keys?: Record<string, boolean>;
   apis?: { label: string; configured: boolean; ok: boolean; detail: string | null; elapsedMs: number | null }[];
+}
+
+/** GET /api/status/issues — 수집 오류·경고 모음. text는 복사용(비밀값 가림). */
+export interface StatusIssuesResponse {
+  generatedAt: string;
+  collectorReachable: boolean;
+  lookbackHours: number;
+  lastRunStatus?: string | null;
+  counts: { errors: number; warnings: number; recentGroups: number; missingDatasets: number };
+  current: { level: "error" | "warning"; task: string; status: string; at: string; detail: string }[];
+  recent: { level: "error" | "warning"; task: string; count: number; firstAt: string; at: string; detail: string }[];
+  missing: string[];
+  text: string;
 }

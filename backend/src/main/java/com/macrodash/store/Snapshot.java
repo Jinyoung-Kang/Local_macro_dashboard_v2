@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.time.format.DateTimeFormatter;
 
 /**
  * 저장된 스냅샷 1건과 그 신선도.
@@ -27,8 +26,6 @@ public record Snapshot(
         Instant collectedAt
 ) {
 
-    private static final DateTimeFormatter KST_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(Kst.ZONE);
 
     public long ageSeconds() {
         if (collectedAt == null) {
@@ -52,7 +49,7 @@ public record Snapshot(
     }
 
     public String collectedAtKst() {
-        return collectedAt == null ? "알 수 없음" : KST_FORMAT.format(collectedAt) + " KST";
+        return collectedAt == null ? "알 수 없음" : Kst.stamp(collectedAt);
     }
 
     /**
@@ -63,7 +60,7 @@ public record Snapshot(
      * 떴습니다. "언제 수집한 값인지 항상 보여 준다"는 이 프로젝트의 약속이
      * 조용히 깨져 있던 것입니다. 한 번의 호출로 묶어 둡니다.
      *
-     * <p>collectedAtKst는 사람이 읽는 문구("2026-09-17 04:08:11 KST")라
+     * <p>collectedAtKst는 사람이 읽는 문구("2026-09-17 04:08 KST")라
      * 화면이 되파싱하기 어렵습니다. 경과 초는 서버가 정확히 아는 값이므로
      * 서버가 계산해 내려보냅니다.
      */

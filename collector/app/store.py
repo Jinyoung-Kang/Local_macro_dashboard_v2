@@ -355,19 +355,6 @@ def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
     return [r["code"] for r in rows if r["code"]]
 
 
-def observation_keys(dataset: str, start_date: str) -> set[tuple[str, str]]:
-    """
-    (obs_date, entity) 쌍만. 무엇을 이미 받았는지 확인할 때 payload(거래 목록 등)까지
-    읽지 않으려고 둡니다.
-    """
-    with connection() as conn:
-        rows = conn.execute(
-            "SELECT obs_date, entity FROM observations WHERE dataset = %s AND obs_date >= %s",
-            (dataset, start_date),
-        ).fetchall()
-    return {(r["obs_date"].isoformat(), r["entity"]) for r in rows}
-
-
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:
@@ -541,17 +528,25 @@ def read_last_run() -> dict | None:
     return dict(row) if row else None
 
 
-def read_task_summary() -> list[dict]:
-    """태스크별 '가장 최근 실행 결과'."""
+def read_task_summary(task_names: Sequence[str] | None = None) -> list[dict]:
+    """
+    태스크별 '가장 최근 실행 결과'.
+
+    :param task_names: 지금 등록된 태스크 이름. 주면 그 태스크만 돌려줍니다.
+    주의사항 — 실행 기록은 태스크를 없앤 뒤에도 남습니다. 거르지 않으면 없어진
+    태스크가 상태 화면에 영원히 남고, 누를 수 없는 "다시 실행" 버튼이 생깁니다.
+    """
+    sql = (
+        "SELECT DISTINCT ON (task) task, speed, status, started_at, duration_ms, detail, run_id "
+        "FROM collector_task_runs"
+    )
+    params: list[Any] = []
+    if task_names is not None:
+        sql += " WHERE task = ANY(%s)"
+        params.append(list(task_names))
+    sql += " ORDER BY task, id DESC"
     with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT ON (task)
-                   task, speed, status, started_at, duration_ms, detail, run_id
-            FROM collector_task_runs
-            ORDER BY task, id DESC
-            """
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -604,7 +599,22 @@ def refresh_requested_at(scope: str = "global") -> datetime | None:
 # ==============================================================================
 # 6. 상태 요약 / 정리
 # ==============================================================================
-def store_stats() -> dict:
+def purge_retired_datasets() -> int:
+    """
+    더 이상 쓰지 않는 누적 데이터셋을 지웁니다(기동 시 1회).
+
+    기능을 없애도 쌓아 둔 행은 DB에 남아 용량과 백업 크기만 차지합니다.
+    지운 행 수를 돌려줍니다.
+    """
+    removed = 0
+    with connection() as conn:
+        for dataset in catalog.RETIRED_OBSERVATION_DATASETS:
+            cur = conn.execute("DELETE FROM observations WHERE dataset = %s", (dataset,))
+            removed += cur.rowcount or 0
+    return removed
+
+
+def store_stats(task_names: Sequence[str] | None = None) -> dict:
     last = read_last_run()
     return {
         "snapshots": list_snapshots(),
@@ -612,7 +622,7 @@ def store_stats() -> dict:
         "observationRows": count_observations(),
         "lastRun": _serialize_run(last),
         "lastRunStatus": resolve_run_status(last),
-        "taskSummary": [_serialize_task(t) for t in read_task_summary()],
+        "taskSummary": [_serialize_task(t) for t in read_task_summary(task_names)],
         "missingDatasets": missing_datasets(),
     }
 

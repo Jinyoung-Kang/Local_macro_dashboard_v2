@@ -146,6 +146,7 @@ export default function ScorecardPage() {
                 unit="점"
                 digits={0}
                 valueName="백분위"
+                neutral
                 height={Math.max(220, (data.metrics?.length ?? 1) * 32)}
               />
 

@@ -436,6 +436,7 @@ export function HorizontalBars({
   unit = "",
   digits = 1,
   valueName = "값",
+  neutral = false,
 }: {
   data: { name: string; value: number }[];
   height?: number;
@@ -444,6 +445,11 @@ export function HorizontalBars({
   digits?: number;
   /** 툴팁에 표시할 값의 이름. "값"보다 무엇인지 말해 주는 편이 낫습니다. */
   valueName?: string;
+  /**
+   * 방향이 없는 값(보유 기관 수·백분위·비중)이면 true — 모든 막대를 중립색으로.
+   * 이 화면들에서 빨강은 "순매수·상승"이라, 방향 없는 값을 빨강으로 칠하면 잘못 읽힙니다.
+   */
+  neutral?: boolean;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-muted">표시할 데이터가 없습니다.</div>;
@@ -485,7 +491,10 @@ export function HorizontalBars({
         {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 */}
         <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {data.map((entry) => (
-            <Cell key={entry.name} fill={entry.value >= 0 ? "#F85149" : "#4493F8"} />
+            <Cell
+              key={entry.name}
+              fill={neutral ? SERIES_COLORS.blue : entry.value >= 0 ? "#F85149" : "#4493F8"}
+            />
           ))}
           <LabelList
             dataKey="value"

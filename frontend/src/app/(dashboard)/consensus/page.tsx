@@ -128,7 +128,7 @@ export default function ConsensusPage() {
           </div>
 
           <Card title="📊 공통 보유 상위 종목" subtitle="막대 길이 = 보유 기관 수">
-            <HorizontalBars data={chartData} unit="곳" height={Math.max(260, chartData.length * 26)} />
+            <HorizontalBars data={chartData} unit="곳" neutral height={Math.max(260, chartData.length * 26)} />
           </Card>
 
           <Card title="📋 교집합 상세" subtitle={usdKrw.note}>

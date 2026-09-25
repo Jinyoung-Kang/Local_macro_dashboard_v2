@@ -8,7 +8,7 @@ app/services/publicprobe.py
 
 주의사항
   - 결과에는 키를 싣지 않습니다. 설정 여부(bool)와 키가 지워진 사유만 돌려줍니다.
-  - 수집(저장)은 하지 않습니다. 한 번 누를 때 API마다 1회씩, 모두 4회를 씁니다.
+  - 수집(저장)은 하지 않습니다. 한 번 누를 때 API마다 1회씩, 모두 3회를 씁니다.
 """
 from __future__ import annotations
 
@@ -17,13 +17,12 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .. import publicapi, settings
-from . import dart, fsc, kasi, molit
+from . import dart, fsc, kasi
 
 KST = ZoneInfo("Asia/Seoul")
 
-# 진단용 표본. 삼성전자 DART 고유번호(공식 가이드 예제와 오픈소스 테스트에서 쓰는 값)와 강남구.
+# 진단용 표본. 삼성전자 DART 고유번호(공식 가이드 예제와 오픈소스 테스트에서 쓰는 값).
 _SAMPLE_CORP_CODE = "00126380"
-_SAMPLE_LAWD = "11680"
 
 
 def _run(label: str, configured: bool, call) -> dict:
@@ -64,15 +63,6 @@ def _fsc() -> str:
     return f"{day} 기준 {total if total is not None else '?'}종목 ({url.rsplit('/', 1)[-1]})"
 
 
-def _molit() -> str:
-    today = datetime.now(KST).date().replace(day=1) - timedelta(days=1)
-    ymd = today.strftime("%Y%m")
-    key = settings.data_go_kr_key()
-    response = publicapi.get(molit.URL, {"LAWD_CD": _SAMPLE_LAWD, "DEAL_YMD": ymd, "numOfRows": 1, "pageNo": 1}, key=key)
-    root = publicapi.parse_xml(response, key=key)
-    return f"강남구 {ymd} 거래 {publicapi.total_count(root)}건"
-
-
 def _dart() -> str:
     key = settings.dart_key()
     response = publicapi.get(f"{dart.BASE}/company.json", {"corp_code": _SAMPLE_CORP_CODE},
@@ -82,7 +72,7 @@ def _dart() -> str:
 
 
 def run() -> dict:
-    """네 API를 차례로 한 번씩 확인합니다."""
+    """세 API를 차례로 한 번씩 확인합니다."""
     has_portal = bool(settings.data_go_kr_key())
     return {
         "checkedAt": datetime.now(KST).isoformat(),
@@ -90,7 +80,6 @@ def run() -> dict:
         "apis": [
             _run("한국천문연구원 특일정보", has_portal, _kasi),
             _run("금융위원회 주식시세정보", has_portal, _fsc),
-            _run("국토교통부 아파트 매매 실거래가", has_portal, _molit),
             _run("금융감독원 Open DART", bool(settings.dart_key()), _dart),
         ],
     }

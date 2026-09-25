@@ -234,6 +234,26 @@ public class StoreRepository {
                 task, limit);
     }
 
+    /**
+     * 최근 실행 기록 중 정상(ok)이 아닌 것만, 최신 순.
+     *
+     * <p>성능 — 실행 기록은 계속 쌓입니다(하루 약 1천 행). 시각 조건만 걸면 문제가 없는 날
+     * 표 전체를 거꾸로 훑게 되므로, 먼저 최근 {@code window}행(기본키 역순, 인덱스)으로
+     * 범위를 자른 뒤 그 안에서 거릅니다. 비용이 표 크기와 무관하게 일정합니다.
+     *
+     * @param since  이 시각 이후만
+     * @param window 살펴볼 최근 행 수
+     */
+    public List<Map<String, Object>> readRecentTaskIssues(Instant since, int window) {
+        return jdbc.queryForList(
+                "SELECT task, status, started_at, detail FROM ("
+                        + " SELECT id, task, status, started_at, detail FROM collector_task_runs"
+                        + " ORDER BY id DESC LIMIT ?) recent"
+                        + " WHERE status NOT IN ('ok', 'running') AND started_at >= ?"
+                        + " ORDER BY id DESC",
+                window, Timestamp.from(since));
+    }
+
     // --------------------------------------------------------- 수동 새로고침 기준
     public Instant refreshRequestedAt(String scope) {
         List<Timestamp> rows = jdbc.query(

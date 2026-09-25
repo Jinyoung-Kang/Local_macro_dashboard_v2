@@ -591,8 +591,8 @@ def collect_daum_intraday_acceleration(lookback_minutes: int = 30) -> dict:
     return {
         "available": True,
         "dataDate": latest_time.strftime("%Y-%m-%d"),
-        "latestTime": latest_time.strftime("%H:%M:%S"),
-        "referenceTime": reference_time.strftime("%H:%M:%S"),
+        "latestTime": latest_time.strftime("%H:%M"),
+        "referenceTime": reference_time.strftime("%H:%M"),
         "lookbackMinutes": lookback_minutes,
         "foreignCurrent": foreign_current, "foreignChange": foreign_change,
         "institutionCurrent": inst_current, "institutionChange": inst_change,

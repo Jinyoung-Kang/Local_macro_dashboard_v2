@@ -3,7 +3,6 @@ package com.macrodash.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.service.CalendarService;
-import com.macrodash.service.HousingService;
 import com.macrodash.service.KrFundamentalsService;
 import com.macrodash.service.KrMarketService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,15 +28,13 @@ public class PublicDataController {
     private final CalendarService calendar;
     private final KrFundamentalsService fundamentals;
     private final KrMarketService market;
-    private final HousingService housing;
     private final CollectorClient collector;
 
     public PublicDataController(CalendarService calendar, KrFundamentalsService fundamentals,
-                                KrMarketService market, HousingService housing, CollectorClient collector) {
+                                KrMarketService market, CollectorClient collector) {
         this.calendar = calendar;
         this.fundamentals = fundamentals;
         this.market = market;
-        this.housing = housing;
         this.collector = collector;
     }
 
@@ -65,12 +62,6 @@ public class PublicDataController {
     @GetMapping("/kr/market-totals")
     public Map<String, Object> krMarketTotals(@RequestParam(defaultValue = "180") int days) {
         return market.totals(days);
-    }
-
-    /** 🏠 서울 아파트 매매 — 월별 거래량·평당가 중위값, 구별 비교 (국토부 실거래가). */
-    @GetMapping("/housing/seoul")
-    public Map<String, Object> seoulHousing() {
-        return housing.seoul();
     }
 
     /**

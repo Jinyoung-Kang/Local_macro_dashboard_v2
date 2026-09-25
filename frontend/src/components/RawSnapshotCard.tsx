@@ -5,6 +5,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { Button, Card, ErrorState, Loading, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { apiGet } from "@/lib/api";
+import { formatKst } from "@/lib/format";
 import type { SnapshotText } from "@/lib/types";
 
 const PATH = "/api/snapshot/text";
@@ -40,7 +41,7 @@ export function RawSnapshotCard() {
       actions={
         snapshot.data ? (
           <SourceBadge>
-            {snapshot.data.generatedAtKst} · {snapshot.data.chars.toLocaleString("ko-KR")}자
+            {formatKst(snapshot.data.generatedAtKst)} · {snapshot.data.chars.toLocaleString("ko-KR")}자
           </SourceBadge>
         ) : undefined
       }

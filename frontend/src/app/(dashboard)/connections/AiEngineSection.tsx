@@ -12,8 +12,8 @@ const SAMPLE_PROMPTS = [
   "미결제약정이 늘면서 가격이 하락하는 국면을 한 문장으로 설명해 주세요.",
 ];
 
-/** 🤖 AI API 연결 테스트 — 엔진별 응답과 지연시간을 확인합니다. */
-export default function AiTestPage() {
+/** 🤖 AI 엔진 — 엔진별 키 설정 여부, 호출 응답·지연시간·폴오버 경로. */
+export function AiEngineSection() {
   const engines = useApi<{ engines: AiEngine[]; keys: Record<string, boolean>; enabled: boolean }>(
     "/api/ai/engines",
   );
@@ -41,18 +41,13 @@ export default function AiTestPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-bold text-bright">🤖 AI API 연결 테스트</h1>
-        <p className="mt-1 text-xs text-muted">
-          엔진별 응답·지연시간·자동 번역 동작을 확인합니다.
-        </p>
-      </header>
+    <section className="flex flex-col gap-4">
+      <h2 className="text-base font-semibold text-bright">🤖 AI 엔진</h2>
 
       {engines.loading && !engines.data && <Loading />}
 
       {engines.data && (
-        <Card title="등록된 엔진">
+        <Card title="등록된 엔진" subtitle="엔진별 응답·지연시간·자동 번역 동작을 확인합니다">
           <Table
             rows={engines.data.engines}
             rowKey={(row) => row.id}
@@ -141,6 +136,6 @@ export default function AiTestPage() {
           )}
         </Card>
       )}
-    </div>
+    </section>
   );
 }

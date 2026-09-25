@@ -230,48 +230,61 @@ export function formatAge(seconds: number | null | undefined): string {
 }
 
 /**
- * 수집 시각 배지 문구.
+ * 화면의 모든 시각을 한 형식으로 — `"YYYY-MM-DD HH:mm"` (한국 시간, 초 없음).
  *
- * @param value 백엔드가 KST로 찍어 준 문자열 (`"2026-09-17 20:55:59 KST"`)
- * @returns 오늘이면 `"20:55:59 KST"`, 어제 이전이면 `"09-17 20:55:59 KST"`.
- *          형식이 다르면 **받은 값을 그대로** 돌려줍니다(시각을 지어내지 않습니다)
+ * 수집기(collector/app/kst.py)·백엔드(Kst.DISPLAY)도 같은 형식으로 보내지만,
+ * DB에는 예전 형식("… 23:43:09 KST")으로 저장된 값이 남아 있고, 실행 기록처럼
+ * ISO(UTC) 문자열로 오는 값도 있습니다. 어느 쪽이 와도 여기서 한 형식으로 맞춥니다.
  *
- * 경과 시간("1초 전") 대신 절대 시각을 쓰는 이유 — 경과 시간은 화면을 연 순간을
- * 기준으로 계산되므로, 대시보드를 띄워 둔 채 한참 뒤에 보면 틀립니다.
+ * 받는 형식
+ *   - ISO 시각(`2026-09-25T14:20:59Z`, `…+09:00[Asia/Seoul]`) → KST로 바꿔 표시
+ *   - `YYYY-MM-DD HH:MM[:SS][ KST]` → 이미 KST이므로 초와 "KST"만 뗌
+ *   - 문장 속 시각(`"2026-09-25 23:43:09 KST (TradingView 수집 시각)"`) → 시각 부분만 바꿈
+ *   - 날짜 없는 옛 형식(`"23:33:00 KST"`) → `"23:33"` (날짜를 지어내지 않음)
+ *
+ * 주의사항 — 알아볼 수 없는 형식이면 받은 값을 그대로 돌려줍니다. 시각을 지어내지 않습니다.
+ *
+ * @param value 시각 문자열·Date
+ * @returns 예 `"2026-09-25 23:43"`. 값이 없으면 `"—"`
  */
-export function formatCollectedAtKst(value: string | null | undefined): string {
-  if (!value) {
+export function formatKst(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
     return EMPTY;
   }
-  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}:\d{2})/.exec(value);
-  if (!match) {
-    // 형식이 다르면 받은 값을 그대로 보여 줍니다 — 시각을 지어내지 않습니다.
-    return value;
+  if (value instanceof Date) {
+    return kstParts(value) ?? EMPTY;
   }
-  const [, year, month, day, time] = match;
-  return isTodayInKst(`${year}-${month}-${day}`)
-    ? `${time} KST`
-    : `${month}-${day} ${time} KST`;
+  // ISO 8601 (T 구분자 + 시간대). 자바 ZonedDateTime의 "[Asia/Seoul]" 꼬리는 Date가 못 읽어 뗍니다.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) && /(Z|[+-]\d{2}:?\d{2})(\[.*\])?$/.test(value)) {
+    const parsed = new Date(value.replace(/\[.*\]$/, ""));
+    return Number.isNaN(parsed.getTime()) ? value : (kstParts(parsed) ?? value);
+  }
+  // 문장 속 KST 시각: 날짜+시각 → 분까지, 날짜 없는 시각 → 분까지.
+  const replaced = value
+    .replace(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?: KST)?/g, "$1 $2")
+    .replace(/(^|[^\d:-])(\d{2}:\d{2}):\d{2} KST/g, "$1$2");
+  return replaced;
 }
 
-/**
- * 그 날짜가 한국 기준 오늘인지. 브라우저가 어느 시간대에 있든 같은 답을 줍니다.
- *
- * @param date `"YYYY-MM-DD"`
- * @returns 판단이 불가능하면 false (날짜까지 보여 주는 쪽이 정보가 많습니다)
- */
-function isTodayInKst(date: string): boolean {
+/** Date → KST "YYYY-MM-DD HH:mm". 변환이 불가능한 환경이면 null. */
+function kstParts(date: Date): string | null {
   try {
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Seoul",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    return today === date;
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(date)
+        .map((part) => [part.type, part.value]),
+    );
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
   } catch {
-    // 판단이 안 되면 날짜까지 보여 줍니다. 정보가 적은 쪽보다 낫습니다.
-    return false;
+    return null;
   }
 }
 
@@ -280,26 +293,6 @@ export function formatDate(value: string | null | undefined): string {
     return EMPTY;
   }
   return value.slice(0, 10);
-}
-
-export function formatDateTimeKst(value: string | null | undefined): string {
-  if (!value) {
-    return EMPTY;
-  }
-  try {
-    return new Intl.DateTimeFormat("ko-KR", {
-      timeZone: "Asia/Seoul",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(new Date(value));
-  } catch {
-    return value;
-  }
 }
 
 /**

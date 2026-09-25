@@ -3,6 +3,7 @@ package com.macrodash;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -39,5 +40,12 @@ class KstTest {
     void todayIgnoresTheDefaultZone() {
         assertThat(Kst.today()).isEqualTo(LocalDate.now(Kst.ZONE));
         assertThat(Kst.ZONE).isEqualTo(ZoneId.of("Asia/Seoul"));
+    }
+
+    @Test
+    @DisplayName("화면 시각 형식: yyyy-MM-dd HH:mm KST (초 없음, KST로 변환)")
+    void stampIsMinutePrecisionInKst() {
+        Instant utc = Instant.parse("2026-09-25T15:30:59Z");
+        assertThat(Kst.stamp(utc)).isEqualTo("2026-09-26 00:30 KST");
     }
 }

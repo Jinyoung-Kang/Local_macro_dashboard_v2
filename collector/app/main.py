@@ -68,6 +68,13 @@ async def lifespan(app: FastAPI):
     if os.environ.get("COLLECTOR_INIT_SCHEMA", "true").lower() in ("1", "true", "yes"):
         store.init_schema()
 
+    try:
+        removed = store.purge_retired_datasets()
+        if removed:
+            logger.info("없앤 기능의 누적 데이터 %d행 정리", removed)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("없앤 기능의 데이터 정리 실패: %s", exc)
+
     # 비정상 종료로 'running'에 남아 있던 기록을 먼저 정리합니다.
     try:
         store.mark_stale_runs_interrupted()
@@ -160,7 +167,7 @@ def health() -> dict:
 @app.get("/status")
 def status() -> dict:
     """구버전 `collector.py --status`에 해당합니다."""
-    stats = store.store_stats()
+    stats = store.store_stats(task_names=[task.name for task in tasks.ALL_TASKS])
     stats["keys"] = {
         "fred": bool(settings.fred_key()),
         "krx": bool(settings.krx_key()),

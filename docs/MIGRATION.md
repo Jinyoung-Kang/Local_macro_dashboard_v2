@@ -63,8 +63,8 @@ Python 단일 Streamlit 앱, 약 23,700줄)의 각 파일이 v2 어디로 갔는
 | `views/radar_view.py` | `.../radar/page.tsx` |
 | `views/data_status_view.py` | `.../status/page.tsx` |
 | `views/ai_report_view.py` | `.../ai/report/page.tsx` |
-| `views/ai_test_view.py` | `.../ai/test/page.tsx` |
-| `views/toss_test_view.py` | `.../toss/page.tsx` |
+| `views/ai_test_view.py` | `.../connections/AiEngineSection.tsx` (🔌 외부 API 연결 테스트) |
+| `views/toss_test_view.py` | `.../connections/TossSection.tsx` (🔌 외부 API 연결 테스트) |
 
 ## 5. 테스트
 
@@ -144,7 +144,7 @@ psql "$DATABASE_URL" -c "\copy observations(dataset, obs_date, entity, payload, 
 |---|---|
 | 🧭 시장 국면 판정 | `analytics/Regime.java` |
 | 🔗 지표 상관관계 | `analytics/Correlation.java` |
-| 🧬 구루 포트폴리오 분석 | `analytics/GuruStyle.java` · `PortfolioRisk.java` |
+| 🧬 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석) | `analytics/GuruStyle.java` · `PortfolioRisk.java` |
 | 🩺 종목 스코어카드 | `analytics/Scorecard.java` |
 | COT 극단 포지션 백테스트 | `analytics/CotExtremes.java` |
 | 환율 겹쳐 보기 | `analytics/FxIndex.java` · 수집 태스크 `fx_history` |
@@ -152,4 +152,4 @@ psql "$DATABASE_URL" -c "\copy observations(dataset, obs_date, entity, payload, 
 | 13F 종목명 → 티커 매핑 | `collector/app/equities.py` · 수집 태스크 `equity_history` |
 | 전체 원본 데이터 복사 | `service/SnapshotTextService.java` |
 
-수집 태스크는 `fx_history`·`equity_history` 둘이 늘어 13개가 됐고, 이후 국내 공공 API 태스크 넷(`kr_holidays`·`fsc_prices`·`dart_fundamentals`·`seoul_apartments`, [DATA_SOURCES.md](DATA_SOURCES.md) 7절)이 더해져 **17개**입니다.
+수집 태스크는 `fx_history`·`equity_history` 둘이 늘어 13개가 됐고, 이후 국내 공공 API 태스크 셋(`kr_holidays`·`fsc_prices`·`dart_fundamentals`, [DATA_SOURCES.md](DATA_SOURCES.md) 7절)이 더해져 **16개**입니다.

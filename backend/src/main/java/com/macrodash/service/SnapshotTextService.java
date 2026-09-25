@@ -6,7 +6,6 @@ import com.macrodash.analytics.Json;
 import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,9 +22,6 @@ import java.util.Map;
  */
 @Service
 public class SnapshotTextService {
-
-    private static final DateTimeFormatter KST_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** 원본 텍스트가 담는 영역 (화면 안내 문구가 실제 내용과 어긋나지 않도록 여기서 정의합니다). */
     static final List<String> SECTIONS = List.of(
@@ -72,7 +68,7 @@ public class SnapshotTextService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("text", text);
-        out.put("generatedAtKst", KST_FORMAT.format(now) + " KST");
+        out.put("generatedAtKst", Kst.stamp(now));
         out.put("chars", text.length());
         out.put("lineCount", text.lines().count());
         out.put("sections", SECTIONS);
@@ -82,7 +78,7 @@ public class SnapshotTextService {
     private String fullText(ZonedDateTime generatedAt) {
         List<String> lines = new ArrayList<>();
         lines.add("📋 [Local Macro Dashboard — 수집 데이터 원본 스냅샷]");
-        lines.add("생성 시각: " + KST_FORMAT.format(generatedAt) + " KST");
+        lines.add("생성 시각: " + Kst.stamp(generatedAt));
         lines.add("표기: 최신값 | 전일/직전 대비 | 직전값");
         // 값의 성격을 머리말에서 먼저 정의합니다. 같은 화면에 "어제 확정치"와
         // "지금 스크래핑 시세"가 함께 있는데, 복사해서 다른 곳에 붙이면 그 구분이

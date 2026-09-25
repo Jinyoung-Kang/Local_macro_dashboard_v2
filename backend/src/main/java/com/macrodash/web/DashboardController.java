@@ -382,6 +382,15 @@ public class DashboardController {
         return status.status();
     }
 
+    /**
+     * ⚠️ 수집 오류·경고 모음 — 지금 실패 중인 태스크, 최근 24시간 실패 이력(같은 사유는 묶음),
+     * 누락 데이터셋. {@code text}는 그대로 복사해 붙일 수 있는 형태이고 비밀값은 가려져 있습니다.
+     */
+    @GetMapping("/status/issues")
+    public Map<String, Object> statusIssues() {
+        return status.issues();
+    }
+
     @GetMapping("/status/tasks")
     public Map<String, Object> tasks() {
         return status.tasks();

@@ -77,9 +77,11 @@ TS_KRX_FUTURES = "krx_futures"  # series_id = 종가/거래량/미결제약정
 TS_LIQUIDITY = "fed_liquidity"  # series_id = WALCL/WTREGEN/RRP_M/Net_Liquidity_M
 
 OBS_RADAR = "radar_ranking"     # 날짜별 수급 상위 종목 (과거 조회 불가 소스)
+# 기능을 없애 더 쓰지 않는 누적 데이터셋. 수집기가 기동할 때 지웁니다.
+#   molit_apt — 서울 아파트 실거래 (2026-09 제거)
+RETIRED_OBSERVATION_DATASETS = ("molit_apt",)
 OBS_FSC_PRICE = "fsc_price"     # 금융위 공식 일별 시세 (entity = 6자리 종목코드)
 TS_FSC_MARKET = "fsc_market"    # 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등)
-OBS_MOLIT_APT = "molit_apt"     # 서울 아파트 매매 (obs_date = 계약월 1일, entity = 시군구코드)
 
 
 # ==============================================================================

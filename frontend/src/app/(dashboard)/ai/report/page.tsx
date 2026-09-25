@@ -5,6 +5,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { Banner, Button, Card, Loading, Select, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { apiPost } from "@/lib/api";
+import { formatKst } from "@/lib/format";
 import type { AiEngines, AiResponse, SnapshotText } from "@/lib/types";
 
 /**
@@ -155,7 +156,7 @@ export default function AiReportPage() {
           title="📋 수집 데이터 원본 (AI 입력)"
           subtitle={
             snapshot.data
-              ? `${snapshot.data.generatedAtKst} · ${snapshot.data.chars.toLocaleString("ko-KR")}자`
+              ? `${formatKst(snapshot.data.generatedAtKst)} · ${snapshot.data.chars.toLocaleString("ko-KR")}자`
               : undefined
           }
           actions={

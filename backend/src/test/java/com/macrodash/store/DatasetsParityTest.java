@@ -63,7 +63,6 @@ class DatasetsParityTest {
         assertThat(constant(source, "OBS_RADAR")).isEqualTo(Datasets.OBS_RADAR);
         assertThat(constant(source, "OBS_FSC_PRICE")).isEqualTo(Datasets.OBS_FSC_PRICE);
         assertThat(constant(source, "TS_FSC_MARKET")).isEqualTo(Datasets.TS_FSC_MARKET);
-        assertThat(constant(source, "OBS_MOLIT_APT")).isEqualTo(Datasets.OBS_MOLIT_APT);
         assertThat(constant(source, "SNAP_FSC_PRICES_META")).isEqualTo(Datasets.SNAP_FSC_PRICES_META);
     }
 

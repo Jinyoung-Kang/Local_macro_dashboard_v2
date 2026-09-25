@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
 
 from .. import indicators, yfcache
+from .. import kst
 
 from ..http import brief_error
 
@@ -420,7 +420,7 @@ def _format_timestamp(iso_text: str, is_intraday: bool) -> str:
     if is_intraday:
         if stamp.tzinfo is None:
             stamp = stamp.tz_localize("UTC")
-        return stamp.tz_convert(KST).strftime("%H:%M:%S KST")
+        return kst.stamp(stamp.tz_convert(KST).to_pydatetime())
 
     return f"{stamp.strftime('%Y-%m-%d')} 일봉 기준"
 
@@ -466,4 +466,4 @@ def _safe_float(value) -> float | None:
 
 
 def now_kst_text() -> str:
-    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    return kst.stamp()

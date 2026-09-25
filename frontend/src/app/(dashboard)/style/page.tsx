@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import {
   Banner,
@@ -26,7 +26,7 @@ import type {
 } from "@/lib/types";
 
 /**
- * 🧬 구루 포트폴리오 분석.
+ * 🧬 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석, 주소 /guru → /style).
  *
  * <p>13F 화면은 "누가 무엇을 들고 있나"를 보여 줍니다. 이 화면은 한 발 더
  * 들어가 <b>어떤 식으로</b> 들고 있는지를 봅니다 — 몇 종목에 쏠려 있는지,
@@ -36,7 +36,7 @@ export default function GuruPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-bold text-bright">🧬 구루 포트폴리오 분석</h1>
+        <h1 className="text-xl font-bold text-bright">🧬 기관 13F 스타일·위험</h1>
         <p className="mt-1 text-xs text-muted">
           집중도 · 회전율 · 기관 간 유사도 · 포트폴리오 위험 (13F 공시 기준)
         </p>
@@ -166,8 +166,24 @@ function SimilarityCard() {
   const [mode, setMode] = useState<"overlap" | "cosine">("overlap");
 
   const matrix = mode === "overlap" ? data?.overlap : data?.cosine;
-  const names = data?.institutions ?? [];
+  const names = useMemo(() => data?.institutions ?? [], [data]);
   const max = mode === "overlap" ? 100 : 1;
+
+  // 짝 순위는 행렬에서 직접 만듭니다. 서버의 topPairs는 겹침 비중 순이라, 코사인을
+  // 고르면 목록과 기준이 어긋납니다. 기관 12곳이면 66쌍이라 브라우저에서 충분합니다.
+  const pairs = useMemo(() => {
+    if (!matrix) return [];
+    const out: { left: string; right: string; value: number }[] = [];
+    for (let row = 0; row < names.length; row += 1) {
+      for (let col = row + 1; col < names.length; col += 1) {
+        const value = matrix[row]?.[col];
+        if (value !== undefined && value !== null) {
+          out.push({ left: shortName(names[row].name), right: shortName(names[col].name), value });
+        }
+      }
+    }
+    return out.sort((a, b) => b.value - a.value).slice(0, 8);
+  }, [matrix, names]);
 
   return (
     <Card
@@ -189,21 +205,48 @@ function SimilarityCard() {
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
 
-      {(data?.topPairs?.length ?? 0) > 0 && (
+      {pairs.length > 0 && (
         <>
-          <h3 className="mb-2 text-xs font-semibold text-body">가장 닮은 짝</h3>
-          <HorizontalBars
-            // 축 너비가 150px이라 두 이름을 그대로 이으면 뒤쪽이 잘립니다.
-            // 잘린 라벨은 "노르웨이 국부펀드 ↔ …"처럼 한쪽만 읽히게 됩니다.
-            data={data!.topPairs.slice(0, 8).map((pair) => ({
-              name: `${clip(shortName(pair.left))} ↔ ${clip(shortName(pair.right))}`,
-              value: pair.overlap,
-            }))}
-            unit="%"
-            digits={1}
-            valueName="겹침 비중"
-            height={Math.max(220, Math.min(data!.topPairs.length, 8) * 28)}
-          />
+          <h3 className="mb-2 text-xs font-semibold text-body">
+            가장 닮은 짝 — {mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 {pairs.length}
+          </h3>
+          {/* 막대 차트 축 라벨은 폭이 좁아 두 기관 이름이 "블랙… ↔ 뱅가…"로 잘렸습니다.
+              짝 비교는 이름을 읽는 것이 먼저라 전체 이름이 보이는 표로 바꿉니다.
+              막대는 크기 감만 주는 보조이고, 색은 중립색(빨강 = 매수·상승 약속과 섞이지 않게). */}
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="text-[11px] text-muted">
+                <th className="w-8 px-2 py-1.5 text-right font-medium">#</th>
+                <th className="px-2 py-1.5 text-left font-medium">기관 A</th>
+                <th className="px-2 py-1.5 text-left font-medium">기관 B</th>
+                <th className="w-[40%] px-2 py-1.5 text-left font-medium">
+                  {mode === "overlap" ? "겹침 비중 (%)" : "코사인 유사도"}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((pair, index) => (
+                <tr key={`${pair.left}-${pair.right}`} className="border-t border-border">
+                  <td className="px-2 py-1.5 text-right tabular-nums text-muted">{index + 1}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-body">{pair.left}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-body">{pair.right}</td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 rounded bg-canvas">
+                        <div
+                          className="h-2 rounded bg-accent/70"
+                          style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-12 text-right tabular-nums text-body">
+                        {formatNumber(pair.value, mode === "overlap" ? 1 : 2)}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </>
       )}
 
@@ -214,7 +257,11 @@ function SimilarityCard() {
               <tr className="text-[11px] text-muted">
                 <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">기관</th>
                 {names.map((entry) => (
-                  <th key={entry.cik} className="px-2 py-2 text-right font-medium">
+                  <th
+                    key={entry.cik}
+                    title={entry.name}
+                    className="whitespace-nowrap px-2 py-2 text-right font-medium"
+                  >
                     {shortName(entry.name)}
                   </th>
                 ))}
@@ -223,7 +270,10 @@ function SimilarityCard() {
             <tbody>
               {names.map((entry, row) => (
                 <tr key={entry.cik} className="border-t border-border">
-                  <td className="sticky left-0 bg-surface px-3 py-2 text-body">
+                  <td
+                    title={entry.name}
+                    className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-body"
+                  >
                     {shortName(entry.name)}
                   </td>
                   {names.map((other, col) => {
@@ -265,7 +315,7 @@ function SimilarityCard() {
   );
 }
 
-/** 구루 포트폴리오의 위험. 커버리지를 항상 먼저 보여 줍니다. */
+/** 기관 포트폴리오의 위험. 커버리지를 항상 먼저 보여 줍니다. */
 function RiskCard() {
   const profiles = useApi<GuruProfilesResponse>("/api/guru/profiles");
   const [cik, setCik] = useState("0001067983");
@@ -398,6 +448,7 @@ function RiskCard() {
             unit="%"
             digits={1}
             valueName="비중"
+            neutral
             height={Math.max(200, data!.sectors!.length * 28)}
           />
         </div>
@@ -543,11 +594,6 @@ function HoldersCard() {
       )}
     </Card>
   );
-}
-
-/** 막대 축에 두 이름을 나란히 넣기 위한 길이 제한. */
-function clip(name: string, limit = 7): string {
-  return name.length > limit ? `${name.slice(0, limit)}…` : name;
 }
 
 /** 표 머리글에 들어갈 짧은 이름. 국기 이모지와 괄호 설명을 뗍니다. */

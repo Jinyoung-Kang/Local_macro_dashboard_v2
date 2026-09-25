@@ -22,11 +22,10 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
 export const MENUS = [
   { href: "/macro", label: "📊 거시경제 매크로 지표" },
   { href: "/liquidity", label: "🏢 연준 순유동성 트래커" },
-  { href: "/housing", label: "🏠 서울 아파트 실거래" },
   { href: "/sector", label: "🔄 섹터 & 자산군 로테이션" },
   { href: "/institutions", label: "📑 기관 13F 포트폴리오 분석" },
   { href: "/consensus", label: "🎯 기관 13F Money 교집합" },
-  { href: "/guru", label: "🧬 구루 포트폴리오 분석" },
+  { href: "/style", label: "🧬 기관 13F 스타일·위험" },
   { href: "/scorecard", label: "🩺 종목 스코어카드" },
   { href: "/cot", label: "🏛️ 글로벌 투기세력 (COT)" },
   { href: "/krx", label: "🇰🇷 국내 파생 & 투기세력 (KRX)" },
@@ -35,8 +34,7 @@ export const MENUS = [
   { href: "/correlation", label: "🔗 지표 상관관계" },
   { href: "/status", label: "🗄️ 데이터 저장소 상태" },
   { href: "/ai/report", label: "🤖 AI 종합 데이터 분석" },
-  { href: "/ai/test", label: "🤖 AI API 연결 테스트" },
-  { href: "/toss", label: "🔌 토스증권 API 테스트" },
+  { href: "/connections", label: "🔌 외부 API 연결 테스트" },
 ];
 
 export function Sidebar({ readMode }: { readMode?: string }) {

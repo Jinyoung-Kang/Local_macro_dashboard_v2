@@ -41,7 +41,7 @@ _SECRET_PARAMS = (
 )
 
 _QUERY_PATTERN = re.compile(
-    r"(?i)\b(" + "|".join(_SECRET_PARAMS) + r")=([^&\s\"'<>]+)"
+    r"(?i)\b(" + "|".join(_SECRET_PARAMS) + r")=([^&\s\"'<>()]+)"
 )
 
 # "Authorization: Bearer xxx" 같은 헤더 표기도 가립니다.

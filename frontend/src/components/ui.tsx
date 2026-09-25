@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
-import { deltaColor, EMPTY, formatAge, formatCollectedAtKst } from "@/lib/format";
+import { deltaColor, EMPTY, formatAge, formatKst } from "@/lib/format";
 
 /** 섹션 카드 컨테이너. */
 export function Card({
@@ -101,12 +101,12 @@ export function Freshness({
           ? "border-warn/40 bg-warn/10 text-warn"
           : "border-border bg-surface-hover text-muted"
       }`}
-      title={collectedAt ? `${collectedAt} · 조회 시점 기준 ${age}` : undefined}
+      title={collectedAt ? `${formatKst(collectedAt)} (한국 시간) · 조회 시점 기준 ${age}` : undefined}
     >
       {stale ? "⚠️ 오래된 저장본" : "🕒 수집"}
       {/* 시각을 모르면 그때만 경과 시간으로 대신합니다 — 아무것도 안 적는 것보다 낫습니다. */}
       <span className="tabular-nums">
-        {collectedAt ? formatCollectedAtKst(collectedAt) : age}
+        {collectedAt ? formatKst(collectedAt) : age}
       </span>
     </span>
   );
