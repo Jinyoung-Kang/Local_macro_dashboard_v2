@@ -75,6 +75,8 @@ public final class Datasets {
     public static final String OBS_FSC_PRICE = "fsc_price";
     /** 시장별 합계 시가총액·거래대금 (series = "KOSPI.marketCap" 등). */
     public static final String TS_FSC_MARKET = "fsc_market";
+    /** 서울 아파트 매매 (obs_date = 계약월 1일, entity = 시군구코드, payload.trades = [[만원, ㎡]]). */
+    public static final String OBS_MOLIT_APT = "molit_apt";
 
     // ------------------------------------------------------------- 신선도(초)
     /** 장중 시세성 데이터 (수집 주기 5분의 3배). */

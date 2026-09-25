@@ -355,6 +355,19 @@ def recent_observation_codes(dataset: str, since: str, limit: int) -> list[str]:
     return [r["code"] for r in rows if r["code"]]
 
 
+def observation_keys(dataset: str, start_date: str) -> set[tuple[str, str]]:
+    """
+    (obs_date, entity) 쌍만. 무엇을 이미 받았는지 확인할 때 payload(거래 목록 등)까지
+    읽지 않으려고 둡니다.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT obs_date, entity FROM observations WHERE dataset = %s AND obs_date >= %s",
+            (dataset, start_date),
+        ).fetchall()
+    return {(r["obs_date"].isoformat(), r["entity"]) for r in rows}
+
+
 def latest_observation_date(dataset: str) -> str | None:
     """그 데이터셋의 가장 최근 obs_date (YYYY-MM-DD). 없으면 None."""
     with connection() as conn:

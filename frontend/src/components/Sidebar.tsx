@@ -22,6 +22,7 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
 export const MENUS = [
   { href: "/macro", label: "📊 거시경제 매크로 지표" },
   { href: "/liquidity", label: "🏢 연준 순유동성 트래커" },
+  { href: "/housing", label: "🏠 서울 아파트 실거래" },
   { href: "/sector", label: "🔄 섹터 & 자산군 로테이션" },
   { href: "/institutions", label: "📑 기관 13F 포트폴리오 분석" },
   { href: "/consensus", label: "🎯 기관 13F Money 교집합" },

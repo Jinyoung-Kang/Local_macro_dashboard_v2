@@ -865,3 +865,29 @@ export interface KrMarketTotalsResponse {
   ageSeconds?: number;
   stale?: boolean;
 }
+
+/** GET /api/housing/seoul — 서울 아파트 매매 실거래 통계. 금액은 만 원, 평당가는 만 원/평. */
+export interface SeoulHousingResponse {
+  available: boolean;
+  message?: string;
+  source?: string;
+  note?: string;
+  referenceMonth?: string | null;
+  months: {
+    month: string;
+    count: number;
+    medianPricePerPyeong: number | null;
+    medianAmount: number | null;
+    coverage: number;
+    provisional: boolean;
+  }[];
+  districts: {
+    lawd: string;
+    name: string | null;
+    count: number;
+    medianPricePerPyeong: number | null;
+    medianAmount: number | null;
+    countYearAgo: number | null;
+    priceYoyPct: number | null;
+  }[];
+}
