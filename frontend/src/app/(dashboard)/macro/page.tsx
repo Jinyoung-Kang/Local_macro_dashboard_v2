@@ -9,6 +9,7 @@ import {
 } from "@/components/AutoRefresh";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import { RawSnapshotCard } from "@/components/RawSnapshotCard";
+import { SessionBadge, useKrOfficialHolidays, useMinuteClock } from "@/components/SessionBadge";
 import {
   Banner,
   Card,
@@ -108,6 +109,9 @@ export default function MacroPage() {
   );
   const risk = useApi<RiskIndicators>("/api/macro/risk", slower(120_000));
   const advanced = useApi<AdvancedIndicators>("/api/macro/advanced", slower(300_000));
+  // 개장/마감 배지는 보는 시각 기준이라 1분마다 다시 판정합니다(데이터는 다시 받지 않음).
+  const now = useMinuteClock();
+  const krOfficial = useKrOfficialHolidays(now);
 
   if (overview.loading && !overview.data) {
     return <Loading label="매크로 지표를 불러오는 중…" />;
@@ -171,9 +175,16 @@ export default function MacroPage() {
               <Metric
                 key={item.key}
                 label={
-                  <span className="flex items-center gap-1">
+                  <span className="flex flex-wrap items-center gap-1">
                     {item.name}
                     {item.note && <SourceBadge>{item.note}</SourceBadge>}
+                    <SessionBadge
+                      market={item.market}
+                      now={now}
+                      krOfficial={krOfficial}
+                      lastTs={item.lastTs}
+                      collectedAt={data?.collectedAtKst}
+                    />
                   </span>
                 }
                 value={item.status === "fail" ? "수집 실패" : item.priceStr ?? EMPTY}

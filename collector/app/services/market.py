@@ -338,6 +338,7 @@ def _build_card(spec: dict, payload: dict | None) -> dict:
         "key": spec["key"],
         "name": spec["name"],
         "note": spec.get("note"),
+        "market": spec.get("market"),
         "ticker": spec["ticker"],
     }
 

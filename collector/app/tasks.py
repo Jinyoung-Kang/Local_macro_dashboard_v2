@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from . import catalog, equities, http, indicators, publicapi, store
+from . import catalog, equities, http, indicators, kst, publicapi, store
 from .services import (
     cot as cot_service,
     dart as dart_service,
@@ -841,12 +841,19 @@ def _bond_previous_from_fred(key: str) -> float | None:
 
 def _inject_scraped_indices(payload: dict) -> dict:
     """
-    아시아 지수 카테고리에 스크래핑 기반 참고 시세를 덧붙입니다.
+    아시아 지수 카테고리에 스크래핑 기반 참고 시세(선물)를 덧붙입니다.
 
     구버전은 코스피200 야간선물·닛케이225 선물·항셍 선물을 별도 스크래퍼로
     주입했습니다. 그 스크래퍼들은 TradingView HTML 정규식에 의존해 조용히
     깨지는 경로였으므로, 같은 값을 JSON으로 주는 Symbol Scanner 결과
     (services/scraper.py)로 대체합니다. 카드에는 출처와 추정 여부를 남깁니다.
+
+    주의사항
+      - ``lastTs``는 **수집 시각**입니다. Scanner 응답에는 체결 시각이 없습니다.
+        시각이 없으면 카드만 보고는 몇 시 값인지 알 수 없어서, 미국채 카드와
+        같은 방식으로 "(TradingView 수집 시각)"을 붙입니다.
+      - 선물 조회가 실패하면 같은 거래소의 지수 값으로 내려가되, 이름과
+        ``market``을 지수로 바꿉니다. 지수를 선물이라고 부르면 안 됩니다.
     """
     snapshot = store.read_snapshot(catalog.SNAP_SCRAPER_MARKETS)
     if not snapshot or not snapshot.payload:
@@ -866,21 +873,26 @@ def _inject_scraped_indices(payload: dict) -> dict:
         return payload
 
     existing = {item.get("key") for item in target["items"]}
+    collected = kst.stamp(snapshot.collected_at) if snapshot.collected_at else None
 
-    for key, label in (
-        ("kospi200_night", "코스피200 야간선물 (CME 연계)"),
-        ("nikkei", "닛케이225 선물"),
-        ("hang_seng", "항셍 선물"),
-    ):
-        source = scraped.get(key)
-        card_key = f"{key}_scraped"
-        if not source or card_key in existing:
+    for spec in indicators.SCRAPED_FUTURES:
+        card_key = f"{spec['key']}_scraped"
+        if card_key in existing:
             continue
 
-        if source.get("status") != "ok" or source.get("price") is None:
+        source, label, market = scraped.get(spec["key"]), spec["name"], spec["market"]
+        note = None
+        fallback = spec.get("fallback")
+        if fallback and not _usable(source) and _usable(scraped.get(fallback["key"])):
+            source, label, market = scraped[fallback["key"]], fallback["name"], fallback["market"]
+            note = "선물 조회 실패 · 지수 값"
+        if not source:
+            continue
+
+        if not _usable(source):
             target["items"].append({
                 "key": card_key, "name": label, "status": "fail",
-                "source": source.get("provider"),
+                "source": source.get("provider"), "market": market,
             })
             continue
 
@@ -889,11 +901,13 @@ def _inject_scraped_indices(payload: dict) -> dict:
         card = {
             "key": card_key,
             "name": label,
-            "note": source.get("note") or "참고 시세",
+            "note": note or source.get("note") or "참고 시세",
+            "market": market,
             "status": "ok",
             "price": price,
             "priceStr": f"{price:,.2f}",
             "source": source.get("provider"),
+            "lastTs": f"{collected} (TradingView 수집 시각)" if collected else None,
             "isReference": True,
             # 추정치를 확정치처럼 보여 주면 교차 검증이 무의미해집니다.
             "isEstimated": bool(source.get("isEstimated")),
@@ -915,6 +929,10 @@ def _inject_scraped_indices(payload: dict) -> dict:
         target["items"].append(card)
 
     return payload
+
+
+def _usable(item: dict | None) -> bool:
+    return bool(item) and item.get("status") == "ok" and item.get("price") is not None
 
 
 # ==============================================================================

@@ -10,6 +10,8 @@ export interface MacroItem {
   key: string;
   name: string;
   note?: string | null;
+  /** 거래되는 시장 id — 개장/마감 판정용 (lib/marketSessions MARKETS의 키) */
+  market?: string | null;
   ticker?: string | null;
   status: "ok" | "single" | "fail";
   price?: number | null;

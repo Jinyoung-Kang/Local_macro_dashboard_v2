@@ -196,3 +196,56 @@ def test_sec_13f_q1_is_derived_from_q8(store, monkeypatch):
     assert len(q8.payload["quarters"]) == 3
     assert len(q1.payload["quarters"]) == 1
     assert q1.payload["quarters"][0] == q8.payload["quarters"][0]
+
+
+# ==============================================================================
+# 아시아 선물 카드 주입 — 수집 시각·실제 선물·지수 대체 표기
+# ==============================================================================
+def _asia_payload() -> dict:
+    return {"categories": [{"id": "asia_equity", "items": []}]}
+
+
+def _ok(price: float, previous: float) -> dict:
+    return {"status": "ok", "price": price, "previousClose": previous,
+            "provider": "TradingView Scanner"}
+
+
+def test_futures_cards_carry_collection_time_and_market(store):
+    store.put_snapshot(catalog.SNAP_SCRAPER_MARKETS, {"items": [
+        {"key": "kospi200_night", **_ok(1127.75, 1112.0)},
+        {"key": "nikkei_fut", **_ok(66370.0, 65500.0)},
+        {"key": "hsi_fut", **_ok(24520.0, 24500.0)},
+    ]})
+
+    items = tasks._inject_scraped_indices(_asia_payload())["categories"][0]["items"]
+    by_key = {item["key"]: item for item in items}
+
+    assert set(by_key) == {"kospi200_night_scraped", "nikkei_fut_scraped", "hsi_fut_scraped"}
+    for item in items:
+        # 예전 카드에는 시각이 없었습니다. 체결 시각이 아니라 수집 시각임을 밝힙니다.
+        assert item["lastTs"].endswith("KST (TradingView 수집 시각)")
+    assert by_key["nikkei_fut_scraped"]["name"] == "닛케이225 선물"
+    assert by_key["nikkei_fut_scraped"]["market"] == "ose_futures"
+    assert by_key["hsi_fut_scraped"]["market"] == "hkex_futures"
+    assert by_key["kospi200_night_scraped"]["market"] == "krx_futures"
+
+
+def test_failed_futures_fall_back_to_index_with_honest_name(store):
+    """지수 값을 '선물'이라는 이름으로 보여 주면 안 됩니다."""
+    store.put_snapshot(catalog.SNAP_SCRAPER_MARKETS, {"items": [
+        {"key": "nikkei_fut", "status": "fail", "price": None, "provider": "TradingView Scanner"},
+        {"key": "nikkei", **_ok(66366.0, 65514.0)},
+        {"key": "hsi_fut", "status": "fail", "price": None, "provider": "TradingView Scanner"},
+    ]})
+
+    items = tasks._inject_scraped_indices(_asia_payload())["categories"][0]["items"]
+    by_key = {item["key"]: item for item in items}
+
+    nikkei = by_key["nikkei_fut_scraped"]
+    assert nikkei["status"] == "ok"
+    assert nikkei["name"] == "닛케이225 지수 (선물 대체)"
+    assert nikkei["note"] == "선물 조회 실패 · 지수 값"
+    assert nikkei["market"] == "tse"
+    # 대체할 지수도 없으면 실패 카드 — 선물 이름 그대로, 값 없음
+    assert by_key["hsi_fut_scraped"]["status"] == "fail"
+    assert by_key["hsi_fut_scraped"]["name"] == "항셍 선물"

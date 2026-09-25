@@ -23,19 +23,22 @@ from __future__ import annotations
 # 1. 거시경제 매크로 지표 카테고리
 # ==============================================================================
 # note: 화면이 배지로 표시하는 데이터 지연 수준. 값 자체의 성격이라 여기 둡니다.
+# market: 이 값이 거래되는 시장(거래 시간표 id). 화면이 "개장/마감" 배지를 계산합니다
+#         (frontend/src/lib/marketSessions.ts — id와 거래 시간·출처가 거기 있습니다).
+#         개장 여부는 "보는 시각"에 따라 바뀌므로 수집 시점에 계산해 저장하지 않습니다.
 MACRO_CATEGORIES = [
     {
         "id": "fx",
         "title": "💵 통화 및 환율",
         "note": "실시간",
         "items": [
-            {"key": "dxy", "name": "달러 인덱스 (DXY)", "ticker": "DX-Y.NYB", "note": "실시간",
+            {"key": "dxy", "market": "fx", "name": "달러 인덱스 (DXY)", "ticker": "DX-Y.NYB", "note": "실시간",
              "unit": "pt"},
-            {"key": "usdkrw", "name": "원/달러 (USD/KRW)", "ticker": "KRW=X", "note": "실시간",
+            {"key": "usdkrw", "market": "fx", "name": "원/달러 (USD/KRW)", "ticker": "KRW=X", "note": "실시간",
              "unit": "원"},
-            {"key": "usdjpy", "name": "달러/엔 (USD/JPY)", "ticker": "JPY=X", "note": "실시간",
+            {"key": "usdjpy", "market": "fx", "name": "달러/엔 (USD/JPY)", "ticker": "JPY=X", "note": "실시간",
              "unit": "엔"},
-            {"key": "jpykrw", "name": "엔/원 100엔당 (JPY/KRW)", "ticker": "JPYKRW=X",
+            {"key": "jpykrw", "market": "fx", "name": "엔/원 100엔당 (JPY/KRW)", "ticker": "JPYKRW=X",
              "note": "실시간", "unit": "원"},
         ],
     },
@@ -44,9 +47,9 @@ MACRO_CATEGORIES = [
         "title": "🏛️ 미국 국채 수익률",
         "note": "TradingView 참고 시세",
         "items": [
-            {"key": "us02y", "name": "미국채 2년물 수익률(%)", "ticker": "ZT=F", "note": "TradingView 참고"},
-            {"key": "us10y", "name": "미국채 10년물 수익률(%)", "ticker": "^TNX", "note": "TradingView 참고"},
-            {"key": "us30y", "name": "미국채 30년물 수익률(%)", "ticker": "^TYX", "note": "TradingView 참고"},
+            {"key": "us02y", "market": "ust", "name": "미국채 2년물 수익률(%)", "ticker": "ZT=F", "note": "TradingView 참고"},
+            {"key": "us10y", "market": "ust", "name": "미국채 10년물 수익률(%)", "ticker": "^TNX", "note": "TradingView 참고"},
+            {"key": "us30y", "market": "ust", "name": "미국채 30년물 수익률(%)", "ticker": "^TYX", "note": "TradingView 참고"},
         ],
     },
     {
@@ -54,9 +57,9 @@ MACRO_CATEGORIES = [
         "title": "🛢️ 원자재",
         "note": "15분 지연",
         "items": [
-            {"key": "wti", "name": "WTI 원유 ($)", "ticker": "CL=F", "note": "15분 지연"},
-            {"key": "brent", "name": "브렌트유 ($)", "ticker": "BZ=F", "note": "15분 지연"},
-            {"key": "gold", "name": "금 선물 ($)", "ticker": "GC=F", "note": "15분 지연"},
+            {"key": "wti", "market": "cme", "name": "WTI 원유 ($)", "ticker": "CL=F", "note": "15분 지연"},
+            {"key": "brent", "market": "ice_brent", "name": "브렌트유 ($)", "ticker": "BZ=F", "note": "15분 지연"},
+            {"key": "gold", "market": "cme", "name": "금 선물 ($)", "ticker": "GC=F", "note": "15분 지연"},
         ],
     },
     {
@@ -64,10 +67,10 @@ MACRO_CATEGORIES = [
         "title": "🇺🇸 미국 주가지수 및 선물",
         "note": "15분 지연",
         "items": [
-            {"key": "sp500", "name": "S&P 500", "ticker": "^GSPC", "note": "15분 지연"},
-            {"key": "sp500_fut", "name": "S&P 500 선물 (ES)", "ticker": "ES=F", "note": "15분 지연"},
-            {"key": "ndx", "name": "나스닥 100", "ticker": "^NDX", "note": "15분 지연"},
-            {"key": "ndx_fut", "name": "나스닥 선물 (NQ)", "ticker": "NQ=F", "note": "15분 지연"},
+            {"key": "sp500", "market": "nyse", "name": "S&P 500", "ticker": "^GSPC", "note": "15분 지연"},
+            {"key": "sp500_fut", "market": "cme", "name": "S&P 500 선물 (ES)", "ticker": "ES=F", "note": "15분 지연"},
+            {"key": "ndx", "market": "nyse", "name": "나스닥 100", "ticker": "^NDX", "note": "15분 지연"},
+            {"key": "ndx_fut", "market": "cme", "name": "나스닥 선물 (NQ)", "ticker": "NQ=F", "note": "15분 지연"},
         ],
     },
     {
@@ -75,16 +78,32 @@ MACRO_CATEGORIES = [
         "title": "🌏 아시아 주요 주가지수",
         "note": "15분 지연",
         "items": [
-            {"key": "kospi", "name": "코스피 (KOSPI)", "ticker": "^KS11", "note": "15분 지연"},
-            {"key": "nikkei", "name": "닛케이 225 (Nikkei)", "ticker": "^N225", "note": "15분 지연"},
-            {"key": "shanghai", "name": "상하이 종합 (SSE)", "ticker": "000001.SS", "note": "15분 지연"},
-            {"key": "hsi", "name": "항셍 지수 (HSI)", "ticker": "^HSI", "note": "15분 지연"},
+            {"key": "kospi", "market": "krx", "name": "코스피 (KOSPI)", "ticker": "^KS11", "note": "15분 지연"},
+            {"key": "nikkei", "market": "tse", "name": "닛케이 225 (Nikkei)", "ticker": "^N225", "note": "15분 지연"},
+            {"key": "shanghai", "market": "sse", "name": "상하이 종합 (SSE)", "ticker": "000001.SS", "note": "15분 지연"},
+            {"key": "hsi", "market": "hkex", "name": "항셍 지수 (HSI)", "ticker": "^HSI", "note": "15분 지연"},
         ],
     },
 ]
 
 # 야간선물/해외 지수선물 스크래핑 결과가 주입되는 카테고리
 SCRAPED_INJECT_CATEGORY = "asia_equity"
+
+# 주입할 선물 카드. key는 services/scraper.py SCRAPER_MARKETS의 key입니다.
+# fallback: 선물 조회가 실패했을 때 대신 보여 줄 같은 거래소의 지수. 이름에 "(선물 대체)",
+#           배지에 "선물 조회 실패"를 적어 지수 값임을 숨기지 않습니다.
+#
+# 코스피200 야간선물 — 예전 이름의 "(CME 연계)"는 뺐습니다. 2025-06-09부터 KRX가
+# 야간 파생상품 시장(18:00~06:00)을 직접 운영합니다(Korea Times 2025-06-09 보도).
+SCRAPED_FUTURES = (
+    {"key": "kospi200_night", "name": "코스피200 야간선물", "market": "krx_futures"},
+    {"key": "nikkei_fut", "name": "닛케이225 선물", "market": "ose_futures",
+     "fallback": {"key": "nikkei", "name": "닛케이225 지수 (선물 대체)",
+                  "market": "tse"}},
+    {"key": "hsi_fut", "name": "항셍 선물", "market": "hkex_futures",
+     "fallback": {"key": "hang_seng", "name": "항셍 지수 (선물 대체)",
+                  "market": "hkex"}},
+)
 
 # ==============================================================================
 # 1-1. 환율 비교 차트 (여러 계열 겹쳐 보기)

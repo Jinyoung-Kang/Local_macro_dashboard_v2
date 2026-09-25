@@ -69,11 +69,11 @@ SCRAPER_MARKETS = [
     {"key": "shanghai", "name": "상해종합", "kind": "yahoo_chart",
      "symbol": "000001.SS", "provider": "Yahoo Finance", "unit": "pt",
      "url": "https://finance.yahoo.com/quote/000001.SS/"},
-    # 코스피200 야간선물(CME 연계). 구버전은 TradingView HTML을 정규식으로 긁고
+    # 코스피200 야간선물(KRX 야간 파생시장 18:00~06:00). 구버전은 TradingView HTML을 정규식으로 긁고
     # Investing.com으로 폴백했는데, 둘 다 페이지 구조가 바뀌면 조용히 깨집니다.
     # 여기서는 같은 값을 JSON으로 주는 Symbol Scanner를 쓰고, 실패하면 구버전과
     # 같은 KODEX 200 프록시로 내려갑니다(반드시 추정치로 표시).
-    {"key": "kospi200_night", "name": "코스피200 야간선물 (CME 연계)",
+    {"key": "kospi200_night", "name": "코스피200 야간선물",
      "kind": "tradingview_symbol", "symbol": "KRX:K2I1!",
      "provider": "TradingView Scanner", "unit": "pt",
      "fallback": "kodex_proxy",
@@ -81,6 +81,16 @@ SCRAPER_MARKETS = [
     {"key": "hang_seng", "name": "항셍", "kind": "tradingview_symbol",
      "symbol": "TVC:HSI", "provider": "TradingView Scanner", "unit": "pt",
      "url": "https://www.tradingview.com/symbols/TVC-HSI/"},
+    # 닛케이225·항셍 **선물**(최근월 연결). 예전에는 "선물" 카드가 위의 지수
+    # 심볼(TVC:NI225·TVC:HSI)을 그대로 썼습니다 — 이름은 선물인데 값은 지수였고,
+    # 지수 카드와 소수점까지 같은 값이 나란히 떴습니다. 선물 조회에 실패하면
+    # 카드가 지수 값으로 내려가되 이름에 그 사실을 적습니다(tasks._inject_scraped_indices).
+    {"key": "nikkei_fut", "name": "닛케이225 선물", "kind": "tradingview_symbol",
+     "symbol": "OSE:NK2251!", "provider": "TradingView Scanner", "unit": "pt",
+     "url": "https://www.tradingview.com/symbols/OSE-NK2251!/"},
+    {"key": "hsi_fut", "name": "항셍 선물", "kind": "tradingview_symbol",
+     "symbol": "HKEX:HSI1!", "provider": "TradingView Scanner", "unit": "pt",
+     "url": "https://www.tradingview.com/symbols/HKEX-HSI1!/"},
 ]
 
 
