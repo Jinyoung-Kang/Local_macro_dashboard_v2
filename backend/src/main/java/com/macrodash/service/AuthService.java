@@ -11,8 +11,10 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Set;
 
 /**
  * 간이 인증 (비밀번호 잠금).
@@ -37,22 +39,42 @@ public class AuthService {
     private final AppProperties properties;
     private final SecretKey key;
 
+    /** 저장소에 공개된 기본값들. 이 값으로 서명하면 누구나 토큰을 위조할 수 있습니다. */
+    static final Set<String> KNOWN_PLACEHOLDERS = Set.of(
+            "change-me-please-change-me-please-32b");
+    static final String DEFAULT_PASSWORD = "admin1234@";
+
     public AuthService(AppProperties properties) {
         this.properties = properties;
-        byte[] secret = properties.getJwtSecret().getBytes(StandardCharsets.UTF_8);
-        if (secret.length < 32) {
-            // HS256은 최소 32바이트를 요구합니다. 짧은 값이 들어오면 기동을 막는
-            // 대신 경고하고 패딩합니다(로컬 실행 편의). 운영에서는 반드시 설정하세요.
-            log.warn("dashboard.jwt-secret이 32바이트 미만입니다. 운영 환경에서는 "
-                    + "충분히 긴 무작위 값을 설정하세요.");
-            byte[] padded = new byte[32];
-            System.arraycopy(secret, 0, padded, 0, secret.length);
-            for (int i = secret.length; i < 32; i++) {
-                padded[i] = (byte) ('x' + i);
-            }
-            secret = padded;
+        this.key = Keys.hmacShaKeyFor(signingSecret(properties.getJwtSecret()));
+        if (DEFAULT_PASSWORD.equals(properties.getPassword())) {
+            log.warn("APP_PASSWORD가 기본값입니다. 같은 네트워크의 누구나 로그인할 수 있으니 .env에서 바꾸세요.");
         }
-        this.key = Keys.hmacShaKeyFor(secret);
+    }
+
+    /**
+     * 서명 키 바이트를 정합니다.
+     *
+     * <p>설정값이 공개된 기본값이거나 32바이트(HS256 최소) 미만이면 <b>기동할 때마다
+     * 무작위 키</b>를 씁니다. 예전에는 짧은 값을 정해진 바이트로 채웠는데, 그러면
+     * 키가 사실상 공개돼 누구나 세션 토큰을 만들 수 있었습니다.
+     *
+     * <p>주의사항 — 무작위 키를 쓰면 재시작할 때 기존 세션이 모두 풀립니다.
+     * 계속 로그인 상태를 유지하려면 JWT_SECRET을 설정하세요(make setup이 만들어 줍니다).
+     *
+     * @param configured 설정된 JWT_SECRET
+     * @return HMAC 키 바이트(32바이트 이상)
+     */
+    static byte[] signingSecret(String configured) {
+        byte[] secret = configured == null ? new byte[0] : configured.getBytes(StandardCharsets.UTF_8);
+        if (secret.length >= 32 && !KNOWN_PLACEHOLDERS.contains(configured)) {
+            return secret;
+        }
+        log.warn("JWT_SECRET이 비었거나 기본값·32바이트 미만입니다. 이번 실행 동안만 쓰는 무작위 "
+                + "키로 서명합니다(재시작하면 다시 로그인해야 합니다).");
+        byte[] random = new byte[32];
+        new SecureRandom().nextBytes(random);
+        return random;
     }
 
     public boolean passwordMatches(String candidate) {

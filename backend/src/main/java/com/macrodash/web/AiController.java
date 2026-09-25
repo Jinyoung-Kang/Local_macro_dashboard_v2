@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.service.AiService;
 import com.macrodash.service.SnapshotTextService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,6 +54,22 @@ public class AiController {
     }
 
     /**
+     * 사용자가 덧붙이는 지시·테스트 프롬프트의 최대 길이.
+     *
+     * <p>이 글자는 그대로 유료 AI API로 전달됩니다. 상한이 없으면 요청 하나로
+     * 토큰 한도·요금을 소진시키거나 응답을 수 분씩 붙잡아 둘 수 있습니다.
+     */
+    static final int MAX_USER_TEXT = 2000;
+
+    /** 길이 초과면 400. 사용자가 무엇을 줄여야 하는지 알 수 있게 한도를 알려 줍니다. */
+    static void requireShort(String text, String field) {
+        if (text != null && text.length() > MAX_USER_TEXT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    field + "은(는) " + MAX_USER_TEXT + "자 이하로 입력하세요 (현재 " + text.length() + "자).");
+        }
+    }
+
+    /**
      * 수집 데이터 기반 AI 리포트.
      *
      * <p>프롬프트에는 대시보드 원본 텍스트가 그대로 들어갑니다. AI가 데이터에
@@ -60,6 +78,7 @@ public class AiController {
      */
     @PostMapping("/report")
     public Map<String, Object> report(@RequestBody ReportRequest request) {
+        requireShort(request.extraInstruction(), "추가 지시");
         Map<String, String> prompts = snapshotText.reportPrompts();
         String reportType = (request.reportType() == null || !prompts.containsKey(request.reportType()))
                 ? prompts.keySet().iterator().next()
@@ -88,6 +107,7 @@ public class AiController {
     @PostMapping("/test")
     public Map<String, Object> test(@RequestParam(defaultValue = "auto") String engineId,
                                     @RequestParam(required = false) String prompt) {
+        requireShort(prompt, "테스트 프롬프트");
         String text = (prompt == null || prompt.isBlank())
                 ? "한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요."
                 : prompt;

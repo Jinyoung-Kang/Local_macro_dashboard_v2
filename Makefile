@@ -92,8 +92,8 @@ ps: ## 컨테이너 상태
 logs: ## 로그 따라 보기 (make logs S=backend 로 특정 서비스만)
 	$(COMPOSE) logs -f --tail=100 $(S)
 
-infra: ## PostgreSQL·Redis만 기동 (네이티브 개발용)
-	$(COMPOSE) up -d postgres redis
+infra: ## PostgreSQL만 기동 (네이티브 개발용)
+	$(COMPOSE) up -d postgres
 
 # ------------------------------------------------------------------ 데이터
 collect: ## 시세·수급 수집 (fast — 약 1분)

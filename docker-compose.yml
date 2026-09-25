@@ -3,7 +3,6 @@
 # 로컬 실행용 전체 스택.
 #
 #   postgres  저장 계층 (구버전 SQLite 파일을 대체)
-#   redis     백엔드 응답 캐시
 #   collector 수집기 (Python/FastAPI) — 외부 소스에서 받아 PostgreSQL에 적재
 #   backend   API (Java/Spring Boot) — 저장본 읽기·분석·인증
 #   frontend  화면 (Next.js)
@@ -12,11 +11,11 @@
 # 접속:  http://localhost:3000  (기본 비밀번호 admin1234@ — .env에서 변경하세요)
 #
 # [포트를 어디까지 여는가]
-# postgres·redis·collector는 **이 맥에서만** 접근하면 됩니다(127.0.0.1 고정).
-# 예전에는 셋 다 모든 네트워크 인터페이스에 열려 있어서, 같은 와이파이에 있는
+# postgres·collector는 **이 맥에서만** 접근하면 됩니다(127.0.0.1 고정).
+# 예전에는 모두 모든 네트워크 인터페이스에 열려 있어서, 같은 와이파이에 있는
 # 다른 기기가 비밀번호 macro/macro로 DB에 붙거나, 로그인 없이 수집기 API를
 # 호출해 시장 데이터를 받아갈 수 있었습니다. 카페·공용 와이파이에서는 그대로
-# 노출입니다. 이 셋은 컨테이너끼리 내부 네트워크로 통신하므로 밖에 열 이유가
+# 노출입니다. 이들은 컨테이너끼리 내부 네트워크로 통신하므로 밖에 열 이유가
 # 없습니다(호스트에서 쓰는 make db·make status는 127.0.0.1로 그대로 됩니다).
 #
 # 화면(frontend)·API(backend)는 로그인을 거치고, 휴대폰에서 보는 용도가
@@ -44,19 +43,6 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-macro} -d ${DATABASE_NAME:-macrodash}"]
       interval: 10s
       timeout: 5s
-      retries: 10
-
-  redis:
-    restart: unless-stopped
-    image: redis:7-alpine
-    # 캐시 전용이므로 디스크 저장은 끕니다(재기동하면 비어도 됩니다).
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
       retries: 10
 
   collector:
@@ -104,21 +90,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/${DATABASE_NAME:-macrodash}
       DATABASE_USER: ${DATABASE_USER:-macro}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-macro}
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
       COLLECTOR_URL: http://collector:8000
       COLLECTOR_API_TOKEN: "${COLLECTOR_API_TOKEN:-}"
       DASHBOARD_READ_MODE: "${DASHBOARD_READ_MODE:-auto}"
       APP_PASSWORD: "${APP_PASSWORD:-admin1234@}"
       JWT_SECRET: "${JWT_SECRET:-change-me-please-change-me-please-32b}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:3000}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       AI_TIMEOUT_SECONDS: "${AI_TIMEOUT_SECONDS:-240}"
+      # .env.example에 적혀 있었지만 전달되지 않아 값을 바꿔도 무시되던 두 항목
+      AI_AUTO_ATTEMPT_SECONDS: "${AI_AUTO_ATTEMPT_SECONDS:-60}"
+      AI_AUTO_BUDGET_SECONDS: "${AI_AUTO_BUDGET_SECONDS:-180}"
       NVIDIA_API_KEY: "${NVIDIA_API_KEY:-}"
       CEREBRAS_API_KEY: "${CEREBRAS_API_KEY:-}"
       CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID:-}"

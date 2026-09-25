@@ -10,7 +10,7 @@
 ### Docker 없이 (권장 — 고치면서 바로 확인)
 
 ```bash
-make infra            # PostgreSQL·Redis만 컨테이너로 띄웁니다
+make infra            # PostgreSQL만 컨테이너로 띄웁니다
 
 make dev-collector    # 터미널 1 — 자동 리로드 (collector/.venv 필요)
 make dev-backend      # 터미널 2

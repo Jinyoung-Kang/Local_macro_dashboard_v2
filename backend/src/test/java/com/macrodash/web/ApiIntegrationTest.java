@@ -40,10 +40,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "spring.datasource.url=${TEST_DATABASE_URL:jdbc:postgresql://localhost:5432/macrodash_test}",
-        "spring.cache.type=none",
-        "spring.autoconfigure.exclude="
-                + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration",
         "dashboard.password=test-password",
         "dashboard.jwt-secret=integration-test-secret-key-32-bytes!",
         "dashboard.read-mode=store_only",

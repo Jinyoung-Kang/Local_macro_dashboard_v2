@@ -11,7 +11,7 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/auth/login` | `{"password": "..."}` → httpOnly 세션 쿠키 |
+| POST | `/api/auth/login` | `{"password": "..."}` → 세션 쿠키(HttpOnly·SameSite=Strict). 틀리면 401, 연속 5회 실패 후 **429 + `Retry-After`**(30초부터 2배씩, 최대 15분) |
 | GET | `/api/auth/session` | `{"authenticated": bool}` |
 | POST | `/api/auth/logout` | 쿠키 만료 |
 

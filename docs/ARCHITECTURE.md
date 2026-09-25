@@ -23,7 +23,7 @@
 ## 2. 데이터 흐름
 
 ```
-외부 소스 ──▶ Collector ──▶ PostgreSQL ──▶ Backend ──▶ Redis 캐시 ──▶ Frontend
+외부 소스 ──▶ Collector ──▶ PostgreSQL ──▶ Backend ──▶ Frontend
                   ▲                           │
                   └───── 수집 요청 (auto 모드) ─┘
 ```
@@ -104,30 +104,58 @@ web/         HTTP 경계.
 표본이 부족한데 숫자를 만들어내거나, 배열이 한 칸 밀리거나, 미래 정보를 쓰거나.
 저장소 의존성을 걷어내면 테스트가 이런 규칙을 직접 고정할 수 있습니다.
 
-## 5. 캐시 전략
+## 5. 캐시를 두지 않는 이유 (측정 기반)
 
-Redis는 **응답 캐시**입니다. 원본은 항상 PostgreSQL에 있으므로 캐시가 비어도
-정확성에는 영향이 없습니다.
+예전 구성에는 Redis가 "백엔드 응답 캐시"로 들어 있었지만, 코드 어디에서도
+쓰이지 않았습니다(`@EnableCaching`·`@Cacheable` 없음). 문서의 TTL 표도 실제
+동작과 무관했습니다. 쓰이지 않는 인프라는 기동 의존성(백엔드가 Redis 헬스체크를
+기다림)과 열린 포트만 늘리므로 **제거했습니다.**
 
-| 데이터 | TTL |
-|---|---|
-| 장중 시세성 (매크로 카드·수급) | 60초 |
-| 일별 확정치 (FRED·KRX·섹터) | 5분 |
-| 분기 공시 (13F) | 30분 |
+캐시를 새로 붙이지 않은 근거는 측정입니다(2026-09, 로컬, 두 번째 호출 기준).
 
-## 6. 인증
+| 엔드포인트 | 응답 시간 | 크기 |
+|---|---|---|
+| `/api/macro/overview` | 75ms | 251KB |
+| `/api/macro/fx` (4종·5년) | 19ms | 252KB |
+| `/api/guru/risk` | 126ms | 4KB |
+| `/api/stock/scorecard` | 73ms | 2KB |
+| 그 밖의 화면 API | 5~90ms | — |
+
+지연의 대부분은 계산이 아니라 **전송량**이었습니다. 그래서 캐시 대신
+응답 압축(`server.compression`, 2KB 이상 JSON)을 켰습니다.
+
+**캐시를 다시 검토할 조건** — 화면 API가 p95 300ms를 넘거나, 백엔드를 두 대
+이상 띄울 때. 그때도 키에 저장본의 `collected_at`을 넣어, 새 수집이 들어오면
+자동으로 무효화되게 해야 합니다(시간 기반 TTL만 쓰면 수집 직후에도 옛 값을
+보여 줄 수 있습니다).
+
+## 6. 인증·보안
 
 사용자 계정 체계가 없는 1인용 대시보드라 구버전의 "비밀번호 한 개" 모델을
-유지합니다. 다만 프런트·백엔드가 분리됐으므로 서명된 토큰(JWT)을 **httpOnly
-쿠키**로 내려 브라우저 스크립트가 읽지 못하게 합니다. 비밀번호 비교는
-`MessageDigest.isEqual`로 상수 시간에 수행합니다.
+유지합니다. 다만 프런트·백엔드가 분리됐으므로 서명된 토큰(JWT)을 쿠키로 내려
+줍니다.
+
+| 위협 | 대응 | 위치 |
+|---|---|---|
+| XSS로 토큰 탈취 | 쿠키 `HttpOnly` (스크립트가 읽지 못함) | `AuthController` |
+| CSRF | 쿠키 `SameSite=Strict`. 화면(:3000)과 API(:8080)는 포트만 달라 같은 사이트 | `AuthController` |
+| 비밀번호 대입 | 연속 5회 실패 후 30초→2배씩→최대 15분 잠금, 429 + `Retry-After` | `LoginThrottle` |
+| 타이밍 공격 | 비밀번호 `MessageDigest.isEqual`, 수집기 토큰 `hmac.compare_digest` | `AuthService`, `collector/app/main.py` |
+| 공개된 기본 서명 키로 토큰 위조 | JWT_SECRET이 기본값·32바이트 미만이면 실행마다 무작위 키 | `AuthService.signingSecret` |
+| 인증 우회 경로 | 공개 경로는 정규화된 경로와 **정확히 일치**할 때만 (`/api/healthx`, `/api/health/../x` 차단) | `WebConfig.SessionFilter` |
+| 응답 가로채기·끼워 넣기 | `nosniff`, `no-store`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` | `SessionFilter`, `next.config.mjs` |
+| 유료 AI API 비용 폭주 | 사용자 입력 2,000자 상한(400) | `AiController` |
+| 로그로 API 키 유출 | 로깅 계층에서 키 파라미터 가림(`serviceKey`·`crtfc_key`·`key` 등 포함) | `collector/app/logredact.py` |
+
+**주의** — 잠금은 접속 주소(remoteAddr) 기준입니다. X-Forwarded-For는 위조할 수
+있어 믿지 않습니다. 도커 포트 포워딩에서는 모든 접속이 같은 주소로 보일 수 있어
+사실상 전체 공통 잠금이 됩니다(1인용이라 더 안전한 쪽).
 
 ## 7. 장애 시 동작
 
 | 장애 | 결과 |
 |---|---|
 | 수집기 다운 | 화면은 저장본으로 동작. 상태 화면에 "수집기에 연결하지 못했습니다" |
-| Redis 다운 | 캐시만 없어짐. DB에서 직접 읽어 계속 동작 |
 | PostgreSQL 다운 | API가 실패합니다. 이 계층만 가용성이 필수입니다 |
 | 외부 소스 다운 | 수집 태스크가 `empty`/`error`로 기록되고 **기존 저장본은 유지** |
 | 모든 수급 소스 다운 | 누적 이력으로 대체 + 화면에 날짜와 경고 표시 |

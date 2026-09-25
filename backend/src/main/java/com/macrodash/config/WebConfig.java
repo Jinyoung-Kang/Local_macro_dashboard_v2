@@ -1,9 +1,9 @@
 package com.macrodash.config;
 
 import com.macrodash.service.AuthService;
+import com.macrodash.web.AuthController;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -16,6 +16,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 /**
  * CORS와 인증 필터.
@@ -58,10 +59,20 @@ public class WebConfig implements WebMvcConfigurer {
         return registration;
     }
 
-    /** 세션 쿠키 검사 필터. */
+    /**
+     * 세션 쿠키 검사 + 보안 응답 헤더.
+     *
+     * <p>공개 경로는 <b>정확히 일치</b>할 때만 통과시킵니다. 예전에는 접두사로
+     * 비교해 {@code /api/healthx}, {@code /api/health/../macro/overview} 같은
+     * 요청이 인증 검사를 건너뛰었습니다(지금은 해당 매핑이 없어 404로 끝났지만,
+     * 비슷한 이름의 엔드포인트가 생기는 순간 인증 없이 열립니다).
+     *
+     * <p>경로는 컨테이너가 디코딩·정규화한 {@code servletPath}로 봅니다.
+     * {@code getRequestURI()}는 날것이라 {@code ..}·{@code %2e}가 그대로 남습니다.
+     */
     public static class SessionFilter extends OncePerRequestFilter {
 
-        private static final List<String> PUBLIC_PATHS = List.of(
+        static final Set<String> PUBLIC_PATHS = Set.of(
                 "/api/auth/login", "/api/auth/session", "/api/health");
 
         private final AuthService authService;
@@ -74,14 +85,14 @@ public class WebConfig implements WebMvcConfigurer {
         protected void doFilterInternal(HttpServletRequest request,
                                         HttpServletResponse response,
                                         FilterChain chain) throws ServletException, IOException {
-            String path = request.getRequestURI();
+            addSecurityHeaders(response);
 
-            if ("OPTIONS".equalsIgnoreCase(request.getMethod()) || isPublic(path)) {
+            if ("OPTIONS".equalsIgnoreCase(request.getMethod()) || isPublic(request)) {
                 chain.doFilter(request, response);
                 return;
             }
 
-            if (authService.isValid(readToken(request))) {
+            if (authService.isValid(AuthController.readToken(request))) {
                 chain.doFilter(request, response);
                 return;
             }
@@ -92,21 +103,29 @@ public class WebConfig implements WebMvcConfigurer {
                     "{\"error\":\"unauthorized\",\"message\":\"로그인이 필요합니다.\"}");
         }
 
-        private boolean isPublic(String path) {
-            return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
+        /**
+         * API 응답에 붙이는 헤더.
+         *
+         * <ul>
+         *   <li>nosniff — JSON을 스크립트·HTML로 해석하지 못하게 합니다.</li>
+         *   <li>no-store — 로그인해야 보이는 데이터가 브라우저·프록시 캐시에 남지 않게 합니다.</li>
+         *   <li>DENY / frame-ancestors 'none' — API 응답을 다른 페이지에 끼워 넣지 못하게 합니다.</li>
+         * </ul>
+         */
+        static void addSecurityHeaders(HttpServletResponse response) {
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("X-Frame-Options", "DENY");
+            response.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+            response.setHeader("Referrer-Policy", "no-referrer");
         }
 
-        private String readToken(HttpServletRequest request) {
-            Cookie[] cookies = request.getCookies();
-            if (cookies == null) {
-                return null;
+        static boolean isPublic(HttpServletRequest request) {
+            String path = request.getServletPath();
+            if (request.getPathInfo() != null) {
+                path = path + request.getPathInfo();
             }
-            for (Cookie cookie : cookies) {
-                if (AuthService.COOKIE_NAME.equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
-            }
-            return null;
+            return PUBLIC_PATHS.contains(path);
         }
     }
 }

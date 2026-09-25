@@ -125,6 +125,7 @@ export default function AiReportPage() {
             value={extra}
             onChange={(event) => setExtra(event.target.value)}
             rows={3}
+            maxLength={2000}
             placeholder="예: 향후 2주 관점에서 코스피200 선물 포지션에 집중해 주세요."
             className="mt-1 w-full rounded-md border border-border bg-canvas px-3 py-2 text-sm text-body outline-none focus:border-accent"
           />

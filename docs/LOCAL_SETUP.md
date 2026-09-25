@@ -4,7 +4,7 @@
 것을 기준으로 씁니다. 다른 경로를 쓰면 아래 명령의 경로만 바꾸면 됩니다.
 
 > 구버전은 `~/Projects/macro-dashboard-v2`에서 `venv` + `streamlit run app.py`로
-> 돌렸습니다. v2는 컨테이너 다섯 개(화면·API·수집기·DB·캐시)라 **Docker로
+> 돌렸습니다. v2는 컨테이너 네 개(화면·API·수집기·DB)라 **Docker로
 > 묶어 한 줄로 띄우는 방식**이 기본이고, Docker 없이 쓰는 경로도 함께 둡니다.
 
 ---
@@ -45,7 +45,7 @@ docker info             # 데몬이 떠 있으면 정보가 출력됩니다
 ```
 
 Apple Silicon(M1~M4)에서 그대로 동작합니다. 이 프로젝트가 쓰는 이미지
-(`postgres:16-alpine`, `redis:7-alpine`, `eclipse-temurin:21`, `node:22-alpine`)는
+(`postgres:16-alpine`, `eclipse-temurin:21`, `node:22-alpine`)는
 모두 arm64 빌드를 제공합니다.
 
 **Docker Desktop 설정 권장값** — 설정 → Resources
@@ -57,11 +57,10 @@ Apple Silicon(M1~M4)에서 그대로 동작합니다. 이 프로젝트가 쓰는
 Homebrew로 직접 설치합니다.
 
 ```bash
-brew install postgresql@16 redis maven node@22 python@3.11
+brew install postgresql@16 maven node@22 python@3.11
 brew install --cask temurin@21          # Java 21 (JDK)
 
 brew services start postgresql@16
-brew services start redis
 ```
 
 Python은 **3.11 또는 3.12**를 권합니다. 3.13에서는 `pandas`/`pykrx` 계열
@@ -119,7 +118,7 @@ make setup
 3. API 키 보유 현황과 "없을 때 무엇이 꺼지는지"를 알려 줍니다
 4. 실행 방법을 확인합니다 — **Docker가 떠 있으면 Java·Maven·Node·psql은
    검사하지 않습니다.** 전부 컨테이너 안에 있어서 맥에 설치할 필요가 없습니다
-5. 포트 5개(3000·8080·8000·5432·6379)를 확인합니다. 이미 `make up`으로 이
+5. 포트 4개(3000·8080·8000·5432)를 확인합니다. 이미 `make up`으로 이
    프로젝트가 떠 있다면 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 표시되며,
    **포트를 바꿀 필요가 없습니다**
 
@@ -245,7 +244,7 @@ make backup             # DB 백업 → backups/
 
 > ### ⚠️ Docker가 잘 돌고 있다면 이 절은 건너뛰세요.
 >
-> `make up`으로 컨테이너 다섯 개가 떠 있다면 **이 절의 작업은 전부 불필요**할
+> `make up`으로 컨테이너 네 개가 떠 있다면 **이 절의 작업은 전부 불필요**할
 > 뿐 아니라, 같은 포트를 두 번 잡으려다 오히려 고장납니다. 실제로 겪는 오류들:
 >
 > - `Error: listen EADDRINUSE: address already in use :::3000`
@@ -262,11 +261,11 @@ make backup             # DB 백업 → backups/
 `cd ~/Projects/Local-macro-dashboard-v2` 로 먼저 돌아가세요
 (`cd frontend`를 프런트 폴더 안에서 또 치면 `no such file or directory`가 납니다).
 
-먼저 DB·Redis만 컨테이너로 띄우면 `psql`·`brew services`가 필요 없습니다.
+먼저 DB만 컨테이너로 띄우면 `psql`·`brew services`가 필요 없습니다.
 
 ```bash
 cd ~/Projects/Local-macro-dashboard-v2
-make infra      # postgres + redis 만 기동 (스키마도 자동 적용)
+make infra      # postgres만 기동 (스키마도 자동 적용)
 ```
 
 ```bash
@@ -314,15 +313,6 @@ make dev-frontend
 
 > 3000번이 이미 차 있으면(`EADDRINUSE`) 컨테이너 프런트가 떠 있는 것입니다.
 > `docker compose stop frontend` 로 그것만 내린 뒤 다시 실행하세요.
-
-Redis가 없으면 백엔드가 캐시를 쓰지 못해 기동에 실패할 수 있습니다. Redis를
-띄우지 않으려면 캐시를 꺼서 실행하세요.
-
-```bash
-cd backend && CACHE_TYPE=none mvn spring-boot:run
-```
-
-(`make infra`로 Redis를 함께 띄웠다면 이 옵션은 필요 없습니다.)
 
 ### 수집기를 백그라운드 상주로 (launchd)
 
@@ -406,7 +396,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 ```
 
 `make test`는 `localhost:5432`의 PostgreSQL을 씁니다. Docker로 띄운 상태라면
-그대로 돌아가고, 아니면 `make infra`로 DB·Redis만 먼저 올리세요.
+그대로 돌아가고, 아니면 `make infra`로 DB만 먼저 올리세요.
 
 > ⚠️ **테스트는 평소 쓰는 DB(`macrodash`)를 건드리지 않습니다.**
 > 백엔드 통합 테스트는 시작할 때마다 `snapshots`를 비웁니다. 그래서 테스트는
@@ -444,7 +434,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 | 백엔드 빌드가 메모리 부족으로 죽음 | Docker Desktop 메모리를 4GB 이상으로 올리세요 |
 | 수집은 성공인데 숫자가 이상함 | `🗄️ 데이터 저장소 상태 → 교차 검증`을 돌려 보세요. 비공식 소스(Daum·Naver·TradingView)의 구조 변경을 먼저 의심합니다 |
 | 포트를 바꿨는데 화면이 API를 못 찾음 | `NEXT_PUBLIC_API_BASE`는 **빌드 시점**에 번들에 들어갑니다. 바꾼 뒤 `make up`(재빌드)이 필요합니다 |
-| `make setup`이 포트 5개를 전부 "사용 중"이라고 함 | **이미 `make up`으로 이 프로젝트가 떠 있는 상태입니다.** 정상입니다. 최신 버전은 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 구분해 표시합니다 |
+| `make setup`이 포트 4개를 전부 "사용 중"이라고 함 | **이미 `make up`으로 이 프로젝트가 떠 있는 상태입니다.** 정상입니다. 최신 버전은 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 구분해 표시합니다 |
 | 휴대폰 등 다른 기기에서 화면이 안 열림 | `.env`의 `WEB_BIND_HOST`가 `127.0.0.1`이면 이 맥에서만 열립니다. `0.0.0.0`으로 바꾸고 `make up`. `APP_PASSWORD`는 반드시 기본값이 아니어야 합니다 |
 | 다른 기기에서 DB(5432)·수집기(8000)에 붙지 못함 | 의도된 제한입니다. 이 둘은 로그인이 없어 `127.0.0.1`에만 열립니다 ([PRINCIPLES.md](PRINCIPLES.md)) |
 | `command not found: psql` / `mvn` | Docker로 실행 중이라면 **설치할 필요가 없습니다.** DB 셸은 `make db`를 쓰세요 |

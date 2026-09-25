@@ -49,7 +49,7 @@ if ! docker info >/dev/null 2>&1; then
   problem "Docker Desktop을 켜고 'make up'"
 else
   RUNNING=$(docker compose ps --services --filter status=running 2>/dev/null | sort)
-  for svc in postgres redis collector backend frontend; do
+  for svc in postgres collector backend frontend; do
     if printf '%s\n' "$RUNNING" | grep -qx "$svc"; then
       ok "$svc 실행 중"
     else

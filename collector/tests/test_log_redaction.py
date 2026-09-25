@@ -78,3 +78,28 @@ def test_로그_인자에_담겨_와도_가려진다(captured):
 def test_대소문자를_가리지_않는다():
     assert "SECRET" not in logredact.redact("?API_KEY=SECRET")
     assert "SECRET" not in logredact.redact("?Api_Key=SECRET")
+
+
+def test_국내_공공_API_키_파라미터도_가린다():
+    """공공데이터포털·DART·KOSIS·V-World·R-ONE·SGIS의 키 이름."""
+    samples = {
+        "https://apis.data.go.kr/x/getRestDeInfo?serviceKey=AbC%2B12%3D%3D&solYear=2026": "AbC%2B12%3D%3D",
+        "?ServiceKey=DATAGOKR": "DATAGOKR",
+        "https://opendart.fss.or.kr/api/fnlttSinglAcnt.json?crtfc_key=DARTKEY&corp_code=00126380": "DARTKEY",
+        "?method=getList&apiKey=KOSISKEY&format=json": "KOSISKEY",
+        "https://api.vworld.kr/req/data?key=VWORLDKEY&request=GetFeature": "VWORLDKEY",
+        "SttsApiTblData.do?KEY=REBKEY&Type=json": "REBKEY",
+        "?consumer_key=SGISID&consumer_secret=SGISSECRET": "SGISSECRET",
+        "?accessToken=SGISTOKEN&year=2024": "SGISTOKEN",
+    }
+    for text, secret in samples.items():
+        assert secret not in logredact.redact(text), text
+    # 진단에 필요한 다른 파라미터는 남습니다.
+    assert "corp_code=00126380" in logredact.redact(
+        "?crtfc_key=DARTKEY&corp_code=00126380")
+
+
+def test_key로_끝나는_일반_파라미터는_가리지_않는다():
+    """'key'를 추가했다고 sort_key 같은 평범한 값까지 지우면 진단이 어려워집니다."""
+    text = "?sort_key=date&monkey=1"
+    assert logredact.redact(text) == text

@@ -26,6 +26,12 @@ public class AppProperties {
     /** 세션 토큰 서명 키 (HS256). 최소 32바이트. */
     private String jwtSecret = "change-me-please-change-me-please-32b";
 
+    /**
+     * 세션 쿠키에 Secure 속성을 붙일지. HTTPS로만 접속하는 경우에 켜세요.
+     * 로컬 http://에서 켜면 브라우저가 쿠키를 저장하지 않아 로그인이 되지 않습니다.
+     */
+    private boolean cookieSecure = false;
+
     /** 세션 유효 시간(분). */
     private long sessionMinutes = 720;
 
@@ -77,6 +83,14 @@ public class AppProperties {
 
     public void setJwtSecret(String jwtSecret) {
         this.jwtSecret = jwtSecret;
+    }
+
+    public boolean isCookieSecure() {
+        return cookieSecure;
+    }
+
+    public void setCookieSecure(boolean cookieSecure) {
+        this.cookieSecure = cookieSecure;
     }
 
     public long getSessionMinutes() {

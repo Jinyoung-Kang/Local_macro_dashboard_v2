@@ -10,19 +10,6 @@ spring:
       maximum-pool-size: 10
       connection-timeout: 5000
 
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 2s
-
-  cache:
-    type: ${CACHE_TYPE:redis}
-    redis:
-      # 캐시 TTL은 데이터 성격에 맞춥니다. 장중 시세는 짧게, 일별 확정치는 길게.
-      time-to-live: 60s
-      cache-null-values: false
-
   jackson:
     default-property-inclusion: always
     serialization:
@@ -30,6 +17,12 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # JSON 응답 압축. 거시 지표 개요·환율 5년 차트는 한 번에 250KB 안팎이라
+  # 휴대폰·와이파이에서 체감 차이가 큽니다. 2KB 미만은 압축 비용이 더 커서 제외.
+  compression:
+    enabled: true
+    mime-types: application/json,text/plain
+    min-response-size: 2048
   error:
     include-message: always
 
@@ -48,6 +41,8 @@ dashboard:
   # 세션 토큰 서명 키 — 운영에서는 반드시 무작위 값으로 바꾸세요
   jwt-secret: ${JWT_SECRET:change-me-please-change-me-please-32b}
   session-minutes: ${SESSION_MINUTES:720}
+  # HTTPS로만 접속할 때 true (세션 쿠키에 Secure). http://에서 켜면 로그인이 안 됩니다.
+  cookie-secure: ${COOKIE_SECURE:false}
 
   # auto | store_only | live_only
   #   auto       저장본이 신선하면 사용, 오래되면 수집기에 수집 요청

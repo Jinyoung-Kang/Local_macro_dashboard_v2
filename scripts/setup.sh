@@ -231,7 +231,6 @@ check_port 3000 "화면"       "FRONTEND_PORT"
 check_port 8080 "백엔드 API" "BACKEND_PORT"
 check_port 8000 "수집기"     "COLLECTOR_PORT"
 check_port 5432 "PostgreSQL" "DATABASE_PORT"
-check_port 6379 "Redis"      "REDIS_PORT"
 
 if [ "$CONFLICT" -eq 1 ]; then
   note "포트를 바꾼 뒤에는 FRONTEND_ORIGIN·NEXT_PUBLIC_API_BASE도 함께 맞춰야 합니다."

@@ -21,10 +21,23 @@ from __future__ import annotations
 import logging
 import re
 
-# 이름만 봐도 비밀인 쿼리 파라미터들. 값이 무엇이든 가립니다.
+# 이름만 봐도 비밀인 쿼리 파라미터들. 값이 무엇이든 가립니다(대소문자 무시).
+#
+# 국내 공공 API는 키 파라미터 이름이 제각각이라 기관별로 적어 둡니다.
+#   serviceKey            공공데이터포털(apis.data.go.kr) 전부
+#   crtfc_key             금융감독원 Open DART
+#   apiKey                KOSIS
+#   key / KEY             V-World, 한국부동산원 R-ONE
+#   consumer_key·secret,  SGIS (인증 → accessToken 발급)
+#   accessToken
+#   confmKey              도로명주소
+# 주의사항 — 새 API를 붙일 때 키 파라미터 이름이 여기 없으면 로그에 그대로
+# 찍힙니다. tests/test_log_redaction.py에 표본을 함께 추가하세요.
 _SECRET_PARAMS = (
     "api_key", "apikey", "auth_key", "authkey", "token", "access_token",
     "appkey", "app_key", "appsecret", "app_secret", "secret", "password",
+    "servicekey", "crtfc_key", "key", "consumer_key", "consumer_secret",
+    "accesstoken", "confmkey",
 )
 
 _QUERY_PATTERN = re.compile(

@@ -20,6 +20,7 @@ app/main.py
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -118,7 +119,15 @@ def _run_group_job(group: str) -> None:
 
 
 def _check_token(token: str | None) -> None:
-    if API_TOKEN and token != API_TOKEN:
+    """
+    서비스 토큰을 검사합니다. 토큰을 설정하지 않았으면(로컬 기본값) 통과시킵니다.
+
+    주의사항 — 비교는 hmac.compare_digest로 합니다. ``!=``는 앞에서부터 비교하다
+    다른 글자에서 멈추므로 응답 시간 차이로 토큰을 한 글자씩 맞혀 볼 수 있습니다.
+    """
+    if API_TOKEN and not hmac.compare_digest(
+        (token or "").encode("utf-8"), API_TOKEN.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="유효하지 않은 서비스 토큰입니다.")
 
 

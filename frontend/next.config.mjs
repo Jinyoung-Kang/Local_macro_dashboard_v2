@@ -1,9 +1,33 @@
+/**
+ * 화면 응답에 붙이는 보안 헤더.
+ *
+ * - X-Frame-Options / frame-ancestors: 다른 사이트가 이 화면을 iframe에 넣어
+ *   클릭을 가로채지(clickjacking) 못하게 합니다.
+ * - nosniff: 응답을 선언한 형식 그대로만 해석하게 합니다.
+ * - Referrer-Policy: 다른 사이트로 나갈 때 대시보드 주소(경로)를 넘기지 않습니다.
+ *
+ * 주의사항 — script-src까지 막는 전체 CSP는 넣지 않았습니다. Next.js가 인라인
+ * 스크립트를 쓰므로 nonce 설정 없이 막으면 화면이 뜨지 않습니다.
+ */
+const SECURITY_HEADERS = [
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // "X-Powered-By: Next.js"로 프레임워크를 광고하지 않습니다.
+  poweredByHeader: false,
   // 백엔드 주소는 런타임 환경변수로 주입합니다(컨테이너 이미지 재빌드 없이 변경 가능).
   env: {
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080",
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
 };
 

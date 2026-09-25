@@ -140,7 +140,7 @@ make down            # 정지
 ┌──────▼───────┐  ②모든 계산·판정이 여기 있습니다. 수익률 매트릭스, 국면 판정,
 │  Backend     │    위험 지표, 교차 검증. 타입으로 고정되고 테스트가 지킵니다.
 └──────┬───────┘    Java 21 · Spring Boot 3.4
-       │ JDBC / Redis 캐시
+       │ JDBC
 ┌──────▼───────┐  ③저장본(JSONB) + 누적 이력. 수집기와 백엔드가 공유하는 유일한 지점.
 │  PostgreSQL  │
 └──────▲───────┘
@@ -208,7 +208,7 @@ make down            # 정지
 ### Docker 없이 개발하기
 
 ```bash
-make infra            # PostgreSQL·Redis만 컨테이너로
+make infra            # PostgreSQL만 컨테이너로
 
 make dev-collector    # 터미널 1 — 자동 리로드
 make dev-backend      # 터미널 2
@@ -277,7 +277,7 @@ make test-frontend     # 자가검증 + 린트 + 빌드(타입 검사)
 > **`.env`에 따옴표를 쓰지 마세요.** docker compose는 `KEY=VALUE`를 그대로
 > 읽습니다. `KEY="값"`이면 따옴표까지 값이 됩니다.
 
-**DB·Redis·수집기는 이 맥에서만 열립니다.** 로그인이 없는 경로이기 때문입니다.
+**DB·수집기는 이 맥에서만 열립니다.** 로그인이 없는 경로이기 때문입니다.
 화면·API만 `WEB_BIND_HOST`로 다른 기기에 열 수 있고, 그때는 `APP_PASSWORD`가
 반드시 기본값이 아니어야 합니다.
 
@@ -366,9 +366,8 @@ make test-frontend     # 자가검증 + 린트 + 빌드(타입 검사)
 | Frontend | TypeScript · React 18 · Next.js 15 · Tailwind · Recharts | 16개 메뉴가 서로 다른 표·차트를 쓰므로 컴포넌트 재사용이 크게 이득 |
 | Backend | Java 21 · Spring Boot 3.4 | 화면에 흩어져 있던 계산을 한 계층에 모아 타입으로 고정 |
 | Store | PostgreSQL 16 | 수집기와 API가 다른 프로세스라 파일 공유 불가. JSONB로 저장해 SQL로 질의 |
-| Cache | Redis 7 | 같은 저장본을 여러 화면이 동시에 읽음 |
 | Collector | Python 3.11 · FastAPI · pandas · yfinance · pykrx | 수집·파싱은 구버전에서 검증된 자산을 그대로 사용 |
-| DevOps | Docker Compose · GitHub Actions | 다섯 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다 |
+| DevOps | Docker Compose · GitHub Actions | 네 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다 |
 
 **의도적으로 쓰지 않은 것** — Kafka/CDC(하루 수천 건 규모라 브로커가 처리할
 트래픽이 없음), BigQuery/ClickHouse(전체 수십 MB), 네이티브 앱(같은 기능을 두 벌
