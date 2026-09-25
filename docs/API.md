@@ -93,6 +93,17 @@
 | `GET /api/radar/history?market=&investor=&tradeType=` | 누적 이력 |
 | `GET /api/radar/diagnostics` | 5개 소스 연결 진단 |
 
+### 🇰🇷 국내 공공 API 데이터
+
+키가 없거나 수집 전이면 `available=false`와 무엇을 해야 하는지(`message`)를 돌려줍니다.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/calendar/kr-holidays` | 한국 공휴일(천문연). 화면 시계가 KRX 휴장 판정에 보탭니다 |
+| `GET /api/kr/fundamentals?codes=005930,000660` | 종목별 부채비율·매출/영업이익 증가율(적자 구간은 `operatingTurn`)·영업이익률·ROE + 공식 종가·시가총액·PER·PBR. 6자리 코드만, 최대 60개. `priceDate`가 시가총액의 기준일 |
+| `GET /api/kr/market-totals?days=180` | 시장별 시가총액·거래대금 합계 (원, 20~400일) |
+| `GET /api/housing/seoul` | 서울 아파트 월별 거래량·평당가 중위값(`provisional`·`coverage` 포함), 기준월의 구별 비교·전년 동월 대비 |
+
 ### 🗄️ 상태 · 검증
 
 | 경로 | 설명 |
@@ -103,6 +114,7 @@
 | `POST /api/status/refresh?runFast=true` | 수동 새로고침 |
 | `POST /api/status/run/{taskName}` | 특정 태스크 실행 |
 | `POST /api/verification` | 교차 검증 (판정 포함) |
+| `GET /api/status/public-apis` | 국내 공공 API 연결 진단 — **API마다 실제 1회 호출**. 결과에 키 값은 없음 |
 
 ### 🧭 국면 · 🔗 상관관계
 
@@ -161,6 +173,7 @@
 | 🔒 `GET /live/radar-history`, `/live/radar-history-dates` | 누적 이력 |
 | 🔒 `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드) |
 | 🔒 `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
+| 🔒 `GET /diagnostics/public-apis` | 특일정보·주식시세·실거래가·DART 진단 (API당 1회) |
 | 🔒 `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
 | `GET /catalog` | 지표·기관·ETF·COT 정의 |
 
