@@ -1,16 +1,15 @@
 """
 tests/test_fsc.py
-금융위원회 주식시세정보.
+금융위원회 주식시세정보 (GetStockSecuritiesInfoService_V2 / getStockPriceInfo_V2).
 
-응답 형태의 근거 — 실제 응답 표본은 없습니다(이 환경에서 apis.data.go.kr 접속 불가).
-필드 이름은 실제로 동작하는 코드(chaso2685-hub/stock-dash providers.py가 읽는
-srtnCd·itmsNm·clpr·basDt)와 공개된 필드 설명(mrktCtg·mrktTotAmt 등)만 씁니다.
-봉투는 공공데이터포털 공통 형태(header/resultCode=00, body/items/item, totalCount).
+응답 형태의 근거 — 금융위원회_주식시세정보 오픈API 활용가이드의 요청·응답 명세와
+응답 예시(tests/fixtures/public/fsc_getStockPriceInfo_V2_guide_sample.xml).
 
 고정하는 규칙
-  1. "A005930" 같은 접두어를 떼고 6자리 코드로 맞춘다. 숫자가 아니면 None.
-  2. 시장 합계는 값이 있는 행만 더하고, 빠진 행 수를 남긴다.
-  3. V2 주소가 실패하면 이전 주소로 한 번 더 시도한다(어느 쪽이 됐는지 반환).
+  1. 활용가이드의 오퍼레이션 이름(getStockPriceInfo_V2)으로 부른다.
+     (getStockPriceInfo로 부르면 NO_OPENAPI_SERVICE_ERROR — 실제로 겪은 일)
+  2. "A005930" 같은 접두어를 떼고 6자리 코드로 맞춘다. 숫자가 아니면 None.
+  3. 시장 합계는 값이 있는 행만 더하고, 빠진 행 수를 남긴다.
   4. totalCount만큼 받으면 페이지 요청을 멈춘다.
   5. 이미 최신 기준일이 저장돼 있으면 호출 0회.
 """
@@ -58,21 +57,50 @@ def test_시장_합계는_빈_값을_0으로_섞지_않는다():
     assert totals["기타"]["marketCap"] == 7.0
 
 
-def test_V2가_실패하면_이전_주소로_재시도한다(monkeypatch):
+def test_활용가이드의_V2_오퍼레이션으로_부른다(monkeypatch):
     monkeypatch.setattr(fsc.settings, "data_go_kr_key", lambda: "k" * 20)
     monkeypatch.delenv("FSC_STOCK_PRICE_URL", raising=False)
     seen = []
 
     def fake_get(url, params, **kwargs):
         seen.append(url)
-        if "_V2" in url:
-            return SimpleNamespace(text="<html>404 Not Found</html>", status_code=404)
         return _xml([SAMSUNG], 1)
 
     monkeypatch.setattr(fsc.publicapi, "get", fake_get)
     rows, url = fsc.fetch_day("20260923", publicapi.CallBudget(5))
+    assert seen == [url] and url.endswith("/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2")
     assert [r["code"] for r in rows] == ["005930"]
-    assert "_V2" in seen[0] and url == fsc.CANDIDATE_URLS[1]
+
+
+def test_실패하면_다른_주소로_호출하지_않고_사유를_올린다(monkeypatch):
+    """이전 주소 폴백은 승인되지 않은 서비스라 매번 403으로 호출만 낭비했습니다."""
+    monkeypatch.setattr(fsc.settings, "data_go_kr_key", lambda: "k" * 20)
+    calls = []
+
+    def fake_get(url, params, **kwargs):
+        calls.append(url)
+        return SimpleNamespace(
+            text="<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>NO_OPENAPI_SERVICE_ERROR</errMsg>"
+                 "<returnReasonCode>12</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>",
+            status_code=400)
+
+    monkeypatch.setattr(fsc.publicapi, "get", fake_get)
+    with pytest.raises(publicapi.PublicApiError, match="NO_OPENAPI_SERVICE_ERROR"):
+        fsc.fetch_day("20260923", publicapi.CallBudget(5))
+    assert len(calls) == 1
+
+
+def test_활용가이드_응답_예시를_읽는다():
+    from pathlib import Path
+
+    text = (Path(__file__).parent / "fixtures" / "public" / "fsc_getStockPriceInfo_V2_guide_sample.xml").read_text()
+    root = publicapi.parse_xml(SimpleNamespace(text=text, status_code=200), key="k" * 20)
+    row = fsc.normalize(publicapi.xml_items(root)[0])
+    assert row == {
+        "code": "900290", "name": "GRT", "market": "KOSDAQ", "close": 3185.0, "change": 15.0,
+        "changePct": 0.47, "volume": 493925.0, "tradingValue": 1533304201.0,
+        "listedShares": 81800000.0, "marketCap": 260533000000.0, "basDt": "20260611",
+    }
 
 
 def test_totalCount만큼_받으면_멈춘다(monkeypatch):
@@ -144,12 +172,12 @@ def test_발표_전이면_하루_더_거슬러_올라가_저장한다(monkeypatc
     def fetch(bas_dt, budget):
         budget.take()
         calls.append(bas_dt)
-        return ([] if len(calls) == 1 else [fsc.normalize(SAMSUNG)]), fsc.CANDIDATE_URLS[0]
+        return ([] if len(calls) == 1 else [fsc.normalize(SAMSUNG)]), fsc.URL
 
     monkeypatch.setattr(tasks.fsc_service, "fetch_day", fetch)
     result = tasks.task_fsc_prices()
 
     assert len(calls) == 2 and len(fake.observations) == 1
     assert ("KOSPI.marketCap", [(fake.observations[0][0], 7100000.0)]) in fake.timeseries
-    assert fake.snapshots[catalog.SNAP_FSC_PRICES_META]["endpoint"] == fsc.CANDIDATE_URLS[0]
+    assert fake.snapshots[catalog.SNAP_FSC_PRICES_META]["endpoint"] == fsc.URL
     assert "1종목" in result

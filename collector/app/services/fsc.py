@@ -15,9 +15,10 @@ DART 재무와 합쳐 PER·PBR을 계산할 수 있습니다.
   lstgStCnt 상장주식수 · mrktTotAmt 시가총액
   srtnCd가 "A005930"처럼 A 접두어로 오는 경우가 있어 떼어 냅니다.
 
-주소 — 활용신청한 서비스는 GetStockSecuritiesInfoService_V2인데, 그 오퍼레이션
-이름은 이 개발 환경에서 확인하지 못했습니다. 그래서 V2 주소를 먼저 부르고, 실패하면
-실제 동작이 확인된 이전 주소로 한 번 더 시도합니다. 어느 쪽이 성공했는지 저장합니다.
+주소·필드 — 금융위원회_주식시세정보 오픈API 활용가이드(GetStockSecuritiesInfoService_V2)의
+"주식시세" 상세기능 `getStockPriceInfo_V2`. 응답 예시는 tests/fixtures/public에 있습니다.
+(처음에는 오퍼레이션 이름을 확인하지 못해 `getStockPriceInfo`로 불렀고, 실제 호출에서
+NO_OPENAPI_SERVICE_ERROR(코드 12)가 나와 활용가이드로 바로잡았습니다.)
 FSC_STOCK_PRICE_URL로 주소를 직접 지정할 수 있습니다.
 """
 from __future__ import annotations
@@ -27,10 +28,7 @@ import re
 
 from .. import publicapi, settings
 
-CANDIDATE_URLS = (
-    "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo",
-    "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo",
-)
+URL = "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2"
 
 # 한 페이지 행 수와 최대 페이지. 상장 종목은 KOSPI·KOSDAQ·KONEX 합쳐 3천 개 안팎입니다.
 ROWS_PER_PAGE = 1000
@@ -39,33 +37,23 @@ MAX_PAGES = 5
 _CODE = re.compile(r"^A?(\d{6})$")
 
 
-def _urls() -> tuple[str, ...]:
-    override = os.environ.get("FSC_STOCK_PRICE_URL", "").strip()
-    return (override,) if override else CANDIDATE_URLS
+def endpoint() -> str:
+    """호출할 주소. FSC_STOCK_PRICE_URL이 있으면 그것을 씁니다."""
+    return os.environ.get("FSC_STOCK_PRICE_URL", "").strip() or URL
 
 
-def fetch_day(bas_dt: str, budget: publicapi.CallBudget) -> tuple[list[dict], str | None]:
+def fetch_day(bas_dt: str, budget: publicapi.CallBudget) -> tuple[list[dict], str]:
     """
     그 기준일의 전 종목 시세.
 
     :param bas_dt: 기준일 YYYYMMDD
     :param budget: 호출 예산. 페이지마다 하나씩 씁니다
-    :returns: (정규화한 행 목록, 성공한 주소). 그날 데이터가 없으면 ([], 주소)
+    :returns: (정규화한 행 목록, 호출한 주소). 그날 데이터가 없으면 ([], 주소)
     :raises publicapi.MissingKey: DATA_GO_KR_SERVICE_KEY 미설정
-    :raises publicapi.PublicApiError: 모든 주소가 실패했거나 예산이 부족할 때
+    :raises publicapi.PublicApiError: 인증·서비스 오류, 예산 부족
     """
-    key = settings.data_go_kr_key()
-    errors: list[str] = []
-    for url in _urls():
-        try:
-            return _fetch_pages(url, bas_dt, key, budget), url
-        except publicapi.MissingKey:
-            raise
-        except publicapi.PublicApiError as exc:
-            errors.append(f"{url.split('/1160100/')[-1]}: {exc}")
-            if budget.exhausted:
-                break
-    raise publicapi.PublicApiError(" | ".join(errors))
+    url = endpoint()
+    return _fetch_pages(url, bas_dt, settings.data_go_kr_key(), budget), url
 
 
 def _fetch_pages(url: str, bas_dt: str, key: str, budget: publicapi.CallBudget) -> list[dict]:

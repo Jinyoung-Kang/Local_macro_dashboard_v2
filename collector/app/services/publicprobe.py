@@ -56,17 +56,12 @@ def _fsc() -> str:
     while day.weekday() >= 5:
         day -= timedelta(days=1)
     key = settings.data_go_kr_key()
-    errors = []
-    for url in fsc._urls():
-        response = publicapi.get(url, {"basDt": day.strftime("%Y%m%d"), "numOfRows": 1, "pageNo": 1}, key=key)
-        try:
-            root = publicapi.parse_xml(response, key=key)
-        except publicapi.PublicApiError as exc:
-            errors.append(f"{url.split('/1160100/')[-1]}: {exc}")
-            continue
-        total = publicapi.total_count(root)
-        return f"{day} 기준 {total if total is not None else '?'}종목 (주소: {url.split('/1160100/')[-1]})"
-    raise publicapi.PublicApiError(" | ".join(errors))
+    url = fsc.endpoint()
+    response = publicapi.get(url, {"basDt": day.strftime("%Y%m%d"), "numOfRows": 1, "pageNo": 1}, key=key)
+    root = publicapi.parse_xml(response, key=key)
+    total = publicapi.total_count(root)
+    # 공휴일이면 0종목이 정상입니다(휴장일에는 시세가 없음).
+    return f"{day} 기준 {total if total is not None else '?'}종목 ({url.rsplit('/', 1)[-1]})"
 
 
 def _molit() -> str:
