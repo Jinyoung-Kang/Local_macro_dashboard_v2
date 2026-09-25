@@ -316,8 +316,12 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
     key ? `/api/kr/fundamentals?codes=${key}` : null,
   );
   const byCode = new Map((data?.companies ?? []).map((company) => [company.code, company]));
-  const rows = codes.map((code) => byCode.get(code) ?? { code, available: false });
-  const covered = rows.filter((row) => row.available).length;
+  const all = codes.map((code) => byCode.get(code) ?? { code, available: false });
+  // 재무도 시세도 없는 종목을 "—"로 가득 찬 줄로 늘어놓으면 정작 볼 줄이 묻힙니다.
+  // 자료가 있는 종목만 표에 두고, 나머지는 한 줄로 알립니다.
+  const rows = all.filter((row) => row.available || row.marketCap != null);
+  const empty = all.filter((row) => !row.available && row.marketCap == null);
+  const covered = all.filter((row) => row.available).length;
 
   const percent = (value: number | null | undefined) =>
     value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}%`;
@@ -339,63 +343,72 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
       {(data?.available || data?.priceDate) && (
         <>
           <p className="mb-2 text-xs text-muted">
-            {covered}/{rows.length}개 종목 재무 확보 · ETF·ETN·스팩은 DART 재무 대상이 아닙니다 ·
+            {covered}/{all.length}개 종목 재무 확보 · ETF·ETN·스팩은 DART 재무 대상이 아닙니다 ·
             이자보상배율은 주요계정에 이자비용이 없어 표시하지 않습니다
             {data.priceDate ? ` · 시가총액 기준일 ${data.priceDate} (재무와 시점이 다름)` : " · 공식 시세 없음 → PER·PBR 생략"}
           </p>
-          <Table
-            rows={rows}
-            rowKey={(row) => row.code}
-            columns={[
-              {
-                key: "name",
-                header: "종목",
-                render: (row) => (
-                  <span className="flex flex-col">
-                    <span className="text-body">{row.name ?? row.code}</span>
-                    <span className="text-[11px] text-muted">
-                      {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
+          {empty.length > 0 && (
+            <p className="mb-2 text-xs text-muted">
+              재무·시세 모두 없음 {empty.length}개 (ETF·신규 상장·수집 전):{" "}
+              {empty.slice(0, 10).map((row) => row.name ?? row.code).join(", ")}
+              {empty.length > 10 ? " 외" : ""}
+            </p>
+          )}
+          {rows.length > 0 && (
+            <Table
+              rows={rows}
+              rowKey={(row) => row.code}
+              columns={[
+                {
+                  key: "name",
+                  header: "종목",
+                  render: (row) => (
+                    <span className="flex flex-col">
+                      <span className="text-body">{row.name ?? row.code}</span>
+                      <span className="text-[11px] text-muted">
+                        {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
+                      </span>
                     </span>
-                  </span>
-                ),
-              },
-              {
-                key: "debt",
-                header: "부채비율",
-                align: "right",
-                render: (row) =>
-                  row.capitalImpaired ? <span className="text-down">자본잠식</span> : percent(row.debtRatio),
-              },
-              { key: "rev", header: "매출 증가", align: "right", render: (row) => (
-                <span className={deltaColor(row.revenueGrowth)}>{percent(row.revenueGrowth)}</span>
-              ) },
-              { key: "op", header: "영업이익 증가", align: "right", render: (row) =>
-                row.operatingTurn ? (
-                  <span className={row.operatingTurn === "흑자전환" ? "text-up" : "text-down"}>{row.operatingTurn}</span>
-                ) : (
-                  <span className={deltaColor(row.operatingIncomeGrowth)}>{percent(row.operatingIncomeGrowth)}</span>
-                ),
-              },
-              { key: "margin", header: "영업이익률", align: "right", render: (row) => percent(row.operatingMargin) },
-              { key: "roe", header: "ROE", align: "right", render: (row) => percent(row.roe) },
-              { key: "cap", header: "시가총액", align: "right", render: (row) => formatKrw(row.marketCap) },
-              { key: "per", header: "PER", align: "right", render: (row) => multiple(row.per) },
-              { key: "pbr", header: "PBR", align: "right", render: (row) => multiple(row.pbr) },
-              {
-                key: "link",
-                header: "공시",
-                align: "right",
-                render: (row) =>
-                  row.dartUrl ? (
-                    <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline">
-                      원문
-                    </a>
-                  ) : (
-                    EMPTY
                   ),
-              },
-            ]}
-          />
+                },
+                {
+                  key: "debt",
+                  header: "부채비율",
+                  align: "right",
+                  render: (row) =>
+                    row.capitalImpaired ? <span className="text-down">자본잠식</span> : percent(row.debtRatio),
+                },
+                { key: "rev", header: "매출 증가", align: "right", render: (row) => (
+                  <span className={deltaColor(row.revenueGrowth)}>{percent(row.revenueGrowth)}</span>
+                ) },
+                { key: "op", header: "영업이익 증가", align: "right", render: (row) =>
+                  row.operatingTurn ? (
+                    <span className={row.operatingTurn === "흑자전환" ? "text-up" : "text-down"}>{row.operatingTurn}</span>
+                  ) : (
+                    <span className={deltaColor(row.operatingIncomeGrowth)}>{percent(row.operatingIncomeGrowth)}</span>
+                  ),
+                },
+                { key: "margin", header: "영업이익률", align: "right", render: (row) => percent(row.operatingMargin) },
+                { key: "roe", header: "ROE", align: "right", render: (row) => percent(row.roe) },
+                { key: "cap", header: "시가총액", align: "right", render: (row) => formatKrw(row.marketCap) },
+                { key: "per", header: "PER", align: "right", render: (row) => multiple(row.per) },
+                { key: "pbr", header: "PBR", align: "right", render: (row) => multiple(row.pbr) },
+                {
+                  key: "link",
+                  header: "공시",
+                  align: "right",
+                  render: (row) =>
+                    row.dartUrl ? (
+                      <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                        원문
+                      </a>
+                    ) : (
+                      EMPTY
+                    ),
+                },
+              ]}
+            />
+          )}
         </>
       )}
     </Card>

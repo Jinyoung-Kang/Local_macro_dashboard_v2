@@ -54,8 +54,11 @@ export default function HousingPage() {
               data={months.map((month) => ({
                 name: `${month.month}${month.provisional ? " (잠정)" : ""}${month.coverage < 25 ? ` (${month.coverage}/25)` : ""}`,
                 value: month.count,
+                // 거래량엔 부호가 없어 중립색. 잠정 달은 흐리게 — 덜 잡힌 값이라는 표시입니다.
+                color: month.provisional ? "#3987e566" : SERIES_COLORS.blue,
               }))}
               unit="건"
+              valueName="거래량"
             />
           </Card>
 

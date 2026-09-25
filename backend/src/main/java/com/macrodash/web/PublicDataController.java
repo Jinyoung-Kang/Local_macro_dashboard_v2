@@ -1,5 +1,7 @@
 package com.macrodash.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.macrodash.collector.CollectorClient;
 import com.macrodash.service.CalendarService;
 import com.macrodash.service.HousingService;
 import com.macrodash.service.KrFundamentalsService;
@@ -9,7 +11,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 국내 공공 API(공공데이터포털·Open DART)로 모은 데이터.
@@ -26,13 +30,15 @@ public class PublicDataController {
     private final KrFundamentalsService fundamentals;
     private final KrMarketService market;
     private final HousingService housing;
+    private final CollectorClient collector;
 
     public PublicDataController(CalendarService calendar, KrFundamentalsService fundamentals,
-                                KrMarketService market, HousingService housing) {
+                                KrMarketService market, HousingService housing, CollectorClient collector) {
         this.calendar = calendar;
         this.fundamentals = fundamentals;
         this.market = market;
         this.housing = housing;
+        this.collector = collector;
     }
 
     /** 📅 한국 공휴일 (천문연 특일정보) — 시계의 KRX 휴장 판정용. */
@@ -65,5 +71,25 @@ public class PublicDataController {
     @GetMapping("/housing/seoul")
     public Map<String, Object> seoulHousing() {
         return housing.seoul();
+    }
+
+    /**
+     * 🔌 국내 공공 API 연결 진단 — 키를 넣은 뒤 어느 서비스가 승인됐는지 확인용.
+     *
+     * <p>누를 때마다 API당 1회씩 실제로 호출합니다(화면이 자동으로 부르지 않음).
+     * 응답에는 키가 없고, 설정 여부와 키가 지워진 실패 사유만 있습니다.
+     */
+    @GetMapping("/status/public-apis")
+    public Map<String, Object> publicApiDiagnostics() {
+        Optional<JsonNode> payload = collector.publicApiDiagnostics();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (payload.isEmpty()) {
+            out.put("available", false);
+            out.put("message", "수집기에 연결하지 못했습니다. 진단은 수집기가 수행합니다.");
+            return out;
+        }
+        out.put("available", true);
+        payload.get().fields().forEachRemaining(entry -> out.put(entry.getKey(), entry.getValue()));
+        return out;
     }
 }

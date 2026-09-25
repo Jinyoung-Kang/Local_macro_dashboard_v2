@@ -891,3 +891,12 @@ export interface SeoulHousingResponse {
     priceYoyPct: number | null;
   }[];
 }
+
+/** GET /api/status/public-apis — 국내 공공 API 연결 진단 (키 값은 들어 있지 않음). */
+export interface PublicApiDiagnosticsResponse {
+  available: boolean;
+  message?: string;
+  checkedAt?: string;
+  keys?: Record<string, boolean>;
+  apis?: { label: string; configured: boolean; ok: boolean; detail: string | null; elapsedMs: number | null }[];
+}

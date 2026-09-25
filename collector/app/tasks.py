@@ -614,9 +614,12 @@ def task_fsc_prices() -> str:
     raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + _reason_suffix(reasons))
 
 
-APT_MONTHS = 13            # 올해 같은 달과 비교하려면 13개월이 필요합니다
+# 화면의 기준월은 잠정(최근 2개월)이 아닌 가장 최근 달, 즉 두 달 전입니다. 그 달의
+# 전년 동월까지 있으려면 이번 달부터 14개월 전까지, 모두 15개월이 필요합니다.
+# (13개월로 두었더니 전년 대비 열이 항상 비었습니다 — 로컬 실행으로 발견)
+APT_MONTHS = 15
 APT_REFRESH_MONTHS = 2     # 신고 기한(계약 후 30일)·해제 반영 때문에 최근 두 달은 매번 다시 받음
-APT_CALL_BUDGET = 80       # 1회 실행 한도. 첫 백필(25구×13개월)은 몇 번에 나눠 끝납니다
+APT_CALL_BUDGET = 80       # 1회 실행 한도. 첫 백필(25구×15개월=375회)은 몇 번에 나눠 끝납니다
 
 
 def _recent_months(today, count: int) -> list[str]:
@@ -633,7 +636,7 @@ def _recent_months(today, count: int) -> list[str]:
 
 def task_seoul_apartments() -> str:
     """
-    🏠 서울 아파트 매매 실거래 — 25개 구 × 최근 13개월.
+    🏠 서울 아파트 매매 실거래 — 25개 구 × 최근 15개월.
 
     규칙
       - 최근 두 달은 매번 다시 받습니다(신고 지연·해제 반영). 그 이전 달은 한 번

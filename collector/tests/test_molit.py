@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from app import publicapi
 from app.services import molit

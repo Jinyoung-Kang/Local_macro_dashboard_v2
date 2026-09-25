@@ -3,7 +3,7 @@ app/services/molit.py
 국토교통부 아파트 매매 실거래가 — 서울 25개 구.
 
 호출 단위 — 시군구(LAWD_CD 5자리) × 계약연월(DEAL_YMD YYYYMM) 한 번에 그 구·그 달의
-전체 거래. 25개 구 × 13개월 = 325회라 한 번에 받지 않고 호출 예산 안에서 나눠 받습니다.
+전체 거래. 25개 구 × 15개월 = 375회라 한 번에 받지 않고 호출 예산 안에서 나눠 받습니다.
 
 근거 (실제로 동작하는 코드: choiys2/apt-price-dashboard fetch_apt_trades.py,
       david61756/apt-price-monitor monitor.py, PublicDataReader molit.py)

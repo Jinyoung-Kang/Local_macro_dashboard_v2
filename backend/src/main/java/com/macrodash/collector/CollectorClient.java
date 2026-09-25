@@ -98,6 +98,11 @@ public class CollectorClient {
         return get("/diagnostics/connections");
     }
 
+    /** 국내 공공 API 연결 진단 (API마다 1회 호출). 결과에 키는 없습니다. */
+    public Optional<JsonNode> publicApiDiagnostics() {
+        return get("/diagnostics/public-apis");
+    }
+
     public Optional<JsonNode> tossDiagnostics() {
         return get("/diagnostics/toss");
     }

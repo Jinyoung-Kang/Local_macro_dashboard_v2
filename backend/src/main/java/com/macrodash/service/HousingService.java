@@ -45,7 +45,8 @@ public class HousingService {
      */
     public Map<String, Object> seoul() {
         LocalDate thisMonth = Kst.today().withDayOfMonth(1);
-        LocalDate from = thisMonth.minusMonths(13);
+        // 기준월(두 달 전)의 전년 동월까지 읽어야 전년 대비를 낼 수 있습니다 (수집기 APT_MONTHS=15).
+        LocalDate from = thisMonth.minusMonths(14);
         List<JsonNode> rows = repository.readObservations(Datasets.OBS_MOLIT_APT, null, from, null);
 
         Map<String, Object> out = new LinkedHashMap<>();

@@ -16,7 +16,7 @@ import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { apiPost } from "@/lib/api";
 import { EMPTY, formatAge, formatDateTimeKst, formatNumber } from "@/lib/format";
-import type { StatusResponse, VerificationResponse } from "@/lib/types";
+import type { PublicApiDiagnosticsResponse, StatusResponse, VerificationResponse } from "@/lib/types";
 
 const TASK_ICONS: Record<string, string> = { ok: "✅", empty: "⚠️", error: "❌" };
 
@@ -261,7 +261,64 @@ export default function StatusPage() {
       </Card>
 
       <VerificationPanel />
+
+      <PublicApiPanel />
     </div>
+  );
+}
+
+/**
+ * 🔌 국내 공공 API 연결 진단.
+ *
+ * 공공데이터포털은 키 하나로 여러 서비스를 쓰지만 활용신청·승인은 서비스마다
+ * 따로입니다. 키는 맞는데 한 서비스만 승인 전인 경우가 흔해서, 어느 것이 되는지
+ * 한 번에 봅니다. 누를 때마다 실제로 API당 1회씩 호출하므로 자동으로 돌리지 않습니다.
+ */
+function PublicApiPanel() {
+  const [runId, setRunId] = useState<number | null>(null);
+  const { data, loading, error } = useApi<PublicApiDiagnosticsResponse>(
+    runId === null ? null : `/api/status/public-apis?run=${runId}`,
+  );
+
+  return (
+    <Card
+      title="🔌 국내 공공 API 연결 진단"
+      subtitle="공공데이터포털(특일정보·주식시세·실거래가) · Open DART — 누를 때마다 API당 1회 호출"
+      actions={
+        <Button onClick={() => setRunId(Date.now())} disabled={loading}>
+          {loading ? "확인 중…" : "진단 실행"}
+        </Button>
+      }
+    >
+      {runId === null && (
+        <p className="text-sm text-muted">
+          .env에 키를 넣고 수집기를 다시 띄운 뒤 눌러 보세요. 결과에 키 값은 표시되지 않습니다.
+        </p>
+      )}
+      {error && <ErrorState message={error} />}
+      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data?.available && data.apis && (
+        <Table
+          rows={data.apis}
+          rowKey={(row) => row.label}
+          columns={[
+            { key: "label", header: "API", render: (row) => row.label },
+            {
+              key: "state",
+              header: "상태",
+              render: (row) => (row.ok ? "✅ 정상" : row.configured ? "❌ 실패" : "⚪ 키 없음"),
+            },
+            { key: "detail", header: "내용", render: (row) => <span className="text-xs">{row.detail ?? EMPTY}</span> },
+            {
+              key: "ms",
+              header: "응답",
+              align: "right",
+              render: (row) => (row.elapsedMs === null ? EMPTY : `${formatNumber(row.elapsedMs, 0)}ms`),
+            },
+          ]}
+        />
+      )}
+    </Card>
   );
 }
 

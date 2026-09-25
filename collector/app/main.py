@@ -167,6 +167,8 @@ def status() -> dict:
         "kis": kis_service.has_credentials(),
         "ls": ls_service.has_credentials(),
         "toss": toss_service.has_credentials(),
+        "dataGoKr": bool(settings.data_go_kr_key()),
+        "dart": bool(settings.dart_key()),
     }
     stats["intervals"] = {
         group: settings.interval_seconds(group)
@@ -504,6 +506,20 @@ def diagnostics(
             "pykrx": radar_service.test_pykrx_connection(),
         },
     }
+
+
+@app.get("/diagnostics/public-apis")
+def public_api_diagnostics(
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """
+    국내 공공 API(공공데이터포털·DART) 연결 진단. API마다 1회씩 호출합니다.
+
+    결과에 키는 들어 있지 않습니다(설정 여부만 true/false).
+    """
+    _check_token(x_service_token)
+    from .services import publicprobe
+    return publicprobe.run()
 
 
 @app.get("/diagnostics/toss")

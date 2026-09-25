@@ -28,6 +28,7 @@ PROTECTED = [
     ("get", "/verify/readings"),
     ("get", "/diagnostics/connections"),
     ("get", "/diagnostics/toss"),
+    ("get", "/diagnostics/public-apis"),
     ("get", "/toss/exchange-rate"),
     ("get", "/toss/indices?symbols=KOSPI"),
     ("post", "/collect?group=fast"),

@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class HousingServiceTest {
@@ -58,6 +59,9 @@ class HousingServiceTest {
         List<Map<String, Object>> districts = (List<Map<String, Object>>) out.get("districts");
         assertThat(districts).hasSize(25);
         assertThat((Double) districts.get(0).get("priceYoyPct")).isCloseTo(10.0, org.assertj.core.api.Assertions.within(1e-9));
+        // 기준월(두 달 전)의 전년 동월 = 14개월 전까지 읽어야 합니다. 13개월만 읽으면
+        // 전년 대비가 항상 비었습니다(로컬 실행으로 발견한 버그의 회귀 방지).
+        verify(repository).readObservations(eq(Datasets.OBS_MOLIT_APT), isNull(), eq(thisMonth.minusMonths(14)), isNull());
     }
 
     @Test

@@ -504,7 +504,11 @@ export function SignedBars({
   unit = "",
   valueName = "순매수",
 }: {
-  data: { name: string; value: number }[];
+  /**
+   * color를 주면 부호 색(빨강=+, 파랑=−) 대신 그 색으로 칠합니다. 거래량처럼 부호가
+   * 없는 값에 빨강을 쓰면 이 화면들의 약속(빨강 = 매수·상승)과 섞여 잘못 읽힙니다.
+   */
+  data: { name: string; value: number; color?: string }[];
   height?: number;
   unit?: string;
   valueName?: string;
@@ -532,7 +536,7 @@ export function SignedBars({
         <ReferenceLine y={0} stroke="#8B949E" />
         <Bar dataKey="value" radius={[4, 4, 0, 0]}>
           {data.map((entry) => (
-            <Cell key={entry.name} fill={entry.value >= 0 ? "#F85149" : "#4493F8"} />
+            <Cell key={entry.name} fill={entry.color ?? (entry.value >= 0 ? "#F85149" : "#4493F8")} />
           ))}
         </Bar>
       </BarChart>
